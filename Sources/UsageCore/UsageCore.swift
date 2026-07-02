@@ -24,16 +24,24 @@ public struct ProviderUsage: Equatable, Sendable {
     }
 }
 
+public enum UsageParsingError: Error, Equatable, Sendable {
+    case parseFailure
+}
+
 public struct ClaudeStatuslineParser: Sendable {
     public init() {}
 
     public func parse(_ data: Data) throws -> ProviderUsage {
-        let statusline = try JSONDecoder().decode(ClaudeStatuslineResponse.self, from: data)
+        do {
+            let statusline = try JSONDecoder().decode(ClaudeStatuslineResponse.self, from: data)
 
-        return ProviderUsage(
-            fiveHour: usageWindow(from: statusline.rateLimits.fiveHour),
-            weekly: usageWindow(from: statusline.rateLimits.sevenDay)
-        )
+            return ProviderUsage(
+                fiveHour: usageWindow(from: statusline.rateLimits.fiveHour),
+                weekly: usageWindow(from: statusline.rateLimits.sevenDay)
+            )
+        } catch {
+            throw UsageParsingError.parseFailure
+        }
     }
 }
 
