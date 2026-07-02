@@ -36,8 +36,37 @@ public struct ClaudeStatuslineParser: Sendable {
             let statusline = try JSONDecoder().decode(ClaudeStatuslineResponse.self, from: data)
 
             return ProviderUsage(
-                fiveHour: usageWindow(from: statusline.rateLimits.fiveHour),
-                weekly: usageWindow(from: statusline.rateLimits.sevenDay)
+                fiveHour: usageWindow(
+                    usedPercentage: statusline.rateLimits.fiveHour.usedPercentage,
+                    resetAt: statusline.rateLimits.fiveHour.resetsAt
+                ),
+                weekly: usageWindow(
+                    usedPercentage: statusline.rateLimits.sevenDay.usedPercentage,
+                    resetAt: statusline.rateLimits.sevenDay.resetsAt
+                )
+            )
+        } catch {
+            throw UsageParsingError.parseFailure
+        }
+    }
+}
+
+public struct CodexUsageParser: Sendable {
+    public init() {}
+
+    public func parse(_ data: Data) throws -> ProviderUsage {
+        do {
+            let response = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
+
+            return ProviderUsage(
+                fiveHour: usageWindow(
+                    usedPercentage: response.rateLimit.primaryWindow.usedPercent,
+                    resetAt: response.rateLimit.primaryWindow.resetAt
+                ),
+                weekly: usageWindow(
+                    usedPercentage: response.rateLimit.secondaryWindow.usedPercent,
+                    resetAt: response.rateLimit.secondaryWindow.resetAt
+                )
             )
         } catch {
             throw UsageParsingError.parseFailure
@@ -73,10 +102,38 @@ private struct ClaudeStatuslineWindow: Decodable {
     }
 }
 
-private func usageWindow(from window: ClaudeStatuslineWindow) -> UsageWindow {
+private struct CodexUsageResponse: Decodable {
+    let rateLimit: CodexRateLimit
+
+    enum CodingKeys: String, CodingKey {
+        case rateLimit = "rate_limit"
+    }
+}
+
+private struct CodexRateLimit: Decodable {
+    let primaryWindow: CodexRateLimitWindow
+    let secondaryWindow: CodexRateLimitWindow
+
+    enum CodingKeys: String, CodingKey {
+        case primaryWindow = "primary_window"
+        case secondaryWindow = "secondary_window"
+    }
+}
+
+private struct CodexRateLimitWindow: Decodable {
+    let resetAt: TimeInterval
+    let usedPercent: Int
+
+    enum CodingKeys: String, CodingKey {
+        case resetAt = "reset_at"
+        case usedPercent = "used_percent"
+    }
+}
+
+private func usageWindow(usedPercentage: Int, resetAt: TimeInterval) -> UsageWindow {
     UsageWindow(
-        percentRemaining: percentRemaining(fromUsedPercentage: window.usedPercentage),
-        resetsAt: Date(timeIntervalSince1970: window.resetsAt)
+        percentRemaining: percentRemaining(fromUsedPercentage: usedPercentage),
+        resetsAt: Date(timeIntervalSince1970: resetAt)
     )
 }
 
