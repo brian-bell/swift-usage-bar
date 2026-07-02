@@ -11,6 +11,7 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 - Headers: `Authorization: Bearer <claudeAiOauth.accessToken>` and `anthropic-beta: oauth-2025-04-20`.
 - Source evidence: local Claude Code 2.1.198 binary strings include `fetchUtilization: GET /api/oauth/usage`, `/api/oauth/usage`, `anthropic-beta`, and `oauth-2025-04-20`.
 - Live result: the controlled `curl` attempt on 2026-07-02 returned HTTP 429, so `Tests/Fixtures/claude-usage.json` was not created. This triggers the Phase 0 stop condition for Claude; do not fabricate this fixture.
+- Local fallback: `scripts/claude-statusline-cache` can be used as the Claude Code statusline command. It writes the raw statusline JSON to `${XDG_CACHE_HOME:-$HOME/.cache}/ai-usage-bar/claude-status.json` or `AI_USAGE_BAR_CLAUDE_STATUS_JSON`, then forwards the same stdin to `ccstatusline`. This lets the app consume `rate_limits` from Claude Code's own statusline payload without calling the usage endpoint directly.
 
 ## Codex
 
