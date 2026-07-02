@@ -43,6 +43,25 @@ public enum ProviderState: Equatable, Sendable {
     case hidden
 }
 
+public enum UsageStatusTone: Equatable, Sendable {
+    case normal
+    case warning
+    case critical
+}
+
+public func tone(for usage: ProviderUsage, warningThreshold: Int = 20) -> UsageStatusTone {
+    let remaining = min(usage.fiveHour.percentRemaining, usage.weekly.percentRemaining)
+    if remaining < 5 {
+        return .critical
+    }
+
+    if remaining < warningThreshold {
+        return .warning
+    }
+
+    return .normal
+}
+
 public struct ClaudeStatuslineParser: Sendable {
     public init() {}
 
