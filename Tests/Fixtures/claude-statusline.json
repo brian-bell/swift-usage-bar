@@ -1,0 +1,25 @@
+{
+  "session_id": "<redacted session_id>",
+  "transcript_path": "/tmp/redacted-transcript.jsonl",
+  "cwd": "/tmp/redacted-project",
+  "model": {
+    "id": "claude-sonnet-4-20250514",
+    "display_name": "Sonnet 4"
+  },
+  "version": "2.1.198",
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 38,
+      "resets_at": 1783008000
+    },
+    "seven_day": {
+      "used_percentage": 19,
+      "resets_at": 1783555200
+    },
+    "seven_day_sonnet": {
+      "used_percentage": 23,
+      "resets_at": 1783555200
+    },
+    "seven_day_opus": null
+  }
+}

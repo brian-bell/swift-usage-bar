@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+statusline_bin="${CCSTATUSLINE_BIN:-ccstatusline}"
+cache_root="${XDG_CACHE_HOME:-${HOME:?HOME must be set}/.cache}"
+cache_file="${AI_USAGE_BAR_CLAUDE_STATUS_JSON:-$cache_root/ai-usage-bar/claude-status.json}"
+cache_dir="$(dirname "$cache_file")"
+cache_base="$(basename "$cache_file")"
+
+umask 077
+mkdir -p "$cache_dir"
+
+input_tmp="$(mktemp "$cache_dir/${cache_base}.input.XXXXXX")"
+cache_tmp=""
+
+cleanup() {
+    rm -f "$input_tmp"
+    if [ -n "$cache_tmp" ]; then
+        rm -f "$cache_tmp"
+    fi
+}
+trap cleanup EXIT
+
+cat >"$input_tmp"
+chmod 600 "$input_tmp"
+
+cache_tmp="$(mktemp "$cache_dir/${cache_base}.tmp.XXXXXX")"
+cp "$input_tmp" "$cache_tmp"
+chmod 600 "$cache_tmp"
+mv "$cache_tmp" "$cache_file"
+cache_tmp=""
+
+set +e
+"$statusline_bin" "$@" <"$input_tmp"
+status=$?
+set -e
+
+exit "$status"
