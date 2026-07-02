@@ -1,0 +1,23 @@
+# Endpoint Discovery
+
+Phase 0 source checks and live-call results for the read-only usage providers.
+
+## Claude
+
+- Auth source: macOS Keychain generic password with service `Claude Code-credentials`.
+- Credential shape: top-level `claudeAiOauth` object with `accessToken`, `refreshToken`, `expiresAt`, `scopes`, `subscriptionType`, and `rateLimitTier`.
+- Expiry detection: treat `claudeAiOauth.expiresAt` as the OAuth token expiry timestamp.
+- Usage request: `GET https://api.anthropic.com/api/oauth/usage`.
+- Headers: `Authorization: Bearer <claudeAiOauth.accessToken>` and `anthropic-beta: oauth-2025-04-20`.
+- Source evidence: local Claude Code 2.1.198 binary strings include `fetchUtilization: GET /api/oauth/usage`, `/api/oauth/usage`, `anthropic-beta`, and `oauth-2025-04-20`.
+- Live result: the controlled `curl` attempt on 2026-07-02 returned HTTP 429, so `Tests/Fixtures/claude-usage.json` was not created. This triggers the Phase 0 stop condition for Claude; do not fabricate this fixture.
+
+## Codex
+
+- Auth source: macOS Keychain generic password with service `Codex Auth` and account `cli|<sha256(canonical CODEX_HOME)[0..<16]>`. For `/Users/brian/.codex`, the discovered account is `cli|546fd934022c2d7b`.
+- Credential shape: JSON with `auth_mode`, `last_refresh`, and `tokens`. The `tokens` object has `access_token`, `refresh_token`, `id_token`, and `account_id`.
+- Expiry detection: parse the JWT payload from `tokens.access_token` and read the standard `exp` claim; Codex refreshes inside a 5-minute window.
+- Usage request: `GET https://chatgpt.com/backend-api/wham/usage` for the default ChatGPT base URL. The same backend client maps non-`/backend-api` Codex API base URLs to `/api/codex/usage`.
+- Headers: `Authorization: Bearer <tokens.access_token>`, `ChatGPT-Account-Id: <tokens.account_id>`, and Codex's user agent.
+- Source evidence: `openai/codex` tag `rust-v0.142.5`, especially `codex-rs/login/src/auth/storage.rs`, `codex-rs/login/src/token_data.rs`, `codex-rs/login/src/auth/manager.rs`, `codex-rs/backend-client/src/client.rs`, and `codex-rs/backend-client/src/client/rate_limit_resets.rs`.
+- Live result: the controlled `curl` attempt succeeded and produced the sanitized fixture at `Tests/Fixtures/codex-usage.json`.
