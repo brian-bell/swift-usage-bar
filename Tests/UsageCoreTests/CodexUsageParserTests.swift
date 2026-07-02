@@ -75,6 +75,29 @@ func codexParserClampsUsedPercentOutsideExpectedRange() throws {
 }
 
 @Test
+func codexParserClampsExtremeNegativeUsedPercentToFullRemaining() throws {
+    let data = Data("""
+    {
+      "rate_limit": {
+        "primary_window": {
+          "reset_at": 1783006145,
+          "used_percent": -9223372036854775808
+        },
+        "secondary_window": {
+          "reset_at": 1783388608,
+          "used_percent": 44
+        }
+      }
+    }
+    """.utf8)
+
+    let usage = try CodexUsageParser().parse(data)
+
+    #expect(usage.fiveHour.percentRemaining == 100)
+    #expect(usage.weekly.percentRemaining == 56)
+}
+
+@Test
 func codexParserThrowsParseFailureForMalformedJSON() throws {
     let data = Data(#"{"rate_limit": "#.utf8)
 

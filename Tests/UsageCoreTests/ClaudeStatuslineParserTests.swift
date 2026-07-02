@@ -54,6 +54,29 @@ func claudeParserClampsOverusedWindowsToZeroRemaining() throws {
 }
 
 @Test
+func claudeParserClampsExtremeNegativeUsedPercentageToFullRemaining() throws {
+    let data = Data("""
+    {
+      "rate_limits": {
+        "five_hour": {
+          "used_percentage": -9223372036854775808,
+          "resets_at": 1783008000
+        },
+        "seven_day": {
+          "used_percentage": 19,
+          "resets_at": 1783555200
+        }
+      }
+    }
+    """.utf8)
+
+    let usage = try ClaudeStatuslineParser().parse(data)
+
+    #expect(usage.fiveHour.percentRemaining == 100)
+    #expect(usage.weekly.percentRemaining == 81)
+}
+
+@Test
 func claudeParserIgnoresNullOrAbsentModelSpecificWeeklyLimits() throws {
     let nullModelSpecificLimitData = Data("""
     {

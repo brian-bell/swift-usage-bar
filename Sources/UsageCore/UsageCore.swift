@@ -225,7 +225,15 @@ private func usageWindow(usedPercentage: Int, resetAt: TimeInterval) -> UsageWin
 }
 
 private func percentRemaining(fromUsedPercentage usedPercentage: Int) -> Int {
-    min(100, max(0, 100 - usedPercentage))
+    if usedPercentage <= 0 {
+        return 100
+    }
+
+    if usedPercentage >= 100 {
+        return 0
+    }
+
+    return 100 - usedPercentage
 }
 
 private extension ProviderUsage {
