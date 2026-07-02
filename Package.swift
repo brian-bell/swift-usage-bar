@@ -1,0 +1,53 @@
+// swift-tools-version: 6.0
+
+import PackageDescription
+
+let package = Package(
+    name: "AIUsageBar",
+    platforms: [
+        .macOS(.v14)
+    ],
+    products: [
+        .library(
+            name: "UsageCore",
+            targets: ["UsageCore"]
+        ),
+        .executable(
+            name: "AIUsageBarApp",
+            targets: ["AIUsageBarApp"]
+        )
+    ],
+    targets: [
+        .target(
+            name: "UsageCore"
+        ),
+        .executableTarget(
+            name: "AIUsageBarApp",
+            dependencies: ["UsageCore"]
+        ),
+        .testTarget(
+            name: "UsageCoreTests",
+            dependencies: ["UsageCore"],
+            swiftSettings: [
+                .unsafeFlags([
+                    "-F",
+                    "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                ])
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-F",
+                    "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                    "-Xlinker",
+                    "-rpath",
+                    "-Xlinker",
+                    "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                    "-Xlinker",
+                    "-rpath",
+                    "-Xlinker",
+                    "/Library/Developer/CommandLineTools/Library/Developer/usr/lib",
+                ])
+            ]
+        )
+    ]
+)
