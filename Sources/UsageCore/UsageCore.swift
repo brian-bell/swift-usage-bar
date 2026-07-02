@@ -1,4 +1,6 @@
+import CryptoKit
 import Foundation
+import Security
 
 public enum UsageCore {
     public static let version = "0.1.0"
@@ -35,6 +37,8 @@ public enum ProviderID: CaseIterable, Hashable, Sendable {
 
 public enum StaleReason: Equatable, Sendable {
     case parseFailure
+    case networkError
+    case tokenExpired
 }
 
 public enum ProviderState: Equatable, Sendable {
@@ -47,6 +51,161 @@ public enum UsageStatusTone: Equatable, Sendable {
     case normal
     case warning
     case critical
+}
+
+public enum ClaudeStatuslineCacheReadResult: Equatable, Sendable {
+    case fresh(data: Data, usage: ProviderUsage, asOf: Date)
+    case stale(last: ProviderUsage?, reason: StaleReason, hint: String)
+}
+
+public struct ClaudeStatuslineCacheReader: Sendable {
+    private let cacheURL: URL
+    private let maximumAge: TimeInterval
+    private let parser: ClaudeStatuslineParser
+
+    public init(
+        cacheURL: URL,
+        maximumAge: TimeInterval,
+        parser: ClaudeStatuslineParser = ClaudeStatuslineParser()
+    ) {
+        self.cacheURL = cacheURL
+        self.maximumAge = maximumAge
+        self.parser = parser
+    }
+
+    public func read(now: Date) throws -> ClaudeStatuslineCacheReadResult {
+        guard FileManager.default.fileExists(atPath: cacheURL.path) else {
+            return .stale(
+                last: nil,
+                reason: .networkError,
+                hint: Self.configureStatuslineHint
+            )
+        }
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: cacheURL.path)
+        let modifiedAt = attributes[.modificationDate] as? Date ?? .distantPast
+        let data = try Data(contentsOf: cacheURL)
+        let usage = try parser.parse(data)
+
+        if now.timeIntervalSince(modifiedAt) > maximumAge {
+            return .stale(
+                last: usage,
+                reason: .networkError,
+                hint: Self.configureStatuslineHint
+            )
+        }
+
+        return .fresh(data: data, usage: usage, asOf: modifiedAt)
+    }
+
+    private static let configureStatuslineHint =
+        "Configure Claude Code statusline to write its cache."
+}
+
+public struct CodexCredential: Equatable, Sendable {
+    public let accessToken: String
+    public let accountID: String
+    public let expiresAt: Date
+
+    public init(accessToken: String, accountID: String, expiresAt: Date) {
+        self.accessToken = accessToken
+        self.accountID = accountID
+        self.expiresAt = expiresAt
+    }
+}
+
+public struct CodexCredentialParser: Sendable {
+    public init() {}
+
+    public func parse(_ data: Data) throws -> CodexCredential {
+        do {
+            let stored = try JSONDecoder().decode(CodexStoredCredential.self, from: data)
+            return CodexCredential(
+                accessToken: stored.tokens.accessToken,
+                accountID: stored.tokens.accountID,
+                expiresAt: try expiryDate(fromJWT: stored.tokens.accessToken)
+            )
+        } catch {
+            throw UsageParsingError.parseFailure
+        }
+    }
+}
+
+public enum CredentialIdentifier: Hashable, Sendable {
+    case claude
+    case codex
+}
+
+public protocol CredentialStore: Sendable {
+    func read(_ credential: CredentialIdentifier) -> Data?
+}
+
+public enum CodexCredentialReadResult: Equatable, Sendable {
+    case fresh(CodexCredential)
+    case stale(reason: StaleReason)
+}
+
+public struct CodexCredentialReader: Sendable {
+    private let store: any CredentialStore
+    private let parser: CodexCredentialParser
+
+    public init(
+        store: any CredentialStore,
+        parser: CodexCredentialParser = CodexCredentialParser()
+    ) {
+        self.store = store
+        self.parser = parser
+    }
+
+    public func read() throws -> CodexCredentialReadResult {
+        guard let data = store.read(.codex) else {
+            return .stale(reason: .tokenExpired)
+        }
+
+        return .fresh(try parser.parse(data))
+    }
+}
+
+public struct KeychainCredentialStore: CredentialStore {
+    private let accountResolver: @Sendable (CredentialIdentifier) -> String?
+
+    public init() {
+        self.accountResolver = Self.defaultAccount(for:)
+    }
+
+    public init(accountResolver: @escaping @Sendable (CredentialIdentifier) -> String?) {
+        self.accountResolver = accountResolver
+    }
+
+    public func read(_ credential: CredentialIdentifier) -> Data? {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: credential.keychainService,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+
+        if let account = accountResolver(credential) {
+            query[kSecAttrAccount as String] = account
+        }
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else {
+            return nil
+        }
+
+        return item as? Data
+    }
+
+    private static func defaultAccount(for credential: CredentialIdentifier) -> String? {
+        switch credential {
+        case .claude:
+            return nil
+        case .codex:
+            return "cli|\(codexHomeHashPrefix())"
+        }
+    }
 }
 
 public func tone(for usage: ProviderUsage, warningThreshold: Int = 20) -> UsageStatusTone {
@@ -197,6 +356,31 @@ private struct CodexUsageResponse: Decodable {
     }
 }
 
+private extension CredentialIdentifier {
+    var keychainService: String {
+        switch self {
+        case .claude:
+            return "Claude Code-credentials"
+        case .codex:
+            return "Codex Auth"
+        }
+    }
+}
+
+private struct CodexStoredCredential: Decodable {
+    let tokens: Tokens
+
+    struct Tokens: Decodable {
+        let accessToken: String
+        let accountID: String
+
+        enum CodingKeys: String, CodingKey {
+            case accessToken = "access_token"
+            case accountID = "account_id"
+        }
+    }
+}
+
 private struct CodexRateLimit: Decodable {
     let primaryWindow: CodexRateLimitWindow
     let secondaryWindow: CodexRateLimitWindow
@@ -204,6 +388,29 @@ private struct CodexRateLimit: Decodable {
     enum CodingKeys: String, CodingKey {
         case primaryWindow = "primary_window"
         case secondaryWindow = "secondary_window"
+    }
+}
+
+private struct JWTPayload: Decodable {
+    let exp: TimeInterval
+}
+
+private func expiryDate(fromJWT token: String) throws -> Date {
+    let segments = token.split(separator: ".", omittingEmptySubsequences: false)
+    guard segments.count >= 2 else {
+        throw UsageParsingError.parseFailure
+    }
+
+    let payloadSegment = String(segments[1])
+    guard let payloadData = Data(base64URLEncoded: payloadSegment) else {
+        throw UsageParsingError.parseFailure
+    }
+
+    do {
+        let payload = try JSONDecoder().decode(JWTPayload.self, from: payloadData)
+        return Date(timeIntervalSince1970: payload.exp)
+    } catch {
+        throw UsageParsingError.parseFailure
     }
 }
 
@@ -250,5 +457,33 @@ private extension ProviderID {
         case .codex:
             "#"
         }
+    }
+}
+
+private func codexHomeHashPrefix() -> String {
+    let environment = ProcessInfo.processInfo.environment
+    let rawPath = environment["CODEX_HOME"] ?? "\(environment["HOME"] ?? NSHomeDirectory())/.codex"
+    let canonicalPath = URL(fileURLWithPath: rawPath)
+        .standardizedFileURL
+        .resolvingSymlinksInPath()
+        .path
+    let digest = SHA256.hash(data: Data(canonicalPath.utf8))
+
+    return digest
+        .prefix(8)
+        .map { String(format: "%02x", $0) }
+        .joined()
+}
+
+private extension Data {
+    init?(base64URLEncoded string: String) {
+        var base64 = string
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+
+        let paddingCount = (4 - base64.count % 4) % 4
+        base64.append(String(repeating: "=", count: paddingCount))
+
+        self.init(base64Encoded: base64)
     }
 }
