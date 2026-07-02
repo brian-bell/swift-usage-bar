@@ -39,6 +39,7 @@ public enum StaleReason: Equatable, Sendable {
     case parseFailure
     case networkError
     case tokenExpired
+    case credentialUnavailable
 }
 
 public enum ProviderState: Equatable, Sendable {
@@ -85,7 +86,16 @@ public struct ClaudeStatuslineCacheReader: Sendable {
         let attributes = try FileManager.default.attributesOfItem(atPath: cacheURL.path)
         let modifiedAt = attributes[.modificationDate] as? Date ?? .distantPast
         let data = try Data(contentsOf: cacheURL)
-        let usage = try parser.parse(data)
+        let usage: ProviderUsage
+        do {
+            usage = try parser.parse(data)
+        } catch UsageParsingError.parseFailure {
+            return .stale(
+                last: nil,
+                reason: .parseFailure,
+                hint: Self.configureStatuslineHint
+            )
+        }
 
         if now.timeIntervalSince(modifiedAt) > maximumAge {
             return .stale(
@@ -120,6 +130,10 @@ public struct CodexCredentialParser: Sendable {
     public func parse(_ data: Data) throws -> CodexCredential {
         do {
             let stored = try JSONDecoder().decode(CodexStoredCredential.self, from: data)
+            guard stored.tokens.hasRequiredValues else {
+                throw UsageParsingError.parseFailure
+            }
+
             return CodexCredential(
                 accessToken: stored.tokens.accessToken,
                 accountID: stored.tokens.accountID,
@@ -132,12 +146,15 @@ public struct CodexCredentialParser: Sendable {
 }
 
 public enum CredentialIdentifier: Hashable, Sendable {
-    case claude
     case codex
 }
 
+public enum CredentialStoreReadError: Error, Equatable, Sendable {
+    case unavailable
+}
+
 public protocol CredentialStore: Sendable {
-    func read(_ credential: CredentialIdentifier) -> Data?
+    func read(_ credential: CredentialIdentifier) throws -> Data?
 }
 
 public enum CodexCredentialReadResult: Equatable, Sendable {
@@ -148,36 +165,80 @@ public enum CodexCredentialReadResult: Equatable, Sendable {
 public struct CodexCredentialReader: Sendable {
     private let store: any CredentialStore
     private let parser: CodexCredentialParser
+    private let now: @Sendable () -> Date
 
     public init(
         store: any CredentialStore,
-        parser: CodexCredentialParser = CodexCredentialParser()
+        parser: CodexCredentialParser = CodexCredentialParser(),
+        now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.store = store
         self.parser = parser
+        self.now = now
     }
 
     public func read() throws -> CodexCredentialReadResult {
-        guard let data = store.read(.codex) else {
+        let data: Data?
+        do {
+            data = try store.read(.codex)
+        } catch CredentialStoreReadError.unavailable {
+            return .stale(reason: .credentialUnavailable)
+        } catch {
+            return .stale(reason: .credentialUnavailable)
+        }
+
+        guard let data else {
             return .stale(reason: .tokenExpired)
         }
 
-        return .fresh(try parser.parse(data))
+        let credential: CodexCredential
+        do {
+            credential = try parser.parse(data)
+        } catch UsageParsingError.parseFailure {
+            return .stale(reason: .parseFailure)
+        }
+
+        guard credential.expiresAt > now() else {
+            return .stale(reason: .tokenExpired)
+        }
+
+        return .fresh(credential)
     }
 }
 
 public struct KeychainCredentialStore: CredentialStore {
-    private let accountResolver: @Sendable (CredentialIdentifier) -> String?
+    public typealias CopyMatching = @Sendable (
+        CFDictionary,
+        UnsafeMutablePointer<CFTypeRef?>?
+    ) -> OSStatus
+
+    private let accountResolver: @Sendable (CredentialIdentifier) -> String
+    private let copyMatching: CopyMatching
 
     public init() {
         self.accountResolver = Self.defaultAccount(for:)
+        self.copyMatching = SecItemCopyMatching
     }
 
-    public init(accountResolver: @escaping @Sendable (CredentialIdentifier) -> String?) {
+    public init(copyMatching: @escaping CopyMatching) {
+        self.accountResolver = Self.defaultAccount(for:)
+        self.copyMatching = copyMatching
+    }
+
+    init(codexHomePath: String, copyMatching: @escaping CopyMatching) {
+        self.accountResolver = { _ in codexKeychainAccount(codexHomePath: codexHomePath) }
+        self.copyMatching = copyMatching
+    }
+
+    public init(
+        accountResolver: @escaping @Sendable (CredentialIdentifier) -> String,
+        copyMatching: @escaping CopyMatching = SecItemCopyMatching
+    ) {
         self.accountResolver = accountResolver
+        self.copyMatching = copyMatching
     }
 
-    public func read(_ credential: CredentialIdentifier) -> Data? {
+    public func read(_ credential: CredentialIdentifier) throws -> Data? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: credential.keychainService,
@@ -185,25 +246,25 @@ public struct KeychainCredentialStore: CredentialStore {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
 
-        if let account = accountResolver(credential) {
-            query[kSecAttrAccount as String] = account
-        }
+        query[kSecAttrAccount as String] = accountResolver(credential)
 
         var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess else {
+        let status = copyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound {
             return nil
+        }
+
+        guard status == errSecSuccess else {
+            throw CredentialStoreReadError.unavailable
         }
 
         return item as? Data
     }
 
-    private static func defaultAccount(for credential: CredentialIdentifier) -> String? {
+    private static func defaultAccount(for credential: CredentialIdentifier) -> String {
         switch credential {
-        case .claude:
-            return nil
         case .codex:
-            return "cli|\(codexHomeHashPrefix())"
+            return codexKeychainAccount(codexHomePath: defaultCodexHomePath())
         }
     }
 }
@@ -358,12 +419,7 @@ private struct CodexUsageResponse: Decodable {
 
 private extension CredentialIdentifier {
     var keychainService: String {
-        switch self {
-        case .claude:
-            return "Claude Code-credentials"
-        case .codex:
-            return "Codex Auth"
-        }
+        "Codex Auth"
     }
 }
 
@@ -373,6 +429,11 @@ private struct CodexStoredCredential: Decodable {
     struct Tokens: Decodable {
         let accessToken: String
         let accountID: String
+
+        var hasRequiredValues: Bool {
+            !accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                !accountID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
 
         enum CodingKeys: String, CodingKey {
             case accessToken = "access_token"
@@ -460,10 +521,18 @@ private extension ProviderID {
     }
 }
 
-private func codexHomeHashPrefix() -> String {
+func codexKeychainAccount(codexHomePath: String) -> String {
+    "cli|\(codexHomeHashPrefix(codexHomePath: codexHomePath))"
+}
+
+private func defaultCodexHomePath() -> String {
     let environment = ProcessInfo.processInfo.environment
-    let rawPath = environment["CODEX_HOME"] ?? "\(environment["HOME"] ?? NSHomeDirectory())/.codex"
-    let canonicalPath = URL(fileURLWithPath: rawPath)
+
+    return environment["CODEX_HOME"] ?? "\(environment["HOME"] ?? NSHomeDirectory())/.codex"
+}
+
+private func codexHomeHashPrefix(codexHomePath: String) -> String {
+    let canonicalPath = URL(fileURLWithPath: codexHomePath)
         .standardizedFileURL
         .resolvingSymlinksInPath()
         .path

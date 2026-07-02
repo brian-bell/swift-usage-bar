@@ -71,6 +71,23 @@ func claudeStatuslineCacheReaderReturnsLastKnownUsageWhenCacheFileIsOld() throws
     ))
 }
 
+@Test
+func claudeStatuslineCacheReaderReturnsParseFailureWhenCacheIsMalformed() throws {
+    let cacheURL = try writeTemporaryCacheFile(
+        data: Data("not json".utf8),
+        modifiedAt: Date(timeIntervalSince1970: 1_783_000_000)
+    )
+    let reader = ClaudeStatuslineCacheReader(cacheURL: cacheURL, maximumAge: 300)
+
+    let result = try reader.read(now: Date(timeIntervalSince1970: 1_783_000_120))
+
+    #expect(result == .stale(
+        last: nil,
+        reason: .parseFailure,
+        hint: "Configure Claude Code statusline to write its cache."
+    ))
+}
+
 private func writeTemporaryCacheFile(data: Data, modifiedAt: Date) throws -> URL {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

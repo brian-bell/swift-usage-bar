@@ -69,3 +69,35 @@ private func expectParseFailure(_ operation: () throws -> Void) throws {
         Issue.record("Expected UsageParsingError.parseFailure, got \(error)")
     }
 }
+
+@Test
+func codexCredentialParserThrowsParseFailureWhenAccessTokenIsEmpty() throws {
+    let credentialJSON = Data("""
+    {
+      "tokens": {
+        "access_token": "",
+        "account_id": "account-123"
+      }
+    }
+    """.utf8)
+
+    try expectParseFailure {
+        _ = try CodexCredentialParser().parse(credentialJSON)
+    }
+}
+
+@Test
+func codexCredentialParserThrowsParseFailureWhenAccountIDIsBlank() throws {
+    let credentialJSON = Data("""
+    {
+      "tokens": {
+        "access_token": "\(dummyJWT(exp: Date(timeIntervalSince1970: 1_783_006_145)))",
+        "account_id": "  "
+      }
+    }
+    """.utf8)
+
+    try expectParseFailure {
+        _ = try CodexCredentialParser().parse(credentialJSON)
+    }
+}
