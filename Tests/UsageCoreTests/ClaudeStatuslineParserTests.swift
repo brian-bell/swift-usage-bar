@@ -55,7 +55,7 @@ func claudeParserClampsOverusedWindowsToZeroRemaining() throws {
 
 @Test
 func claudeParserIgnoresNullOrAbsentModelSpecificWeeklyLimits() throws {
-    let data = Data("""
+    let nullModelSpecificLimitData = Data("""
     {
       "rate_limits": {
         "five_hour": {
@@ -71,10 +71,32 @@ func claudeParserIgnoresNullOrAbsentModelSpecificWeeklyLimits() throws {
     }
     """.utf8)
 
-    let usage = try ClaudeStatuslineParser().parse(data)
+    let usageWithNullModelSpecificLimit = try ClaudeStatuslineParser()
+        .parse(nullModelSpecificLimitData)
 
-    #expect(usage.fiveHour.percentRemaining == 62)
-    #expect(usage.weekly.percentRemaining == 81)
+    #expect(usageWithNullModelSpecificLimit.fiveHour.percentRemaining == 62)
+    #expect(usageWithNullModelSpecificLimit.weekly.percentRemaining == 81)
+
+    let absentModelSpecificLimitsData = Data("""
+    {
+      "rate_limits": {
+        "five_hour": {
+          "used_percentage": 38,
+          "resets_at": 1783008000
+        },
+        "seven_day": {
+          "used_percentage": 19,
+          "resets_at": 1783555200
+        }
+      }
+    }
+    """.utf8)
+
+    let usageWithAbsentModelSpecificLimits = try ClaudeStatuslineParser()
+        .parse(absentModelSpecificLimitsData)
+
+    #expect(usageWithAbsentModelSpecificLimits.fiveHour.percentRemaining == 62)
+    #expect(usageWithAbsentModelSpecificLimits.weekly.percentRemaining == 81)
 }
 
 @Test
