@@ -74,6 +74,36 @@ public struct CodexUsageParser: Sendable {
     }
 }
 
+public enum CountdownFormatter {
+    public static func format(
+        resetAt: Date,
+        now: Date,
+        calendar: Calendar,
+        locale: Locale
+    ) -> String {
+        let remainingSeconds = resetAt.timeIntervalSince(now)
+        if remainingSeconds <= 0 {
+            return "resetting..."
+        }
+
+        if remainingSeconds >= 24 * 60 * 60 {
+            let formatter = DateFormatter()
+            formatter.calendar = calendar
+            formatter.locale = locale
+            formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "EEE h:mm a"
+
+            return "resets \(formatter.string(from: resetAt))"
+        }
+
+        let remainingMinutes = max(0, Int(remainingSeconds / 60))
+        let hours = remainingMinutes / 60
+        let minutes = remainingMinutes % 60
+
+        return "resets in \(hours)h \(minutes)m"
+    }
+}
+
 private struct ClaudeStatuslineResponse: Decodable {
     let rateLimits: ClaudeStatuslineRateLimits
 
