@@ -28,6 +28,21 @@ public enum UsageParsingError: Error, Equatable, Sendable {
     case parseFailure
 }
 
+public enum ProviderID: CaseIterable, Hashable, Sendable {
+    case claude
+    case codex
+}
+
+public enum StaleReason: Equatable, Sendable {
+    case parseFailure
+}
+
+public enum ProviderState: Equatable, Sendable {
+    case fresh(ProviderUsage, asOf: Date)
+    case stale(last: ProviderUsage?, reason: StaleReason)
+    case hidden
+}
+
 public struct ClaudeStatuslineParser: Sendable {
     public init() {}
 
@@ -104,6 +119,29 @@ public enum CountdownFormatter {
     }
 }
 
+public enum MenuBarTitleFormatter {
+    public static func format(_ states: [ProviderID: ProviderState]) -> AttributedString {
+        let segments = ProviderID.allCases.compactMap { provider -> String? in
+            guard let state = states[provider] else {
+                return "\(provider.symbol) --/--"
+            }
+
+            switch state {
+            case let .fresh(usage, _):
+                return "\(provider.symbol) \(usage.remainingPair)"
+            case let .stale(last: usage?, reason: _):
+                return "\(provider.symbol) ~\(usage.remainingPair)"
+            case .stale(last: nil, reason: _):
+                return "\(provider.symbol) --/--"
+            case .hidden:
+                return nil
+            }
+        }
+
+        return AttributedString(segments.joined(separator: "  "))
+    }
+}
+
 private struct ClaudeStatuslineResponse: Decodable {
     let rateLimits: ClaudeStatuslineRateLimits
 
@@ -169,4 +207,21 @@ private func usageWindow(usedPercentage: Int, resetAt: TimeInterval) -> UsageWin
 
 private func percentRemaining(fromUsedPercentage usedPercentage: Int) -> Int {
     min(100, max(0, 100 - usedPercentage))
+}
+
+private extension ProviderUsage {
+    var remainingPair: String {
+        "\(fiveHour.percentRemaining)/\(weekly.percentRemaining)"
+    }
+}
+
+private extension ProviderID {
+    var symbol: String {
+        switch self {
+        case .claude:
+            "*"
+        case .codex:
+            "#"
+        }
+    }
 }
