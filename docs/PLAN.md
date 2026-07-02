@@ -14,7 +14,7 @@ A native SwiftUI menu bar app that always displays **percent remaining** for fou
 
 ## Current observations
 
-- `/Users/brian/dev/mac-ai-usage-bar` is empty; not a git repo. Everything including the test harness is greenfield.
+- The Phase 0 worktree now contains the initial Swift package skeleton, sanitized discovery fixtures, endpoint notes, and the Claude statusline cache wrapper. Later phases should build on this package rather than reinitializing the repository.
 - Claude Code credentials confirmed in Keychain (service `Claude Code-credentials`), but the live usage endpoint returned HTTP 429 during Phase 0. Claude usage now comes from Claude Code's statusline JSON via `scripts/claude-statusline-cache`; the app reads the cached `rate_limits` payload instead of calling the private endpoint.
 - Codex auth migrated from `~/.codex/auth.json` to Keychain (backup file `~/.codex/auth.json.file-backed-backup` present). **Codex CLI is open source (`openai/codex`)** — its Rust source is the authoritative reference for both the Keychain entry name and the usage/rate-limit endpoint.
 - Toolchain: Swift 6.3.3, macOS 26.5. Target macOS 14+.
@@ -75,7 +75,7 @@ Manual/spike work that de-risks everything downstream. No production code except
 - `git init`, `main` branch, then immediately branch `feat/scaffold` (never commit to main).
 - `Package.swift` with the three targets above.
 - **Red:** `@Test func harnessWorks() { #expect(UsageCore.version == "0.1.0") }` — fails to compile (no `UsageCore.version`).
-- **Green:** add the constant. Run `swift test` → 1 pass. This proves the build+test loop before any real logic.
+- **Green:** add the constant. Run `swift test --enable-swift-testing` to build the Swift Testing bundle, then `scripts/run-swift-tests` to prove the `harnessWorks()` symbol is linked and the built `UsageCore.version` smoke assertion executes.
 
 ### 0.2 Capture Claude credential shape + statusline fallback
 
@@ -89,7 +89,7 @@ Manual/spike work that de-risks everything downstream. No production code except
 - Read `openai/codex` source (GitHub) to find: the Keychain service/account name it uses on macOS, the JWT layout (for expiry detection), and the endpoint/headers it queries for rate-limit status.
 - One targeted Keychain read to confirm, one `curl` to capture `Tests/Fixtures/codex-usage.json` (sanitized).
 
-**Exit criteria:** sanitized Claude statusline and Codex usage fixtures committed; a `docs/endpoints.md` noting Claude's direct endpoint failure, the statusline fallback/cache path, Codex URL, headers, auth, and expiry-detection method. `scripts/claude-statusline-cache` and its integration test must be committed. `swift build && swift test` must pass.
+**Exit criteria:** sanitized Claude statusline and Codex usage fixtures committed; a `docs/endpoints.md` noting Claude's direct endpoint failure, the statusline fallback/cache path, Codex URL, headers, auth, and expiry-detection method. `scripts/claude-statusline-cache` and its integration test must be committed. `swift build && swift test` must pass; on CommandLineTools-only installs where SwiftPM builds but does not launch Swift Testing bundles, `scripts/run-swift-tests` must also pass to prove the Swift Testing harness is linked and `UsageCore.version` is executable through the built module.
 
 **Stop condition:** if the Codex endpoint can't be called successfully from `curl` (e.g. Codex requires request signing we can't replicate), stop and report. For Claude, a 429 from the direct endpoint is acceptable only if the statusline-cache fallback and sanitized `claude-statusline.json` fixture are in place. Do not fabricate direct API fixtures.
 
@@ -257,7 +257,8 @@ Manual, documented in `docs/acceptance.md`:
 | Command | Expectation |
 |---|---|
 | `swift build` | clean build, no warnings under Swift 6 strict concurrency |
-| `swift test` | all Swift Testing suites green (the loop's red→green evidence) |
+| `swift test --enable-swift-testing` | SwiftPM builds the Swift Testing bundle successfully |
+| `scripts/run-swift-tests` | CommandLineTools-safe harness check: builds/tests, confirms `harnessWorks()` is linked, and executes the `UsageCore.version` smoke assertion against the built module |
 | `swift test --filter Integration` | manual-only Keychain/live-endpoint checks |
 | `./scripts/bundle.sh && codesign -v AIUsageBar.app` | bundle assembles and signature verifies |
 

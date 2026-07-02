@@ -28,6 +28,8 @@ let package = Package(
         .testTarget(
             name: "UsageCoreTests",
             dependencies: ["UsageCore"],
+            // CommandLineTools-only Swift 6.3 exposes Swift Testing from this
+            // framework path, but does not provide XCTest.framework.
             swiftSettings: [
                 .unsafeFlags([
                     "-F",
