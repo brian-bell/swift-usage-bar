@@ -17,13 +17,11 @@ cat
 SH
 chmod 755 "$fake_bin/ccstatusline"
 
-input_file="$tmpdir/input.json"
+input_file="$repo_root/Tests/Fixtures/claude-statusline.json"
 actual_stdout="$tmpdir/stdout"
 actual_stderr="$tmpdir/stderr"
 args_file="$tmpdir/args"
 cache_file="$tmpdir/cache/claude-status.json"
-
-printf '%s\n' '{"session_id":"abc","rate_limits":{"five_hour":{"used_percentage":42,"resets_at":"2026-07-02T16:00:00Z"}}}' >"$input_file"
 
 set +e
 PATH="$fake_bin:$PATH" \
