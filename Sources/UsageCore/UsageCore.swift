@@ -48,6 +48,10 @@ public enum ProviderState: Equatable, Sendable {
     case hidden
 }
 
+public protocol UsageProvider: Sendable {
+    func fetch(previous: ProviderUsage?) async -> ProviderState
+}
+
 public enum UsageStatusTone: Equatable, Sendable {
     case normal
     case warning
@@ -57,6 +61,10 @@ public enum UsageStatusTone: Equatable, Sendable {
 public enum ClaudeStatuslineCacheReadResult: Equatable, Sendable {
     case fresh(data: Data, usage: ProviderUsage, asOf: Date)
     case stale(last: ProviderUsage?, reason: StaleReason, hint: String)
+}
+
+public protocol ClaudeStatuslineCacheReading: Sendable {
+    func read(now: Date) throws -> ClaudeStatuslineCacheReadResult
 }
 
 public struct ClaudeStatuslineCacheReader: Sendable {
@@ -110,6 +118,41 @@ public struct ClaudeStatuslineCacheReader: Sendable {
 
     private static let configureStatuslineHint =
         "Configure Claude Code statusline to write its cache."
+}
+
+extension ClaudeStatuslineCacheReader: ClaudeStatuslineCacheReading {}
+
+public struct ClaudeUsageProvider: UsageProvider {
+    private let cacheReader: any ClaudeStatuslineCacheReading
+    private let now: @Sendable () -> Date
+
+    public init(
+        cacheReader: any ClaudeStatuslineCacheReading,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.cacheReader = cacheReader
+        self.now = now
+    }
+
+    public func fetch(previous: ProviderUsage?) async -> ProviderState {
+        do {
+            return Self.providerState(from: try cacheReader.read(now: now()), previous: previous)
+        } catch {
+            return .stale(last: previous, reason: .networkError)
+        }
+    }
+
+    private static func providerState(
+        from result: ClaudeStatuslineCacheReadResult,
+        previous: ProviderUsage?
+    ) -> ProviderState {
+        switch result {
+        case let .fresh(data: _, usage: usage, asOf: asOf):
+            return .fresh(usage, asOf: asOf)
+        case let .stale(last: last, reason: reason, hint: _):
+            return .stale(last: last ?? previous, reason: reason)
+        }
+    }
 }
 
 public struct CodexCredential: Equatable, Sendable {
