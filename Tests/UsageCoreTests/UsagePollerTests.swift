@@ -138,6 +138,66 @@ func usagePollerStopPreventsLaterTimerFetches() async {
 }
 
 @Test
+func usagePollerStopPreventsInFlightResultsFromUpdatingState() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_500))
+    let appState = await AppState()
+    let claudeUsage = sampleUsage(fiveHour: 62, weekly: 81)
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 5_401))])
+    let claude = BlockingUsageProvider(result: .fresh(claudeUsage, asOf: Date(timeIntervalSince1970: 5_400)))
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await claude.waitUntilStarted()
+    await poller.stop()
+    await claude.release()
+    await claude.waitUntilFinished()
+    await Task.yield()
+
+    #expect(await appState.providerState(for: .claude) == nil)
+    #expect(await appState.lastUpdated(provider: .claude) == nil)
+}
+
+@Test
+func stalePollChainDoesNotMarkRestartedPollerIdle() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_750))
+    let appState = await AppState()
+    let claude = BlockingUsageProvider(result: .fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 5_700)))
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 5_701))])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await claude.waitForStartCount(1)
+    await poller.stop()
+
+    await poller.start()
+    await claude.waitForStartCount(2)
+    await claude.release()
+    await claude.waitForFinishCount(1)
+    await Task.yield()
+
+    await poller.refreshNow()
+    await Task.yield()
+
+    #expect(await claude.startCount == 2)
+
+    await claude.release()
+    await claude.waitForFinishCount(2)
+    await claude.waitForStartCount(3)
+    await claude.release()
+    await claude.waitForFinishCount(3)
+    await poller.waitUntilIdle()
+    await poller.stop()
+}
+
+@Test
 func refreshNowFetchesImmediatelyAndResetsTimerPhase() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 6_000))
     let appState = await AppState()
@@ -172,9 +232,10 @@ func refreshNowFetchesImmediatelyAndResetsTimerPhase() async {
 func appStateLastUpdatedUsesSuccessfulRefreshCompletionTime() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 7_000))
     let appState = await AppState()
+    let claudeUsage = sampleUsage(fiveHour: 62, weekly: 81)
     let claude = RecordingUsageProvider(results: [
-        .fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 6_900)),
-        .stale(last: sampleUsage(fiveHour: 62, weekly: 81), reason: .networkError),
+        .fresh(claudeUsage, asOf: Date(timeIntervalSince1970: 6_900)),
+        .stale(last: nil, reason: .networkError),
     ])
     let codex = RecordingUsageProvider(results: [
         .stale(last: nil, reason: .networkError),
@@ -203,6 +264,7 @@ func appStateLastUpdatedUsesSuccessfulRefreshCompletionTime() async {
     #expect(await appState.lastUpdated(provider: .claude) == Date(timeIntervalSince1970: 7_000))
     #expect(await appState.lastUpdated(provider: .codex) == Date(timeIntervalSince1970: 7_020))
     #expect(await appState.lastAttemptedRefresh(provider: .claude) == Date(timeIntervalSince1970: 7_020))
+    #expect(await appState.providerState(for: .claude) == .stale(last: claudeUsage, reason: .networkError))
 
     await poller.stop()
 }
@@ -362,7 +424,7 @@ private actor BlockingUsageProvider: UsageProvider {
     private let result: ProviderState
     private var startWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var finishWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
     private(set) var startCount = 0
     private(set) var finishCount = 0
     private(set) var isSuspendedInFetch = false
@@ -376,9 +438,9 @@ private actor BlockingUsageProvider: UsageProvider {
         isSuspendedInFetch = true
         resumeStartWaiters()
         await withCheckedContinuation { continuation in
-            releaseContinuation = continuation
+            releaseContinuations.append(continuation)
         }
-        isSuspendedInFetch = false
+        isSuspendedInFetch = !releaseContinuations.isEmpty
         finishCount += 1
         resumeFinishWaiters()
 
@@ -386,8 +448,13 @@ private actor BlockingUsageProvider: UsageProvider {
     }
 
     func release() {
-        releaseContinuation?.resume()
-        releaseContinuation = nil
+        guard !releaseContinuations.isEmpty else {
+            return
+        }
+
+        let continuation = releaseContinuations.removeFirst()
+        isSuspendedInFetch = !releaseContinuations.isEmpty
+        continuation.resume()
     }
 
     func waitUntilStarted() async {

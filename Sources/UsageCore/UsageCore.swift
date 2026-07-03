@@ -126,8 +126,16 @@ public final class AppState: @unchecked Sendable {
         state: ProviderState,
         completedAt: Date
     ) {
-        providerStates[provider] = state
-        if case .fresh = state {
+        let resolvedState: ProviderState
+        switch state {
+        case let .stale(last: nil, reason: reason):
+            resolvedState = .stale(last: previousUsage(provider: provider), reason: reason)
+        default:
+            resolvedState = state
+        }
+
+        providerStates[provider] = resolvedState
+        if case .fresh = resolvedState {
             lastSuccessfulRefreshes[provider] = completedAt
         }
     }
@@ -144,6 +152,7 @@ public actor UsagePoller {
     private var isRunning = false
     private var isPolling = false
     private var pendingPoll = false
+    private var pollGeneration: UInt64 = 0
     private var timerGeneration: UInt64 = 0
     private var timerTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
@@ -170,6 +179,7 @@ public actor UsagePoller {
         }
 
         isRunning = true
+        pollGeneration &+= 1
         startWakeTask()
         requestPoll()
     }
@@ -178,6 +188,7 @@ public actor UsagePoller {
         isRunning = false
         isPolling = false
         pendingPoll = false
+        pollGeneration &+= 1
         timerGeneration &+= 1
         timerTask?.cancel()
         pollTask?.cancel()
@@ -248,14 +259,19 @@ public actor UsagePoller {
         }
 
         isPolling = true
+        let generation = pollGeneration
         pollTask = Task {
-            await self.runPollChain()
+            await self.runPollChain(generation: generation)
         }
     }
 
-    private func runPollChain() async {
+    private func runPollChain(generation: UInt64) async {
         while isRunning, !Task.isCancelled {
-            await runPollCycle()
+            await runPollCycle(generation: generation)
+
+            guard generation == pollGeneration else {
+                return
+            }
 
             if pendingPoll, isRunning, !Task.isCancelled {
                 pendingPoll = false
@@ -271,12 +287,16 @@ public actor UsagePoller {
             return
         }
 
+        guard generation == pollGeneration else {
+            return
+        }
+
         isPolling = false
         pollTask = nil
         resumeIdleWaiters()
     }
 
-    private func runPollCycle() async {
+    private func runPollCycle(generation: UInt64) async {
         let providers = providers
         let appState = appState
         let clock = clock
@@ -304,6 +324,10 @@ public actor UsagePoller {
 
             for await result in group {
                 guard let result else {
+                    continue
+                }
+
+                guard isRunning, generation == pollGeneration, !Task.isCancelled else {
                     continue
                 }
 
