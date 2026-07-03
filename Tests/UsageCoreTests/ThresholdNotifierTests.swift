@@ -174,6 +174,32 @@ func thresholdNotifierRearmsOnlyWindowWhoseResetCycleChanges() async {
 }
 
 @Test
+func thresholdNotifierSendsForNewResetCycleAlreadyBelowThreshold() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let firstReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let secondReset = Date(timeIntervalSince1970: 1_783_026_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 16, fiveHourReset: secondReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 18, threshold: 20, resetsAt: firstReset),
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 16, threshold: 20, resetsAt: secondReset),
+    ])
+}
+
+@Test
 func thresholdNotifierTreatsNilAndChangedKnownResetCyclesAsDistinct() async {
     let sender = RecordingNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
@@ -277,6 +303,31 @@ func thresholdNotifierUsesLatestThresholdWithoutSynthesizingCrossings() async {
 
     #expect(await sender.sentNotifications() == [
         thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 18, threshold: 20, resetsAt: reset),
+    ])
+}
+
+@Test
+func thresholdNotifierAllowsRealCrossingAfterThresholdChanges() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_783_008_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 35, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        threshold: 30
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 18, threshold: 20, resetsAt: reset),
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 25, threshold: 30, resetsAt: reset),
     ])
 }
 

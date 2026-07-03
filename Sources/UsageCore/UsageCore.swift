@@ -144,16 +144,22 @@ public actor ThresholdNotifier {
         }
 
         for window in current.windows(comparedWith: previous) {
-            guard window.previous.percentRemaining >= threshold,
-                  window.current.percentRemaining < threshold
-            else {
+            let previousResetCycle = ResetCycle(resetsAt: window.previous.resetsAt)
+            let currentResetCycle = ResetCycle(resetsAt: window.current.resetsAt)
+            let crossedThreshold = window.previous.percentRemaining >= threshold
+                && window.current.percentRemaining < threshold
+            let newResetCycleAlreadyBelowThreshold = previousResetCycle != currentResetCycle
+                && window.current.percentRemaining < threshold
+
+            guard crossedThreshold || newResetCycleAlreadyBelowThreshold else {
                 continue
             }
 
             let key = ThresholdNotificationKey(
                 provider: provider,
                 window: window.kind,
-                resetCycle: ResetCycle(resetsAt: window.current.resetsAt)
+                threshold: threshold,
+                resetCycle: currentResetCycle
             )
             guard firedCycles.insert(key).inserted else {
                 continue
@@ -173,6 +179,7 @@ public actor ThresholdNotifier {
 private struct ThresholdNotificationKey: Hashable, Sendable {
     let provider: ProviderID
     let window: UsageWindowKind
+    let threshold: Int
     let resetCycle: ResetCycle
 }
 
