@@ -3,11 +3,6 @@ import Foundation
 import UsageCore
 import UserNotifications
 
-@main
-struct AIUsageBarApp {
-    static func main() {}
-}
-
 final class UserNotificationSender: NotificationSending, @unchecked Sendable {
     private let center: any NotificationCenterClient
     private let authorizationLock = NSLock()
@@ -103,10 +98,10 @@ enum NotificationAuthorizationStatus: Sendable {
 }
 
 final class SystemNotificationCenterClient: NotificationCenterClient, @unchecked Sendable {
-    private let center: UNUserNotificationCenter
+    private let injectedCenter: UNUserNotificationCenter?
 
-    init(center: UNUserNotificationCenter = .current()) {
-        self.center = center
+    init(center: UNUserNotificationCenter? = nil) {
+        self.injectedCenter = center
     }
 
     func authorizationStatus() async -> NotificationAuthorizationStatus {
@@ -130,6 +125,10 @@ final class SystemNotificationCenterClient: NotificationCenterClient, @unchecked
 
     func add(_ request: UNNotificationRequest) async throws {
         try await center.add(request)
+    }
+
+    private var center: UNUserNotificationCenter {
+        injectedCenter ?? .current()
     }
 }
 

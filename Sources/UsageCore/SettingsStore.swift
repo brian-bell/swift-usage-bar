@@ -1,6 +1,6 @@
 import Foundation
 
-public final class SettingsStore {
+public final class SettingsStore: @unchecked Sendable {
     private enum Defaults {
         static let pollInterval = UsagePoller.defaultInterval
         static let thresholdPercent = 20

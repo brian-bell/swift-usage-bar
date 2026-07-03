@@ -278,6 +278,16 @@ public final class AppState: @unchecked Sendable {
         providerStates[provider] == .hidden
     }
 
+    public func setProvider(_ provider: ProviderID, visible: Bool) {
+        if visible {
+            if providerStates[provider] == .hidden {
+                providerStates.removeValue(forKey: provider)
+            }
+        } else {
+            providerStates[provider] = .hidden
+        }
+    }
+
     public func recordRefreshAttempt(provider: ProviderID, at attemptedAt: Date) {
         lastAttemptedRefreshes[provider] = attemptedAt
     }
