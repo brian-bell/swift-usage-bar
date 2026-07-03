@@ -93,7 +93,48 @@ verify_bundle() {
 build_bundle() {
     app_path="$1"
     validate_app_path "$app_path"
-    fail "bundle build is not implemented yet"
+
+    swift build --package-path "$repo_root" -c release --product "$product_name"
+    bin_path="$(swift build --package-path "$repo_root" -c release --show-bin-path)"
+    built_executable="$bin_path/$product_name"
+    if [ ! -x "$built_executable" ]; then
+        fail "release executable not found: $built_executable"
+    fi
+
+    rm -rf "$app_path"
+    mkdir -p "$app_path/Contents/MacOS"
+
+    plist="$app_path/Contents/Info.plist"
+    cat >"$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>AIUsageBar</string>
+    <key>CFBundleExecutable</key>
+    <string>$product_name</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.brianbell.AIUsageBar</string>
+    <key>CFBundleName</key>
+    <string>AIUsageBar</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+
+    install -m 755 "$built_executable" "$app_path/Contents/MacOS/$product_name"
+    codesign --force --sign - "$app_path"
+    verify_bundle "$app_path"
 }
 
 mode="build"

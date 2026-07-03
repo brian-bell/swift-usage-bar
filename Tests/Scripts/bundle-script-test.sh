@@ -36,3 +36,17 @@ assert_fails_with "missing Contents/Info.plist" "$bundle_script" --verify "$malf
 assert_fails_with "app path must not be empty" "$bundle_script" --output ""
 assert_fails_with "app path must not be /" "$bundle_script" --output /
 assert_fails_with "app path must end in .app" "$bundle_script" --output "$tmpdir/not-an-app"
+
+built_app="$tmpdir/AIUsageBar.app"
+mkdir -p "$built_app/Contents/MacOS"
+touch "$built_app/Contents/MacOS/stale-file"
+
+(cd "$tmpdir" && "$bundle_script" --output "$built_app")
+
+if [ -e "$built_app/Contents/MacOS/stale-file" ]; then
+    printf 'expected build to remove stale bundle contents\n' >&2
+    exit 1
+fi
+
+"$bundle_script" --verify "$built_app"
+codesign -v "$built_app"
