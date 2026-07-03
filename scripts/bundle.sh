@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 default_app_path="$repo_root/AIUsageBar.app"
 product_name="AIUsageBarApp"
+bundle_identifier="dev.brianbell.AIUsageBar"
 
 usage() {
     cat <<'USAGE'
@@ -90,6 +91,7 @@ verify_bundle() {
         fail "invalid Info.plist: $plist"
     fi
 
+    expect_plist_value "$plist" CFBundleIdentifier "$bundle_identifier"
     expect_plist_value "$plist" CFBundleExecutable "$product_name"
     expect_plist_value "$plist" CFBundlePackageType APPL
     expect_plist_value "$plist" LSUIElement true
@@ -105,6 +107,30 @@ verify_bundle() {
 
     if ! codesign -v "$app_path" >/dev/null 2>&1; then
         fail "codesign verification failed: $app_path"
+    fi
+}
+
+replace_with_staged_bundle() {
+    local staged_app="$1"
+    local app_path="$2"
+    local staging_parent="$3"
+    local backup_app=""
+
+    if [ -e "$app_path" ]; then
+        backup_app="$staging_parent/PreviousAIUsageBar.app"
+        mv "$app_path" "$backup_app"
+    fi
+
+    if ! mv "$staged_app" "$app_path"; then
+        if [ -n "$backup_app" ] && [ -e "$backup_app" ]; then
+            rm -rf "$app_path"
+            mv "$backup_app" "$app_path" || true
+        fi
+        fail "failed to install app bundle: $app_path"
+    fi
+
+    if [ -n "$backup_app" ]; then
+        rm -rf "$backup_app"
     fi
 }
 
@@ -143,7 +169,7 @@ build_bundle() {
     <key>CFBundleExecutable</key>
     <string>$product_name</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.brianbell.AIUsageBar</string>
+    <string>$bundle_identifier</string>
     <key>CFBundleName</key>
     <string>AIUsageBar</string>
     <key>CFBundlePackageType</key>
@@ -164,8 +190,7 @@ PLIST
     codesign --force --sign - "$staged_app"
     verify_bundle "$staged_app"
 
-    rm -rf "$app_path"
-    mv "$staged_app" "$app_path"
+    replace_with_staged_bundle "$staged_app" "$app_path" "$staging_parent"
     rm -rf "$staging_parent"
     verify_bundle "$app_path"
 }

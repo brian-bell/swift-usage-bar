@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 bundle_script="$repo_root/scripts/bundle.sh"
 product_name="AIUsageBarApp"
+bundle_identifier="dev.brianbell.AIUsageBar"
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -33,6 +34,7 @@ write_info_plist() {
     executable="${2:-$product_name}"
     package_type="${3:-APPL}"
     lsui_element="${4:-true}"
+    identifier="${5:-$bundle_identifier}"
 
     mkdir -p "$app_path/Contents"
     if [ "$lsui_element" = "true" ]; then
@@ -46,6 +48,16 @@ write_info_plist() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+PLIST
+
+    if [ "$identifier" != "__omit__" ]; then
+        cat >>"$app_path/Contents/Info.plist" <<PLIST
+    <key>CFBundleIdentifier</key>
+    <string>$identifier</string>
+PLIST
+    fi
+
+    cat >>"$app_path/Contents/Info.plist" <<PLIST
     <key>CFBundleExecutable</key>
     <string>$executable</string>
     <key>CFBundlePackageType</key>
@@ -81,6 +93,16 @@ assert_fails_with "invalid Info.plist" "$bundle_script" --verify "$invalid_plist
 wrong_executable_app="$tmpdir/WrongExecutable.app"
 write_info_plist "$wrong_executable_app" "OtherExecutable"
 assert_fails_with "CFBundleExecutable expected $product_name" "$bundle_script" --verify "$wrong_executable_app"
+
+missing_identifier_app="$tmpdir/MissingIdentifier.app"
+write_info_plist "$missing_identifier_app" "$product_name" "APPL" "true" "__omit__"
+write_executable "$missing_identifier_app"
+assert_fails_with "CFBundleIdentifier expected $bundle_identifier" "$bundle_script" --verify "$missing_identifier_app"
+
+wrong_identifier_app="$tmpdir/WrongIdentifier.app"
+write_info_plist "$wrong_identifier_app" "$product_name" "APPL" "true" "com.example.Other"
+write_executable "$wrong_identifier_app"
+assert_fails_with "CFBundleIdentifier expected $bundle_identifier" "$bundle_script" --verify "$wrong_identifier_app"
 
 wrong_package_app="$tmpdir/WrongPackage.app"
 write_info_plist "$wrong_package_app" "$product_name" "BNDL"
