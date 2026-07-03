@@ -63,6 +63,92 @@ func codexUsageProviderOmitsAccountHeaderWhenCredentialHasNoAccountID() async th
     #expect(request.value(forHTTPHeaderField: "ChatGPT-Account-Id") == nil)
 }
 
+@Test
+func codexUsageProviderMapsCredentialFailuresWithoutSendingRequest() async throws {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
+    let cases: [(CodexCredentialReadResult, StaleReason)] = [
+        (.stale(reason: .tokenExpired), .tokenExpired),
+        (.stale(reason: .credentialUnavailable), .credentialUnavailable),
+        (.stale(reason: .parseFailure), .parseFailure),
+    ]
+
+    for (credentialResult, expectedReason) in cases {
+        let transport = FakeHTTPTransport(response: (
+            try fixtureData("codex-usage.json"),
+            try httpResponse(statusCode: 200)
+        ))
+        let provider = CodexUsageProvider(
+            credentialReader: FakeCodexCredentialReader(result: credentialResult),
+            transport: transport,
+            now: { Date(timeIntervalSince1970: 1_783_000_120) }
+        )
+
+        let state = await provider.fetch(previous: previous)
+
+        #expect(state == .stale(last: previous, reason: expectedReason))
+        #expect(transport.requests.isEmpty)
+    }
+}
+
+@Test
+func codexUsageProviderMapsHTTPFailuresToStaleReasons() async throws {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
+    let cases: [(Int, StaleReason)] = [
+        (401, .tokenExpired),
+        (429, .networkError),
+        (500, .networkError),
+        (503, .networkError),
+    ]
+
+    for (statusCode, expectedReason) in cases {
+        let transport = FakeHTTPTransport(response: (
+            try fixtureData("codex-usage.json"),
+            try httpResponse(statusCode: statusCode)
+        ))
+        let provider = CodexUsageProvider(
+            credentialReader: FakeCodexCredentialReader(result: .fresh(validCredential())),
+            transport: transport,
+            now: { Date(timeIntervalSince1970: 1_783_000_120) }
+        )
+
+        let state = await provider.fetch(previous: previous)
+
+        #expect(state == .stale(last: previous, reason: expectedReason))
+        #expect(transport.requests.count == 1)
+    }
+}
+
+@Test
+func codexUsageProviderMapsMalformedResponseBodyToParseFailure() async throws {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(result: .fresh(validCredential())),
+        transport: FakeHTTPTransport(response: (
+            Data("not json".utf8),
+            try httpResponse(statusCode: 200)
+        )),
+        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+    )
+
+    let state = await provider.fetch(previous: previous)
+
+    #expect(state == .stale(last: previous, reason: .parseFailure))
+}
+
+@Test
+func codexUsageProviderMapsTransportThrowToNetworkError() async {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(result: .fresh(validCredential())),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+    )
+
+    let state = await provider.fetch(previous: previous)
+
+    #expect(state == .stale(last: previous, reason: .networkError))
+}
+
 private final class FakeCodexCredentialReader: CodexCredentialReading, @unchecked Sendable {
     private let result: CodexCredentialReadResult
 
@@ -76,17 +162,49 @@ private final class FakeCodexCredentialReader: CodexCredentialReading, @unchecke
 }
 
 private final class FakeHTTPTransport: HTTPTransport, @unchecked Sendable {
-    private let response: (Data, HTTPURLResponse)
+    private let response: (Data, HTTPURLResponse)?
+    private let error: (any Error)?
     private(set) var requests: [URLRequest] = []
 
     init(response: (Data, HTTPURLResponse)) {
         self.response = response
+        self.error = nil
+    }
+
+    init(error: any Error) {
+        self.response = nil
+        self.error = error
     }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         requests.append(request)
-        return response
+        if let error {
+            throw error
+        }
+
+        return response!
     }
+}
+
+private func validCredential() -> CodexCredential {
+    CodexCredential(
+        accessToken: "access-token",
+        accountID: "account-123",
+        expiresAt: Date(timeIntervalSince1970: 1_783_006_145)
+    )
+}
+
+private func sampleUsage(fiveHour: Int, weekly: Int) -> ProviderUsage {
+    ProviderUsage(
+        fiveHour: UsageWindow(
+            percentRemaining: fiveHour,
+            resetsAt: Date(timeIntervalSince1970: 1_783_008_000)
+        ),
+        weekly: UsageWindow(
+            percentRemaining: weekly,
+            resetsAt: Date(timeIntervalSince1970: 1_783_555_200)
+        )
+    )
 }
 
 private func httpResponse(statusCode: Int) throws -> HTTPURLResponse {
