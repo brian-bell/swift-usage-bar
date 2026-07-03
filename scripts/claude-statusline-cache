@@ -24,11 +24,54 @@ trap cleanup EXIT
 cat >"$input_tmp"
 chmod 600 "$input_tmp"
 
-cache_tmp="$(mktemp "$cache_dir/${cache_base}.tmp.XXXXXX")"
-cp "$input_tmp" "$cache_tmp"
-chmod 600 "$cache_tmp"
-mv "$cache_tmp" "$cache_file"
-cache_tmp=""
+# Multiple concurrent Claude Code sessions all write this cache, and idle
+# sessions keep re-rendering their statusline with rate limits from their
+# last API response. Only overwrite the cache when the incoming payload is
+# at least as fresh, using the monotonic structure of the rate-limit data:
+# a later weekly reset means a new cycle; within a cycle, usage only climbs.
+# Prints "skip" to reject the write; anything else (including a python3
+# failure) falls open to the original always-write behavior.
+freshness_decision() {
+    python3 - "$1" "$2" 2>/dev/null <<'PY' || printf 'write'
+import json
+import sys
+
+
+def windows(path):
+    with open(path) as f:
+        limits = json.load(f)["rate_limits"]
+    weekly, five_hour = limits["seven_day"], limits["five_hour"]
+    return (
+        int(weekly["resets_at"]),
+        int(weekly["used_percentage"]),
+        int(five_hour["resets_at"]),
+        int(five_hour["used_percentage"]),
+    )
+
+
+try:
+    cached = windows(sys.argv[2])
+except Exception:
+    print("write")  # no usable cache to protect
+    sys.exit(0)
+
+try:
+    incoming = windows(sys.argv[1])
+except Exception:
+    print("skip")  # never replace usable data with unusable data
+    sys.exit(0)
+
+print("write" if incoming >= cached else "skip")
+PY
+}
+
+if [ "$(freshness_decision "$input_tmp" "$cache_file")" != "skip" ]; then
+    cache_tmp="$(mktemp "$cache_dir/${cache_base}.tmp.XXXXXX")"
+    cp "$input_tmp" "$cache_tmp"
+    chmod 600 "$cache_tmp"
+    mv "$cache_tmp" "$cache_file"
+    cache_tmp=""
+fi
 
 set +e
 "$statusline_bin" "$@" <"$input_tmp"
