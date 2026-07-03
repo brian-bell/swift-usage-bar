@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Observation
 import Security
 
 public enum UsageCore {
@@ -50,6 +51,317 @@ public enum ProviderState: Equatable, Sendable {
 
 public protocol UsageProvider: Sendable {
     func fetch(previous: ProviderUsage?) async -> ProviderState
+}
+
+public protocol UsageClock: Sendable {
+    var now: Date { get async }
+
+    func sleep(for duration: TimeInterval) async throws
+}
+
+public struct SystemUsageClock: UsageClock {
+    public init() {}
+
+    public var now: Date {
+        get async { Date() }
+    }
+
+    public func sleep(for duration: TimeInterval) async throws {
+        let seconds = max(0, duration)
+        let nanoseconds = UInt64(seconds * 1_000_000_000)
+        try await Task.sleep(nanoseconds: nanoseconds)
+    }
+}
+
+@MainActor
+@Observable
+public final class AppState: @unchecked Sendable {
+    private var providerStates: [ProviderID: ProviderState]
+    private var lastAttemptedRefreshes: [ProviderID: Date]
+    private var lastSuccessfulRefreshes: [ProviderID: Date]
+
+    public init(
+        providerStates: [ProviderID: ProviderState] = [:],
+        lastAttemptedRefreshes: [ProviderID: Date] = [:],
+        lastSuccessfulRefreshes: [ProviderID: Date] = [:]
+    ) {
+        self.providerStates = providerStates
+        self.lastAttemptedRefreshes = lastAttemptedRefreshes
+        self.lastSuccessfulRefreshes = lastSuccessfulRefreshes
+    }
+
+    public var states: [ProviderID: ProviderState] {
+        providerStates
+    }
+
+    public func providerState(for provider: ProviderID) -> ProviderState? {
+        providerStates[provider]
+    }
+
+    public func lastAttemptedRefresh(provider: ProviderID) -> Date? {
+        lastAttemptedRefreshes[provider]
+    }
+
+    public func lastUpdated(provider: ProviderID) -> Date? {
+        lastSuccessfulRefreshes[provider]
+    }
+
+    public func previousUsage(provider: ProviderID) -> ProviderUsage? {
+        switch providerStates[provider] {
+        case let .fresh(usage, asOf: _):
+            return usage
+        case let .stale(last: usage, reason: _):
+            return usage
+        case .hidden, nil:
+            return nil
+        }
+    }
+
+    public func recordRefreshAttempt(provider: ProviderID, at attemptedAt: Date) {
+        lastAttemptedRefreshes[provider] = attemptedAt
+    }
+
+    public func applyRefreshResult(
+        provider: ProviderID,
+        state: ProviderState,
+        completedAt: Date
+    ) {
+        providerStates[provider] = state
+        if case .fresh = state {
+            lastSuccessfulRefreshes[provider] = completedAt
+        }
+    }
+}
+
+public actor UsagePoller {
+    public static let defaultInterval: TimeInterval = 120
+
+    private let providers: [ProviderID: any UsageProvider]
+    private let appState: AppState
+    private let clock: any UsageClock
+    private let wakeEvents: AsyncStream<Void>?
+    private var interval: TimeInterval
+    private var isRunning = false
+    private var isPolling = false
+    private var pendingPoll = false
+    private var timerGeneration: UInt64 = 0
+    private var timerTask: Task<Void, Never>?
+    private var pollTask: Task<Void, Never>?
+    private var wakeTask: Task<Void, Never>?
+    private var idleWaiters: [CheckedContinuation<Void, Never>] = []
+
+    public init(
+        providers: [ProviderID: any UsageProvider],
+        appState: AppState,
+        clock: any UsageClock = SystemUsageClock(),
+        interval: TimeInterval = UsagePoller.defaultInterval,
+        wakeEvents: AsyncStream<Void>? = nil
+    ) {
+        self.providers = providers
+        self.appState = appState
+        self.clock = clock
+        self.interval = max(0, interval)
+        self.wakeEvents = wakeEvents
+    }
+
+    public func start() {
+        guard !isRunning else {
+            return
+        }
+
+        isRunning = true
+        startWakeTask()
+        requestPoll()
+    }
+
+    public func stop() {
+        isRunning = false
+        isPolling = false
+        pendingPoll = false
+        timerGeneration &+= 1
+        timerTask?.cancel()
+        pollTask?.cancel()
+        wakeTask?.cancel()
+        timerTask = nil
+        pollTask = nil
+        wakeTask = nil
+        resumeIdleWaiters()
+    }
+
+    public func refreshNow() {
+        requestPoll()
+    }
+
+    public func waitUntilIdle() async {
+        if !isPolling {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            idleWaiters.append(continuation)
+        }
+    }
+
+    public func setPollingInterval(_ interval: TimeInterval) {
+        self.interval = max(0, interval)
+        guard isRunning else {
+            return
+        }
+
+        if isPolling {
+            return
+        }
+
+        scheduleTimer()
+    }
+
+    private func startWakeTask() {
+        guard let wakeEvents else {
+            return
+        }
+
+        wakeTask = Task { [wakeEvents] in
+            for await _ in wakeEvents {
+                if Task.isCancelled {
+                    return
+                }
+
+                self.wakeDidFire()
+            }
+        }
+    }
+
+    private func wakeDidFire() {
+        requestPoll()
+    }
+
+    private func requestPoll() {
+        guard isRunning else {
+            return
+        }
+
+        cancelTimer()
+
+        if isPolling {
+            pendingPoll = true
+            return
+        }
+
+        isPolling = true
+        pollTask = Task {
+            await self.runPollChain()
+        }
+    }
+
+    private func runPollChain() async {
+        while isRunning, !Task.isCancelled {
+            await runPollCycle()
+
+            if pendingPoll, isRunning, !Task.isCancelled {
+                pendingPoll = false
+                continue
+            }
+
+            isPolling = false
+            pollTask = nil
+            if isRunning, !Task.isCancelled {
+                scheduleTimer()
+            }
+            resumeIdleWaiters()
+            return
+        }
+
+        isPolling = false
+        pollTask = nil
+        resumeIdleWaiters()
+    }
+
+    private func runPollCycle() async {
+        let providers = providers
+        let appState = appState
+        let clock = clock
+
+        await withTaskGroup(of: ProviderPollResult?.self) { group in
+            for (providerID, provider) in providers {
+                group.addTask {
+                    if Task.isCancelled {
+                        return nil
+                    }
+
+                    let previous = await appState.previousUsage(provider: providerID)
+                    let attemptedAt = await clock.now
+                    await appState.recordRefreshAttempt(provider: providerID, at: attemptedAt)
+                    let state = await provider.fetch(previous: previous)
+                    let completedAt = await clock.now
+
+                    return ProviderPollResult(
+                        provider: providerID,
+                        state: state,
+                        completedAt: completedAt
+                    )
+                }
+            }
+
+            for await result in group {
+                guard let result else {
+                    continue
+                }
+
+                await appState.applyRefreshResult(
+                    provider: result.provider,
+                    state: result.state,
+                    completedAt: result.completedAt
+                )
+            }
+        }
+    }
+
+    private func scheduleTimer() {
+        guard isRunning else {
+            return
+        }
+
+        timerGeneration &+= 1
+        let generation = timerGeneration
+        let interval = interval
+        let clock = clock
+        timerTask?.cancel()
+        timerTask = Task {
+            do {
+                try await clock.sleep(for: interval)
+                self.timerDidFire(generation: generation)
+            } catch {}
+        }
+    }
+
+    private func cancelTimer() {
+        timerGeneration &+= 1
+        timerTask?.cancel()
+        timerTask = nil
+    }
+
+    private func timerDidFire(generation: UInt64) {
+        guard isRunning, generation == timerGeneration else {
+            return
+        }
+
+        timerTask = nil
+        requestPoll()
+    }
+
+    private func resumeIdleWaiters() {
+        let waiters = idleWaiters
+        idleWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+}
+
+private struct ProviderPollResult: Sendable {
+    let provider: ProviderID
+    let state: ProviderState
+    let completedAt: Date
 }
 
 public enum UsageStatusTone: Equatable, Sendable {

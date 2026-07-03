@@ -1,0 +1,466 @@
+import Foundation
+import Testing
+import UsageCore
+
+@Test
+func usagePollerFetchesImmediatelyAndRepeatsOnDefaultInterval() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 1_000))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 900))])
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 901))])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await codex.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+
+    await clock.advance(by: 120)
+    await claude.waitForFetchCount(2)
+    await codex.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerReschedulesWhenIntervalChanges() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 2_000))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 1_900))])
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 1_901))])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+    await clock.advance(by: 30)
+    await poller.setPollingInterval(10)
+    await clock.advance(by: 9)
+    await Task.yield()
+
+    #expect(await claude.fetchCount == 1)
+
+    await clock.advance(by: 1)
+    await claude.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+    await clock.advance(by: 80)
+    await claude.waitForFetchCount(3)
+    await poller.waitUntilIdle()
+    await Task.yield()
+
+    #expect(await claude.fetchCount == 3)
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerFetchesProvidersConcurrently() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 3_000))
+    let appState = await AppState()
+    let claude = BlockingUsageProvider(result: .fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 2_900)))
+    let codex = BlockingUsageProvider(result: .fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 2_901)))
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await claude.waitUntilStarted()
+    await codex.waitUntilStarted()
+
+    #expect(await claude.isSuspendedInFetch)
+    #expect(await codex.isSuspendedInFetch)
+
+    await claude.release()
+    await codex.release()
+    await claude.waitUntilFinished()
+    await codex.waitUntilFinished()
+    await poller.waitUntilIdle()
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerAppliesSuccessfulProviderWhenOtherProviderIsStale() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_000))
+    let appState = await AppState()
+    let freshUsage = sampleUsage(fiveHour: 72, weekly: 90)
+    let claude = RecordingUsageProvider(results: [.stale(last: nil, reason: .networkError)])
+    let codex = RecordingUsageProvider(results: [.fresh(freshUsage, asOf: Date(timeIntervalSince1970: 3_901))])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await codex.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+
+    #expect(await appState.providerState(for: .claude) == .stale(last: nil, reason: .networkError))
+    #expect(await appState.providerState(for: .codex) == .fresh(freshUsage, asOf: Date(timeIntervalSince1970: 3_901)))
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerStopPreventsLaterTimerFetches() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_000))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 4_900))])
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 4_901))])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+    await poller.stop()
+    await clock.advance(by: 120)
+    await Task.yield()
+
+    #expect(await claude.fetchCount == 1)
+    #expect(await codex.fetchCount == 1)
+}
+
+@Test
+func refreshNowFetchesImmediatelyAndResetsTimerPhase() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 6_000))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 5_900))])
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 5_901))])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+    await clock.advance(by: 30)
+    await poller.refreshNow()
+    await claude.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+    await clock.advance(by: 119)
+    await Task.yield()
+
+    #expect(await claude.fetchCount == 2)
+
+    await clock.advance(by: 1)
+    await claude.waitForFetchCount(3)
+    await poller.waitUntilIdle()
+
+    await poller.stop()
+}
+
+@Test
+func appStateLastUpdatedUsesSuccessfulRefreshCompletionTime() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 7_000))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(results: [
+        .fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 6_900)),
+        .stale(last: sampleUsage(fiveHour: 62, weekly: 81), reason: .networkError),
+    ])
+    let codex = RecordingUsageProvider(results: [
+        .stale(last: nil, reason: .networkError),
+        .fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 6_901)),
+    ])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+
+    #expect(await appState.lastUpdated(provider: .claude) == Date(timeIntervalSince1970: 7_000))
+    #expect(await appState.lastUpdated(provider: .codex) == nil)
+    #expect(await appState.lastAttemptedRefresh(provider: .claude) == Date(timeIntervalSince1970: 7_000))
+
+    await clock.advance(by: 20)
+    await poller.refreshNow()
+    await claude.waitForFetchCount(2)
+    await codex.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+
+    #expect(await appState.lastUpdated(provider: .claude) == Date(timeIntervalSince1970: 7_000))
+    #expect(await appState.lastUpdated(provider: .codex) == Date(timeIntervalSince1970: 7_020))
+    #expect(await appState.lastAttemptedRefresh(provider: .claude) == Date(timeIntervalSince1970: 7_020))
+
+    await poller.stop()
+}
+
+@Test
+func wakeEventTriggersImmediatePollAndResetsTimer() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 8_000))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 7_900))])
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 7_901))])
+    let wakeEvents = WakeEventProbe()
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock,
+        wakeEvents: wakeEvents.stream
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+    await clock.advance(by: 30)
+    wakeEvents.send()
+    await claude.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+    await clock.advance(by: 119)
+    await Task.yield()
+
+    #expect(await claude.fetchCount == 2)
+
+    await clock.advance(by: 1)
+    await claude.waitForFetchCount(3)
+    await poller.waitUntilIdle()
+
+    await poller.stop()
+}
+
+@Test
+func overlappingManualAndWakeRefreshesCoalesceIntoOneFollowUpPoll() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 9_000))
+    let appState = await AppState()
+    let claude = BlockingUsageProvider(result: .fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 8_900)))
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 8_901))])
+    let wakeEvents = WakeEventProbe()
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock,
+        wakeEvents: wakeEvents.stream
+    )
+
+    await poller.start()
+    await claude.waitUntilStarted()
+    await poller.refreshNow()
+    wakeEvents.send()
+    await claude.release()
+    await claude.waitUntilFinished()
+    await claude.waitForStartCount(2)
+    await claude.release()
+    await claude.waitForFinishCount(2)
+    await poller.waitUntilIdle()
+
+    #expect(await claude.startCount == 2)
+
+    await poller.stop()
+}
+
+private actor ManualUsageClock: UsageClock {
+    private var current: Date
+    private var sleepers: [UUID: Sleeper] = [:]
+
+    init(now: Date) {
+        self.current = now
+    }
+
+    var now: Date {
+        get async { current }
+    }
+
+    func sleep(for duration: TimeInterval) async throws {
+        let deadline = current.addingTimeInterval(duration)
+        if deadline <= current {
+            return
+        }
+
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                sleepers[id] = Sleeper(deadline: deadline, continuation: continuation)
+            }
+        } onCancel: {
+            Task { await self.cancelSleep(id) }
+        }
+    }
+
+    func advance(by seconds: TimeInterval) {
+        current = current.addingTimeInterval(seconds)
+        resumeReadySleepers()
+    }
+
+    private func cancelSleep(_ id: UUID) {
+        sleepers.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
+    }
+
+    private func resumeReadySleepers() {
+        let ready = sleepers.filter { $0.value.deadline <= current }.map(\.key)
+        for id in ready {
+            sleepers.removeValue(forKey: id)?.continuation.resume()
+        }
+    }
+
+    private struct Sleeper {
+        let deadline: Date
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+}
+
+private actor RecordingUsageProvider: UsageProvider {
+    private var results: [ProviderState]
+    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private(set) var fetchCount = 0
+
+    init(results: [ProviderState]) {
+        self.results = results
+    }
+
+    func fetch(previous _: ProviderUsage?) async -> ProviderState {
+        fetchCount += 1
+        resumeWaiters()
+        if results.count > 1 {
+            return results.removeFirst()
+        }
+
+        return results[0]
+    }
+
+    func waitForFetchCount(_ count: Int) async {
+        if fetchCount >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append((count, continuation))
+        }
+    }
+
+    private func resumeWaiters() {
+        let ready = waiters.filter { fetchCount >= $0.0 }
+        waiters.removeAll { fetchCount >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
+    }
+}
+
+private actor BlockingUsageProvider: UsageProvider {
+    private let result: ProviderState
+    private var startWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var finishWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private(set) var startCount = 0
+    private(set) var finishCount = 0
+    private(set) var isSuspendedInFetch = false
+
+    init(result: ProviderState) {
+        self.result = result
+    }
+
+    func fetch(previous _: ProviderUsage?) async -> ProviderState {
+        startCount += 1
+        isSuspendedInFetch = true
+        resumeStartWaiters()
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+        isSuspendedInFetch = false
+        finishCount += 1
+        resumeFinishWaiters()
+
+        return result
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+
+    func waitUntilStarted() async {
+        await waitForStartCount(1)
+    }
+
+    func waitUntilFinished() async {
+        await waitForFinishCount(1)
+    }
+
+    func waitForStartCount(_ count: Int) async {
+        if startCount >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            startWaiters.append((count, continuation))
+        }
+    }
+
+    func waitForFinishCount(_ count: Int) async {
+        if finishCount >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            finishWaiters.append((count, continuation))
+        }
+    }
+
+    private func resumeStartWaiters() {
+        let ready = startWaiters.filter { startCount >= $0.0 }
+        startWaiters.removeAll { startCount >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
+    }
+
+    private func resumeFinishWaiters() {
+        let ready = finishWaiters.filter { finishCount >= $0.0 }
+        finishWaiters.removeAll { finishCount >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
+    }
+}
+
+private final class WakeEventProbe: @unchecked Sendable {
+    let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        var continuation: AsyncStream<Void>.Continuation?
+        self.stream = AsyncStream<Void> { streamContinuation in
+            continuation = streamContinuation
+        }
+        self.continuation = continuation!
+    }
+
+    func send() {
+        continuation.yield(())
+    }
+}
+
+private func sampleUsage(fiveHour: Int, weekly: Int) -> ProviderUsage {
+    ProviderUsage(
+        fiveHour: UsageWindow(
+            percentRemaining: fiveHour,
+            resetsAt: Date(timeIntervalSince1970: 1_783_008_000)
+        ),
+        weekly: UsageWindow(
+            percentRemaining: weekly,
+            resetsAt: Date(timeIntervalSince1970: 1_783_555_200)
+        )
+    )
+}
