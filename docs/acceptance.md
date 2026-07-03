@@ -4,7 +4,7 @@ Date: 2026-07-03
 
 | Field | Value |
 |---|---|
-| Phase 7 bundle code commit tested | `c169b549f1ed5ed1064ad4446eb1f0aa3c01db49` |
+| Phase 7 bundle code commit tested | `3ff84dc5b549264b46ead665673af5a004f043de` |
 | Evidence document note | This file is updated in a later docs-only commit; the bundle code commit above is the revision verified. |
 | macOS | 26.5.2, build 25F84 |
 | App bundle path | `/Users/brian/dev/mac-ai-usage-bar-worktrees/flow-phase-7-bundle-login-item-acceptance/AIUsageBar.app` |
@@ -16,13 +16,13 @@ Date: 2026-07-03
 
 | Check | Status | Evidence |
 |---|---|---|
-| `scripts/run-swift-tests` | Pass | Review-loop rerun after `c169b54`; exit 0. Output showed debug SwiftPM builds completed for the harness commands. |
-| `Tests/Scripts/bundle-script-test.sh` | Pass | Review-loop rerun after `c169b54`; exit 0. Covered verifier rejection for missing/invalid plist, wrong plist values, missing/non-executable executable, unsigned bundle, unsafe output paths, stale bundle replacement, successful verification, and `codesign -v`. |
-| `swift build` | Pass | Review-loop rerun after `c169b54`; exit 0. Output ended with `Build complete! (0.09s)`. |
-| `swift test --enable-swift-testing` | Pass | Review-loop rerun after `c169b54`; exit 0. Output ended with `Build complete! (0.08s)`. |
-| `./scripts/bundle.sh` | Pass | Review-loop rerun after `c169b54`; exit 0. Built the release product, signed staged bundle `.AIUsageBar.bundle.ZOVaQ1/AIUsageBar.app`, verified it, and moved it to the default app path. |
-| `./scripts/bundle.sh --verify` | Pass | Review-loop rerun after `c169b54`; exit 0 with no output. |
-| `codesign -v AIUsageBar.app` | Pass | Review-loop rerun after `c169b54`; exit 0 with no output. |
+| `scripts/run-swift-tests` | Pass | Review-loop rerun after `3ff84dc`; exit 0. Output showed debug SwiftPM builds completed for the harness commands. |
+| `Tests/Scripts/bundle-script-test.sh` | Pass | Review-loop rerun after `3ff84dc`; exit 0. Covered verifier rejection for missing/invalid plist, wrong bundle identifier, wrong plist values, missing/non-executable executable, unsigned bundle, unsafe output paths, stale bundle replacement, successful verification, and `codesign -v`. |
+| `swift build` | Pass | Review-loop rerun after `3ff84dc`; exit 0. Output ended with `Build complete! (0.09s)`. |
+| `swift test --enable-swift-testing` | Pass | Review-loop rerun after `3ff84dc`; exit 0. Output ended with `Build complete! (0.12s)`. |
+| `./scripts/bundle.sh` | Pass | Review-loop rerun after `3ff84dc`; exit 0. Built the release product, signed staged bundle `.AIUsageBar.bundle.e1BIeh/AIUsageBar.app`, verified it, and moved it to the default app path. |
+| `./scripts/bundle.sh --verify` | Pass | Review-loop rerun after `3ff84dc`; exit 0 with no output. |
+| `codesign -v AIUsageBar.app` | Pass | Review-loop rerun after `3ff84dc`; exit 0 with no output. |
 | `open AIUsageBar.app` | Pass | Implementation-phase check started process `AIUsageBar.app/Contents/MacOS/AIUsageBarApp` from the signed bundle path; not rerun during review-loop script hardening. |
 
 ## Manual Acceptance Checklist
