@@ -117,6 +117,10 @@ public final class AppState: @unchecked Sendable {
         }
     }
 
+    public func isHidden(provider: ProviderID) -> Bool {
+        providerStates[provider] == .hidden
+    }
+
     public func recordRefreshAttempt(provider: ProviderID, at attemptedAt: Date) {
         lastAttemptedRefreshes[provider] = attemptedAt
     }
@@ -310,6 +314,10 @@ public actor UsagePoller {
             for (providerID, provider) in providers {
                 group.addTask {
                     if Task.isCancelled {
+                        return nil
+                    }
+
+                    if await appState.isHidden(provider: providerID) {
                         return nil
                     }
 

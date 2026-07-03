@@ -206,6 +206,31 @@ func appStatePreservesHiddenProviderWhenRefreshResultArrives() async {
 }
 
 @Test
+func usagePollerSkipsHiddenProviders() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_950))
+    let appState = await AppState(providerStates: [.claude: .hidden])
+    let codexUsage = sampleUsage(fiveHour: 72, weekly: 90)
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 5_900))])
+    let codex = RecordingUsageProvider(results: [.fresh(codexUsage, asOf: Date(timeIntervalSince1970: 5_901))])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await codex.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+
+    #expect(await claude.fetchCount == 0)
+    #expect(await appState.providerState(for: .claude) == .hidden)
+    #expect(await appState.lastAttemptedRefresh(provider: .claude) == nil)
+    #expect(await appState.providerState(for: .codex) == .fresh(codexUsage, asOf: Date(timeIntervalSince1970: 5_901)))
+
+    await poller.stop()
+}
+
+@Test
 func stalePollChainDoesNotMarkRestartedPollerIdle() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_750))
     let appState = await AppState()
