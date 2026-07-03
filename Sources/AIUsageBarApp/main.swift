@@ -10,12 +10,17 @@ struct AIUsageBarApp {
 
 final class UserNotificationSender: NotificationSending, @unchecked Sendable {
     private let center: UNUserNotificationCenter
+    private let authorizationLock = NSLock()
+    private var isAuthorized = false
+    private var authorizationTask: Task<Bool, any Error>?
 
     init(center: UNUserNotificationCenter = .current()) {
         self.center = center
     }
 
-    func send(_ notification: UsageThresholdNotification) async {
+    func send(_ notification: UsageThresholdNotification) async throws {
+        try await requestAuthorizationIfNeeded()
+
         let content = UNMutableNotificationContent()
         content.title = notification.title
         content.body = notification.body
@@ -27,9 +32,48 @@ final class UserNotificationSender: NotificationSending, @unchecked Sendable {
             trigger: nil
         )
 
+        try await center.add(request)
+    }
+
+    private func requestAuthorizationIfNeeded() async throws {
+        let task: Task<Bool, any Error>? = authorizationLock.withLock {
+            if isAuthorized {
+                return nil
+            }
+
+            if let authorizationTask {
+                return Optional(authorizationTask)
+            }
+
+            let task = Task { [center] in
+                try await center.requestAuthorization(options: [.alert, .sound])
+            }
+            authorizationTask = task
+            return Optional(task)
+        }
+
+        guard let task else {
+            return
+        }
+
+        let granted: Bool
         do {
-            try await center.add(request)
-        } catch {}
+            granted = try await task.value
+        } catch {
+            authorizationLock.withLock {
+                authorizationTask = nil
+            }
+            throw error
+        }
+
+        authorizationLock.withLock {
+            authorizationTask = nil
+            isAuthorized = granted
+        }
+
+        guard granted else {
+            throw NotificationDeliveryError.authorizationDenied
+        }
     }
 
     private static func identifier(for notification: UsageThresholdNotification) -> String {
@@ -41,6 +85,10 @@ final class UserNotificationSender: NotificationSending, @unchecked Sendable {
             resetComponent,
         ].joined(separator: ".")
     }
+}
+
+private enum NotificationDeliveryError: Error {
+    case authorizationDenied
 }
 
 enum WorkspaceWakeEvents {

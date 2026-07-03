@@ -122,12 +122,13 @@ private extension UsageWindowKind {
 }
 
 public protocol NotificationSending: Sendable {
-    func send(_ notification: UsageThresholdNotification) async
+    func send(_ notification: UsageThresholdNotification) async throws
 }
 
 public actor ThresholdNotifier {
     private let sender: any NotificationSending
     private var firedCycles: Set<ThresholdNotificationKey> = []
+    private var failedCycles: Set<ThresholdNotificationKey> = []
 
     public init(sender: any NotificationSending) {
         self.sender = sender
@@ -151,27 +152,36 @@ public actor ThresholdNotifier {
             let newResetCycleAlreadyBelowThreshold = previousResetCycle != currentResetCycle
                 && window.current.percentRemaining < threshold
 
-            guard crossedThreshold || newResetCycleAlreadyBelowThreshold else {
-                continue
-            }
-
             let key = ThresholdNotificationKey(
                 provider: provider,
                 window: window.kind,
                 threshold: threshold,
                 resetCycle: currentResetCycle
             )
+            let retryingFailedDelivery = failedCycles.contains(key)
+                && window.current.percentRemaining < threshold
+
+            guard crossedThreshold || newResetCycleAlreadyBelowThreshold || retryingFailedDelivery else {
+                continue
+            }
+
             guard firedCycles.insert(key).inserted else {
                 continue
             }
 
-            await sender.send(UsageThresholdNotification(
-                provider: provider,
-                window: window.kind,
-                percentRemaining: window.current.percentRemaining,
-                threshold: threshold,
-                resetsAt: window.current.resetsAt
-            ))
+            do {
+                try await sender.send(UsageThresholdNotification(
+                    provider: provider,
+                    window: window.kind,
+                    percentRemaining: window.current.percentRemaining,
+                    threshold: threshold,
+                    resetsAt: window.current.resetsAt
+                ))
+                failedCycles.remove(key)
+            } catch {
+                firedCycles.remove(key)
+                failedCycles.insert(key)
+            }
         }
     }
 }
@@ -337,6 +347,7 @@ public actor UsagePoller {
     private var timerTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
     private var wakeTask: Task<Void, Never>?
+    private var thresholdEvaluationTasks: [UUID: Task<Void, Never>] = [:]
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
@@ -379,9 +390,13 @@ public actor UsagePoller {
         timerTask?.cancel()
         pollTask?.cancel()
         wakeTask?.cancel()
+        for task in thresholdEvaluationTasks.values {
+            task.cancel()
+        }
         timerTask = nil
         pollTask = nil
         wakeTask = nil
+        thresholdEvaluationTasks.removeAll()
         resumeIdleWaiters()
     }
 
@@ -390,7 +405,7 @@ public actor UsagePoller {
     }
 
     public func waitUntilIdle() async {
-        if !isPolling {
+        if !isPolling, thresholdEvaluationTasks.isEmpty {
             return
         }
 
@@ -548,25 +563,76 @@ public actor UsagePoller {
                     completedAt: result.completedAt,
                     shouldApply: { lifecycle.isCurrent(generation) }
                 )
-                guard didApply, let thresholdNotifier else {
+                guard didApply else {
                     continue
                 }
 
-                if case let .fresh(usage, asOf: _) = result.state {
-                    let threshold = await thresholdProvider()
-                    guard isRunning, generation == pollGeneration, lifecycle.isCurrent(generation), !Task.isCancelled else {
-                        continue
-                    }
-
-                    await thresholdNotifier.evaluate(
+                if case .fresh = result.state, let thresholdNotifier {
+                    scheduleThresholdEvaluation(
+                        notifier: thresholdNotifier,
+                        lifecycle: lifecycle,
+                        generation: generation,
+                        appState: appState,
+                        thresholdProvider: thresholdProvider,
                         previous: result.previousUsage,
-                        current: usage,
-                        provider: result.provider,
-                        threshold: threshold
+                        provider: result.provider
                     )
                 }
             }
         }
+    }
+
+    private func scheduleThresholdEvaluation(
+        notifier: ThresholdNotifier,
+        lifecycle: PollLifecycle,
+        generation: UInt64,
+        appState: AppState,
+        thresholdProvider: @escaping @Sendable () async -> Int,
+        previous: ProviderUsage?,
+        provider: ProviderID
+    ) {
+        let taskID = UUID()
+        thresholdEvaluationTasks[taskID] = Task {
+            let threshold = await thresholdProvider()
+            guard lifecycle.isCurrent(generation), !Task.isCancelled else {
+                self.thresholdEvaluationDidFinish(taskID)
+                return
+            }
+
+            let latestState = await appState.providerState(for: provider)
+            guard lifecycle.isCurrent(generation), !Task.isCancelled else {
+                self.thresholdEvaluationDidFinish(taskID)
+                return
+            }
+
+            let current: ProviderUsage?
+            switch latestState {
+            case let .fresh(usage, asOf: _):
+                current = usage
+            case let .stale(last: usage, reason: _):
+                current = usage
+            case .hidden, nil:
+                current = nil
+            }
+
+            guard let current else {
+                self.thresholdEvaluationDidFinish(taskID)
+                return
+            }
+
+            await notifier.evaluate(
+                previous: previous,
+                current: current,
+                provider: provider,
+                threshold: threshold
+            )
+            self.thresholdEvaluationDidFinish(taskID)
+        }
+    }
+
+    private func thresholdEvaluationDidFinish(_ taskID: UUID) {
+        thresholdEvaluationTasks.removeValue(forKey: taskID)
+        resumeIdleWaiters()
     }
 
     private func scheduleTimer() {
@@ -603,6 +669,10 @@ public actor UsagePoller {
     }
 
     private func resumeIdleWaiters() {
+        guard !isPolling, thresholdEvaluationTasks.isEmpty else {
+            return
+        }
+
         let waiters = idleWaiters
         idleWaiters.removeAll()
         for waiter in waiters {

@@ -282,6 +282,31 @@ func thresholdNotifierDoesNotDoubleSendConcurrentCrossingForSameCycle() async {
 }
 
 @Test
+func thresholdNotifierRetriesCycleAfterSenderFailure() async {
+    let sender = FailingOnceNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_783_008_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 17, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+
+    #expect(await sender.sendAttempts == 2)
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 17, threshold: 20, resetsAt: reset),
+    ])
+}
+
+@Test
 func thresholdNotifierUsesLatestThresholdWithoutSynthesizingCrossings() async {
     let sender = RecordingNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
@@ -380,6 +405,30 @@ private actor SuspendingNotificationSender: NotificationSending {
         for waiter in ready {
             waiter.1.resume()
         }
+    }
+}
+
+private actor FailingOnceNotificationSender: NotificationSending {
+    private var shouldFail = true
+    private var notifications: [UsageThresholdNotification] = []
+    private(set) var sendAttempts = 0
+
+    func send(_ notification: UsageThresholdNotification) async throws {
+        sendAttempts += 1
+        if shouldFail {
+            shouldFail = false
+            throw NotificationError.rejected
+        }
+
+        notifications.append(notification)
+    }
+
+    func sentNotifications() -> [UsageThresholdNotification] {
+        notifications
+    }
+
+    private enum NotificationError: Error {
+        case rejected
     }
 }
 
