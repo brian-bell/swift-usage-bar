@@ -280,7 +280,7 @@ func wakeEventTriggersImmediatePollAndResetsTimer() async {
         providers: [.claude: claude, .codex: codex],
         appState: appState,
         clock: clock,
-        wakeEvents: wakeEvents.stream
+        wakeEvents: { wakeEvents.stream }
     )
 
     await poller.start()
@@ -303,6 +303,35 @@ func wakeEventTriggersImmediatePollAndResetsTimer() async {
 }
 
 @Test
+func wakeEventsRemainActiveAfterRestart() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 8_500))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 8_400))])
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 8_401))])
+    let wakeEvents = RestartableWakeEventProbe()
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock,
+        wakeEvents: wakeEvents.stream
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+    await poller.stop()
+
+    await poller.start()
+    await claude.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+    wakeEvents.send()
+    await claude.waitForFetchCount(3)
+    await poller.waitUntilIdle()
+
+    await poller.stop()
+}
+
+@Test
 func overlappingManualAndWakeRefreshesCoalesceIntoOneFollowUpPoll() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 9_000))
     let appState = await AppState()
@@ -313,7 +342,7 @@ func overlappingManualAndWakeRefreshesCoalesceIntoOneFollowUpPoll() async {
         providers: [.claude: claude, .codex: codex],
         appState: appState,
         clock: clock,
-        wakeEvents: wakeEvents.stream
+        wakeEvents: { wakeEvents.stream }
     )
 
     await poller.start()
@@ -516,6 +545,38 @@ private final class WakeEventProbe: @unchecked Sendable {
 
     func send() {
         continuation.yield(())
+    }
+}
+
+private final class RestartableWakeEventProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: AsyncStream<Void>.Continuation?
+    private var streamID = 0
+
+    func stream() -> AsyncStream<Void> {
+        let id = lock.withLock {
+            streamID += 1
+            return streamID
+        }
+
+        return AsyncStream { continuation in
+            self.lock.withLock {
+                self.continuation = continuation
+            }
+            continuation.onTermination = { _ in
+                self.lock.withLock {
+                    if self.streamID == id {
+                        self.continuation = nil
+                    }
+                }
+            }
+        }
+    }
+
+    func send() {
+        lock.withLock {
+            continuation
+        }?.yield(())
     }
 }
 

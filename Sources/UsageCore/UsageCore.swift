@@ -147,7 +147,7 @@ public actor UsagePoller {
     private let providers: [ProviderID: any UsageProvider]
     private let appState: AppState
     private let clock: any UsageClock
-    private let wakeEvents: AsyncStream<Void>?
+    private let wakeEvents: (@Sendable () -> AsyncStream<Void>)?
     private var interval: TimeInterval
     private var isRunning = false
     private var isPolling = false
@@ -164,7 +164,7 @@ public actor UsagePoller {
         appState: AppState,
         clock: any UsageClock = SystemUsageClock(),
         interval: TimeInterval = UsagePoller.defaultInterval,
-        wakeEvents: AsyncStream<Void>? = nil
+        wakeEvents: (@Sendable () -> AsyncStream<Void>)? = nil
     ) {
         self.providers = providers
         self.appState = appState
@@ -231,8 +231,9 @@ public actor UsagePoller {
             return
         }
 
-        wakeTask = Task { [wakeEvents] in
-            for await _ in wakeEvents {
+        let stream = wakeEvents()
+        wakeTask = Task { [stream] in
+            for await _ in stream {
                 if Task.isCancelled {
                     return
                 }
