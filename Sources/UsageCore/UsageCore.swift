@@ -310,13 +310,28 @@ public actor UsagePoller {
                     }
 
                     let previous = await appState.previousUsage(provider: providerID)
+                    if Task.isCancelled {
+                        return nil
+                    }
+
                     let attemptedAt = await clock.now
-                    await appState.recordRefreshAttempt(provider: providerID, at: attemptedAt)
+                    if Task.isCancelled {
+                        return nil
+                    }
+
                     let state = await provider.fetch(previous: previous)
+                    if Task.isCancelled {
+                        return nil
+                    }
+
                     let completedAt = await clock.now
+                    if Task.isCancelled {
+                        return nil
+                    }
 
                     return ProviderPollResult(
                         provider: providerID,
+                        attemptedAt: attemptedAt,
                         state: state,
                         completedAt: completedAt
                     )
@@ -332,6 +347,7 @@ public actor UsagePoller {
                     continue
                 }
 
+                await appState.recordRefreshAttempt(provider: result.provider, at: result.attemptedAt)
                 await appState.applyRefreshResult(
                     provider: result.provider,
                     state: result.state,
@@ -385,6 +401,7 @@ public actor UsagePoller {
 
 private struct ProviderPollResult: Sendable {
     let provider: ProviderID
+    let attemptedAt: Date
     let state: ProviderState
     let completedAt: Date
 }

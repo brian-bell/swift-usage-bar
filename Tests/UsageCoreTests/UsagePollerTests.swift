@@ -162,6 +162,30 @@ func usagePollerStopPreventsInFlightResultsFromUpdatingState() async {
 }
 
 @Test
+func usagePollerStopBeforeFetchPreventsProviderWorkAndAttemptMetadata() async {
+    let clock = SuspendingNowClock(now: Date(timeIntervalSince1970: 5_650))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 5_600))])
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 5_601))])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await clock.waitForNowRequestCount(2)
+    await poller.stop()
+    await clock.releaseAll()
+    await Task.yield()
+
+    #expect(await claude.fetchCount == 0)
+    #expect(await codex.fetchCount == 0)
+    #expect(await appState.lastAttemptedRefresh(provider: .claude) == nil)
+    #expect(await appState.lastAttemptedRefresh(provider: .codex) == nil)
+}
+
+@Test
 func stalePollChainDoesNotMarkRestartedPollerIdle() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_750))
     let appState = await AppState()
@@ -408,6 +432,61 @@ private actor ManualUsageClock: UsageClock {
     private struct Sleeper {
         let deadline: Date
         let continuation: CheckedContinuation<Void, any Error>
+    }
+}
+
+private actor SuspendingNowClock: UsageClock {
+    private let current: Date
+    private var requestCount = 0
+    private var released = false
+    private var nowContinuations: [CheckedContinuation<Date, Never>] = []
+    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    init(now: Date) {
+        self.current = now
+    }
+
+    var now: Date {
+        get async {
+            requestCount += 1
+            resumeRequestWaiters()
+            if released {
+                return current
+            }
+
+            return await withCheckedContinuation { continuation in
+                nowContinuations.append(continuation)
+            }
+        }
+    }
+
+    func sleep(for _: TimeInterval) async throws {}
+
+    func waitForNowRequestCount(_ count: Int) async {
+        if requestCount >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            requestWaiters.append((count, continuation))
+        }
+    }
+
+    func releaseAll() {
+        released = true
+        let continuations = nowContinuations
+        nowContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume(returning: current)
+        }
+    }
+
+    private func resumeRequestWaiters() {
+        let ready = requestWaiters.filter { requestCount >= $0.0 }
+        requestWaiters.removeAll { requestCount >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
     }
 }
 
