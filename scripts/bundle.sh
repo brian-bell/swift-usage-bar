@@ -21,7 +21,7 @@ fail() {
 }
 
 validate_app_path() {
-    app_path="$1"
+    local app_path="$1"
 
     if [ -z "$app_path" ]; then
         fail "app path must not be empty"
@@ -37,17 +37,33 @@ validate_app_path() {
     esac
 }
 
+validate_build_output_path() {
+    local app_path="$1"
+    validate_app_path "$app_path"
+
+    if [ "$(basename "$app_path")" != "AIUsageBar.app" ]; then
+        fail "build output basename must be AIUsageBar.app: $app_path"
+    fi
+
+    case "$app_path" in
+        ../*|*/../*|*/..|..)
+            fail "build output path must not contain ..: $app_path"
+            ;;
+    esac
+}
+
 plist_value() {
-    plist="$1"
-    key="$2"
+    local plist="$1"
+    local key="$2"
 
     /usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null
 }
 
 expect_plist_value() {
-    plist="$1"
-    key="$2"
-    expected="$3"
+    local plist="$1"
+    local key="$2"
+    local expected="$3"
+    local actual
 
     actual="$(plist_value "$plist" "$key" || true)"
     if [ "$actual" != "$expected" ]; then
@@ -56,7 +72,9 @@ expect_plist_value() {
 }
 
 verify_bundle() {
-    app_path="$1"
+    local app_path="$1"
+    local plist
+    local executable
     validate_app_path "$app_path"
 
     if [ ! -d "$app_path" ]; then
@@ -91,8 +109,14 @@ verify_bundle() {
 }
 
 build_bundle() {
-    app_path="$1"
-    validate_app_path "$app_path"
+    local app_path="$1"
+    local bin_path
+    local built_executable
+    local output_parent
+    local staging_parent
+    local staged_app
+    local plist
+    validate_build_output_path "$app_path"
 
     swift build --package-path "$repo_root" -c release --product "$product_name"
     bin_path="$(swift build --package-path "$repo_root" -c release --show-bin-path)"
@@ -101,10 +125,14 @@ build_bundle() {
         fail "release executable not found: $built_executable"
     fi
 
-    rm -rf "$app_path"
-    mkdir -p "$app_path/Contents/MacOS"
+    output_parent="$(dirname "$app_path")"
+    mkdir -p "$output_parent"
+    staging_parent="$(mktemp -d "$output_parent/.AIUsageBar.bundle.XXXXXX")"
+    staged_app="$staging_parent/AIUsageBar.app"
 
-    plist="$app_path/Contents/Info.plist"
+    mkdir -p "$staged_app/Contents/MacOS"
+
+    plist="$staged_app/Contents/Info.plist"
     cat >"$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -132,13 +160,20 @@ build_bundle() {
 </plist>
 PLIST
 
-    install -m 755 "$built_executable" "$app_path/Contents/MacOS/$product_name"
-    codesign --force --sign - "$app_path"
+    install -m 755 "$built_executable" "$staged_app/Contents/MacOS/$product_name"
+    codesign --force --sign - "$staged_app"
+    verify_bundle "$staged_app"
+
+    rm -rf "$app_path"
+    mv "$staged_app" "$app_path"
+    rm -rf "$staging_parent"
     verify_bundle "$app_path"
 }
 
 mode="build"
 app_path="$default_app_path"
+verify_requested="false"
+output_requested="false"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -147,6 +182,10 @@ while [ "$#" -gt 0 ]; do
             exit 0
             ;;
         --verify)
+            if [ "$output_requested" = "true" ]; then
+                fail "--verify cannot be combined with --output"
+            fi
+            verify_requested="true"
             mode="verify"
             shift
             if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then
@@ -155,6 +194,10 @@ while [ "$#" -gt 0 ]; do
             fi
             ;;
         --output)
+            if [ "$verify_requested" = "true" ]; then
+                fail "--output cannot be used with --verify"
+            fi
+            output_requested="true"
             shift
             if [ "$#" -eq 0 ]; then
                 fail "--output requires APP_PATH"

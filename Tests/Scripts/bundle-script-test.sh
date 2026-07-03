@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 bundle_script="$repo_root/scripts/bundle.sh"
+product_name="AIUsageBarApp"
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
@@ -21,10 +22,49 @@ assert_fails_with() {
         exit 1
     fi
 
-    if ! grep -Fq "$expected" <<<"$output"; then
+    if ! grep -Fq -- "$expected" <<<"$output"; then
         printf 'expected error containing "%s", got:\n%s\n' "$expected" "$output" >&2
         exit 1
     fi
+}
+
+write_info_plist() {
+    app_path="$1"
+    executable="${2:-$product_name}"
+    package_type="${3:-APPL}"
+    lsui_element="${4:-true}"
+
+    mkdir -p "$app_path/Contents"
+    if [ "$lsui_element" = "true" ]; then
+        lsui_value="<true/>"
+    else
+        lsui_value="<false/>"
+    fi
+
+    cat >"$app_path/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>$executable</string>
+    <key>CFBundlePackageType</key>
+    <string>$package_type</string>
+    <key>LSUIElement</key>
+    $lsui_value
+</dict>
+</plist>
+PLIST
+}
+
+write_executable() {
+    app_path="$1"
+    executable_name="${2:-$product_name}"
+    mode="${3:-755}"
+
+    mkdir -p "$app_path/Contents/MacOS"
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$app_path/Contents/MacOS/$executable_name"
+    chmod "$mode" "$app_path/Contents/MacOS/$executable_name"
 }
 
 assert_fails_with "bundle not found" "$bundle_script" --verify "$tmpdir/Missing.app"
@@ -33,9 +73,43 @@ malformed_app="$tmpdir/Malformed.app"
 mkdir -p "$malformed_app"
 assert_fails_with "missing Contents/Info.plist" "$bundle_script" --verify "$malformed_app"
 
+invalid_plist_app="$tmpdir/InvalidPlist.app"
+mkdir -p "$invalid_plist_app/Contents"
+printf 'not a plist\n' >"$invalid_plist_app/Contents/Info.plist"
+assert_fails_with "invalid Info.plist" "$bundle_script" --verify "$invalid_plist_app"
+
+wrong_executable_app="$tmpdir/WrongExecutable.app"
+write_info_plist "$wrong_executable_app" "OtherExecutable"
+assert_fails_with "CFBundleExecutable expected $product_name" "$bundle_script" --verify "$wrong_executable_app"
+
+wrong_package_app="$tmpdir/WrongPackage.app"
+write_info_plist "$wrong_package_app" "$product_name" "BNDL"
+assert_fails_with "CFBundlePackageType expected APPL" "$bundle_script" --verify "$wrong_package_app"
+
+dock_app="$tmpdir/DockApp.app"
+write_info_plist "$dock_app" "$product_name" "APPL" "false"
+assert_fails_with "LSUIElement expected true" "$bundle_script" --verify "$dock_app"
+
+missing_executable_app="$tmpdir/MissingExecutable.app"
+write_info_plist "$missing_executable_app"
+assert_fails_with "missing executable" "$bundle_script" --verify "$missing_executable_app"
+
+nonexecutable_app="$tmpdir/NonExecutable.app"
+write_info_plist "$nonexecutable_app"
+write_executable "$nonexecutable_app" "$product_name" "644"
+assert_fails_with "executable is not executable" "$bundle_script" --verify "$nonexecutable_app"
+
+unsigned_app="$tmpdir/Unsigned.app"
+write_info_plist "$unsigned_app"
+write_executable "$unsigned_app"
+assert_fails_with "codesign verification failed" "$bundle_script" --verify "$unsigned_app"
+
 assert_fails_with "app path must not be empty" "$bundle_script" --output ""
 assert_fails_with "app path must not be /" "$bundle_script" --output /
 assert_fails_with "app path must end in .app" "$bundle_script" --output "$tmpdir/not-an-app"
+assert_fails_with "build output basename must be AIUsageBar.app" "$bundle_script" --output "$tmpdir/Other.app"
+assert_fails_with "build output path must not contain .." "$bundle_script" --output "../AIUsageBar.app"
+assert_fails_with "--output cannot be used with --verify" "$bundle_script" --verify --output "$tmpdir/AIUsageBar.app"
 
 built_app="$tmpdir/AIUsageBar.app"
 mkdir -p "$built_app/Contents/MacOS"
