@@ -234,6 +234,7 @@ public struct SystemUsageClock: UsageClock {
 @Observable
 public final class AppState: @unchecked Sendable {
     private var providerStates: [ProviderID: ProviderState]
+    private var hiddenProviders: Set<ProviderID>
     private var lastAttemptedRefreshes: [ProviderID: Date]
     private var lastSuccessfulRefreshes: [ProviderID: Date]
 
@@ -242,17 +243,28 @@ public final class AppState: @unchecked Sendable {
         lastAttemptedRefreshes: [ProviderID: Date] = [:],
         lastSuccessfulRefreshes: [ProviderID: Date] = [:]
     ) {
-        self.providerStates = providerStates
+        self.providerStates = providerStates.filter { _, state in state != .hidden }
+        self.hiddenProviders = Set(providerStates.compactMap { provider, state in
+            state == .hidden ? provider : nil
+        })
         self.lastAttemptedRefreshes = lastAttemptedRefreshes
         self.lastSuccessfulRefreshes = lastSuccessfulRefreshes
     }
 
     public var states: [ProviderID: ProviderState] {
-        providerStates
+        var states = providerStates
+        for provider in hiddenProviders {
+            states[provider] = .hidden
+        }
+        return states
     }
 
     public func providerState(for provider: ProviderID) -> ProviderState? {
-        providerStates[provider]
+        if hiddenProviders.contains(provider) {
+            return .hidden
+        }
+
+        return providerStates[provider]
     }
 
     public func lastAttemptedRefresh(provider: ProviderID) -> Date? {
@@ -275,16 +287,14 @@ public final class AppState: @unchecked Sendable {
     }
 
     public func isHidden(provider: ProviderID) -> Bool {
-        providerStates[provider] == .hidden
+        hiddenProviders.contains(provider)
     }
 
     public func setProvider(_ provider: ProviderID, visible: Bool) {
         if visible {
-            if providerStates[provider] == .hidden {
-                providerStates.removeValue(forKey: provider)
-            }
+            hiddenProviders.remove(provider)
         } else {
-            providerStates[provider] = .hidden
+            hiddenProviders.insert(provider)
         }
     }
 
@@ -304,7 +314,7 @@ public final class AppState: @unchecked Sendable {
             return false
         }
 
-        if case .hidden = providerStates[provider] {
+        if hiddenProviders.contains(provider) {
             return false
         }
 
@@ -318,7 +328,7 @@ public final class AppState: @unchecked Sendable {
         state: ProviderState,
         completedAt: Date
     ) {
-        if case .hidden = providerStates[provider] {
+        if hiddenProviders.contains(provider) {
             return
         }
 
