@@ -64,6 +64,28 @@ func codexUsageProviderOmitsAccountHeaderWhenCredentialHasNoAccountID() async th
 }
 
 @Test
+func codexUsageProviderOmitsAccountHeaderWhenCredentialAccountIDIsBlank() async throws {
+    let transport = FakeHTTPTransport(response: (
+        try fixtureData("codex-usage.json"),
+        try httpResponse(statusCode: 200)
+    ))
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(result: .fresh(CodexCredential(
+            accessToken: "access-token",
+            accountID: "  ",
+            expiresAt: Date(timeIntervalSince1970: 1_783_006_145)
+        ))),
+        transport: transport,
+        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+    )
+
+    _ = await provider.fetch(previous: nil)
+    let request = try #require(transport.requests.first)
+
+    #expect(request.value(forHTTPHeaderField: "ChatGPT-Account-Id") == nil)
+}
+
+@Test
 func codexUsageProviderMapsCredentialFailuresWithoutSendingRequest() async throws {
     let previous = sampleUsage(fiveHour: 44, weekly: 66)
     let cases: [(CodexCredentialReadResult, StaleReason)] = [
@@ -88,6 +110,25 @@ func codexUsageProviderMapsCredentialFailuresWithoutSendingRequest() async throw
         #expect(state == .stale(last: previous, reason: expectedReason))
         #expect(transport.requests.isEmpty)
     }
+}
+
+@Test
+func codexUsageProviderMapsThrowingCredentialReaderToCredentialUnavailableWithoutSendingRequest() async throws {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
+    let transport = FakeHTTPTransport(response: (
+        try fixtureData("codex-usage.json"),
+        try httpResponse(statusCode: 200)
+    ))
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(error: CredentialReaderError.unavailable),
+        transport: transport,
+        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+    )
+
+    let state = await provider.fetch(previous: previous)
+
+    #expect(state == .stale(last: previous, reason: .credentialUnavailable))
+    #expect(transport.requests.isEmpty)
 }
 
 @Test
@@ -150,15 +191,30 @@ func codexUsageProviderMapsTransportThrowToNetworkError() async {
 }
 
 private final class FakeCodexCredentialReader: CodexCredentialReading, @unchecked Sendable {
-    private let result: CodexCredentialReadResult
+    private let result: CodexCredentialReadResult?
+    private let error: (any Error)?
 
     init(result: CodexCredentialReadResult) {
         self.result = result
+        self.error = nil
+    }
+
+    init(error: any Error) {
+        self.result = nil
+        self.error = error
     }
 
     func read() throws -> CodexCredentialReadResult {
-        result
+        if let error {
+            throw error
+        }
+
+        return result!
     }
+}
+
+private enum CredentialReaderError: Error {
+    case unavailable
 }
 
 private final class FakeHTTPTransport: HTTPTransport, @unchecked Sendable {

@@ -322,7 +322,8 @@ public struct CodexUsageProvider: UsageProvider {
         request.httpMethod = "GET"
         request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("AIUsageBar/\(UsageCore.version)", forHTTPHeaderField: "User-Agent")
-        if let accountID = credential.accountID {
+        if let accountID = credential.accountID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !accountID.isEmpty {
             request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
         }
 
