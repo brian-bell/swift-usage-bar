@@ -323,6 +323,38 @@ func usagePollerDoesNotNotifyForDiscardedInFlightResults() async {
 }
 
 @Test
+func usagePollerDoesNotNotifyWhenStoppedDuringThresholdLookup() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_700))
+    let previousUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let appState = await AppState(providerStates: [.claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_600))])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 18, weekly: 81), asOf: Date(timeIntervalSince1970: 4_650))])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier,
+        thresholdProvider: {
+            await thresholdProvider.threshold()
+        }
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await thresholdProvider.waitForRequestCount(1)
+    await poller.stop()
+    await thresholdProvider.releaseAll()
+    await poller.start()
+    await claude.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+    await poller.stop()
+
+    #expect(await sender.sentNotifications().isEmpty)
+}
+
+@Test
 func usagePollerStopPreventsLaterTimerFetches() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_000))
     let appState = await AppState()
@@ -869,6 +901,57 @@ private actor RecordingThresholdNotificationSender: NotificationSending {
 
     func sentNotifications() -> [UsageThresholdNotification] {
         notifications
+    }
+}
+
+private actor SuspendingThresholdProvider {
+    private let resolvedThreshold: Int
+    private var requestCount = 0
+    private var released = false
+    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var thresholdContinuations: [CheckedContinuation<Int, Never>] = []
+
+    init(threshold: Int) {
+        self.resolvedThreshold = threshold
+    }
+
+    func threshold() async -> Int {
+        requestCount += 1
+        resumeRequestWaiters()
+        if released {
+            return resolvedThreshold
+        }
+
+        return await withCheckedContinuation { continuation in
+            thresholdContinuations.append(continuation)
+        }
+    }
+
+    func waitForRequestCount(_ count: Int) async {
+        if requestCount >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            requestWaiters.append((count, continuation))
+        }
+    }
+
+    func releaseAll() {
+        released = true
+        let continuations = thresholdContinuations
+        thresholdContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume(returning: resolvedThreshold)
+        }
+    }
+
+    private func resumeRequestWaiters() {
+        let ready = requestWaiters.filter { requestCount >= $0.0 }
+        requestWaiters.removeAll { requestCount >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
     }
 }
 

@@ -547,6 +547,10 @@ public actor UsagePoller {
 
                 if case let .fresh(usage, asOf: _) = result.state {
                     let threshold = await thresholdProvider()
+                    guard isRunning, generation == pollGeneration, lifecycle.isCurrent(generation), !Task.isCancelled else {
+                        continue
+                    }
+
                     await thresholdNotifier.evaluate(
                         previous: result.previousUsage,
                         current: usage,

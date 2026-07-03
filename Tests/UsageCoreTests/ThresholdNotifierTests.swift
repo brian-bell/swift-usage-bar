@@ -73,6 +73,55 @@ func thresholdNotifierDeduplicatesSameProviderWindowResetCycle() async {
 }
 
 @Test
+func thresholdNotifierDoesNotRearmAfterRisingAboveThresholdInSameCycle() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_783_008_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 24, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 24, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 17, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 18, threshold: 20, resetsAt: reset),
+    ])
+}
+
+@Test
+func thresholdNotifierUsesInclusivePreviousAndExclusiveCurrentThresholdBoundary() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let fiveHourReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let weeklyReset = Date(timeIntervalSince1970: 1_783_555_200)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 20, fiveHourReset: fiveHourReset, weekly: 25, weeklyReset: weeklyReset),
+        current: usage(fiveHour: 19, fiveHourReset: fiveHourReset, weekly: 20, weeklyReset: weeklyReset),
+        provider: .claude,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 19, threshold: 20, resetsAt: fiveHourReset),
+    ])
+}
+
+@Test
 func thresholdNotifierTracksProvidersAndWindowsIndependently() async {
     let sender = RecordingNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
