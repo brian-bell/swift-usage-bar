@@ -26,6 +26,28 @@ func codexCredentialParserReadsTokenAccountAndJWTExpiry() throws {
 }
 
 @Test
+func codexCredentialParserReadsTokenAndJWTExpiryWhenAccountIDIsMissing() throws {
+    let expiresAt = Date(timeIntervalSince1970: 1_783_006_145)
+    let credentialJSON = Data("""
+    {
+      "auth_mode": "chatgpt",
+      "last_refresh": "2026-07-02T11:22:33Z",
+      "tokens": {
+        "access_token": "\(dummyJWT(exp: expiresAt))",
+        "refresh_token": "refresh-token",
+        "id_token": "id-token"
+      }
+    }
+    """.utf8)
+
+    let credential = try CodexCredentialParser().parse(credentialJSON)
+
+    #expect(credential.accessToken == dummyJWT(exp: expiresAt))
+    #expect(credential.accountID == nil)
+    #expect(credential.expiresAt == expiresAt)
+}
+
+@Test
 func codexCredentialParserThrowsParseFailureWhenJWTExpiryIsMissing() throws {
     let credentialJSON = Data("""
     {
@@ -87,7 +109,7 @@ func codexCredentialParserThrowsParseFailureWhenAccessTokenIsEmpty() throws {
 }
 
 @Test
-func codexCredentialParserThrowsParseFailureWhenAccountIDIsBlank() throws {
+func codexCredentialParserTreatsBlankAccountIDAsMissing() throws {
     let credentialJSON = Data("""
     {
       "tokens": {
@@ -97,7 +119,7 @@ func codexCredentialParserThrowsParseFailureWhenAccountIDIsBlank() throws {
     }
     """.utf8)
 
-    try expectParseFailure {
-        _ = try CodexCredentialParser().parse(credentialJSON)
-    }
+    let credential = try CodexCredentialParser().parse(credentialJSON)
+
+    #expect(credential.accountID == nil)
 }

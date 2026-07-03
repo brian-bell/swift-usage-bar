@@ -114,10 +114,10 @@ public struct ClaudeStatuslineCacheReader: Sendable {
 
 public struct CodexCredential: Equatable, Sendable {
     public let accessToken: String
-    public let accountID: String
+    public let accountID: String?
     public let expiresAt: Date
 
-    public init(accessToken: String, accountID: String, expiresAt: Date) {
+    public init(accessToken: String, accountID: String?, expiresAt: Date) {
         self.accessToken = accessToken
         self.accountID = accountID
         self.expiresAt = expiresAt
@@ -136,7 +136,7 @@ public struct CodexCredentialParser: Sendable {
 
             return CodexCredential(
                 accessToken: stored.tokens.accessToken,
-                accountID: stored.tokens.accountID,
+                accountID: stored.tokens.normalizedAccountID,
                 expiresAt: try expiryDate(fromJWT: stored.tokens.accessToken)
             )
         } catch {
@@ -428,11 +428,19 @@ private struct CodexStoredCredential: Decodable {
 
     struct Tokens: Decodable {
         let accessToken: String
-        let accountID: String
+        let accountID: String?
 
         var hasRequiredValues: Bool {
-            !accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                !accountID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            !accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        var normalizedAccountID: String? {
+            guard let accountID else {
+                return nil
+            }
+
+            let trimmed = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
         }
 
         enum CodingKeys: String, CodingKey {

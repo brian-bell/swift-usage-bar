@@ -17,10 +17,10 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 ## Codex
 
 - Auth source: macOS Keychain generic password with service `Codex Auth` and account `cli|<sha256(canonical CODEX_HOME)[0..<16]>`.
-- Credential shape: JSON with `auth_mode`, `last_refresh`, and `tokens`. The `tokens` object has `access_token`, `refresh_token`, `id_token`, and `account_id`.
+- Credential shape: JSON with `auth_mode`, `last_refresh`, and `tokens`. The `tokens` object has `access_token`, `refresh_token`, `id_token`, and optional `account_id`.
 - Expiry detection: parse the JWT payload from `tokens.access_token` and read the standard `exp` claim; Codex refreshes inside a 5-minute window.
 - Usage request: `GET https://chatgpt.com/backend-api/wham/usage` for the default ChatGPT base URL. The same backend client maps non-`/backend-api` Codex API base URLs to `/api/codex/usage`.
-- Headers: `Authorization: Bearer <tokens.access_token>`, `ChatGPT-Account-Id: <tokens.account_id>`, and `User-Agent`.
+- Headers: `Authorization: Bearer <tokens.access_token>`, `User-Agent`, and `ChatGPT-Account-Id: <tokens.account_id>` only when `tokens.account_id` is present.
 - User-Agent source: `Client::from_auth` calls `get_codex_user_agent()` from `codex-rs/login/src/auth/default_client.rs`. In tag `rust-v0.142.5`, the generated form is `<originator>/<codex_login version> (<os type> <os version>; <arch>) <terminal user_agent>` with default originator `codex_cli_rs`; `Client::headers()` falls back to static `codex-cli` only when no user agent was configured.
 - Source evidence: `openai/codex` tag `rust-v0.142.5`, especially `codex-rs/login/src/auth/storage.rs`, `codex-rs/login/src/token_data.rs`, `codex-rs/login/src/auth/manager.rs`, `codex-rs/backend-client/src/client.rs`, and `codex-rs/backend-client/src/client/rate_limit_resets.rs`.
 - Live result: the controlled `curl` attempt succeeded and produced the sanitized fixture at `Tests/Fixtures/codex-usage.json`.
