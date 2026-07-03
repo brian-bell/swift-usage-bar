@@ -48,6 +48,10 @@ public enum ProviderState: Equatable, Sendable {
     case hidden
 }
 
+public protocol UsageProvider: Sendable {
+    func fetch(previous: ProviderUsage?) async -> ProviderState
+}
+
 public enum UsageStatusTone: Equatable, Sendable {
     case normal
     case warning
@@ -57,6 +61,10 @@ public enum UsageStatusTone: Equatable, Sendable {
 public enum ClaudeStatuslineCacheReadResult: Equatable, Sendable {
     case fresh(data: Data, usage: ProviderUsage, asOf: Date)
     case stale(last: ProviderUsage?, reason: StaleReason, hint: String)
+}
+
+public protocol ClaudeStatuslineCacheReading: Sendable {
+    func read(now: Date) throws -> ClaudeStatuslineCacheReadResult
 }
 
 public struct ClaudeStatuslineCacheReader: Sendable {
@@ -112,6 +120,41 @@ public struct ClaudeStatuslineCacheReader: Sendable {
         "Configure Claude Code statusline to write its cache."
 }
 
+extension ClaudeStatuslineCacheReader: ClaudeStatuslineCacheReading {}
+
+public struct ClaudeUsageProvider: UsageProvider {
+    private let cacheReader: any ClaudeStatuslineCacheReading
+    private let now: @Sendable () -> Date
+
+    public init(
+        cacheReader: any ClaudeStatuslineCacheReading,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.cacheReader = cacheReader
+        self.now = now
+    }
+
+    public func fetch(previous: ProviderUsage?) async -> ProviderState {
+        do {
+            return Self.providerState(from: try cacheReader.read(now: now()), previous: previous)
+        } catch {
+            return .stale(last: previous, reason: .networkError)
+        }
+    }
+
+    private static func providerState(
+        from result: ClaudeStatuslineCacheReadResult,
+        previous: ProviderUsage?
+    ) -> ProviderState {
+        switch result {
+        case let .fresh(data: _, usage: usage, asOf: asOf):
+            return .fresh(usage, asOf: asOf)
+        case let .stale(last: last, reason: reason, hint: _):
+            return .stale(last: last ?? previous, reason: reason)
+        }
+    }
+}
+
 public struct CodexCredential: Equatable, Sendable {
     public let accessToken: String
     public let accountID: String?
@@ -162,6 +205,10 @@ public enum CodexCredentialReadResult: Equatable, Sendable {
     case stale(reason: StaleReason)
 }
 
+public protocol CodexCredentialReading: Sendable {
+    func read() throws -> CodexCredentialReadResult
+}
+
 public struct CodexCredentialReader: Sendable {
     private let store: any CredentialStore
     private let parser: CodexCredentialParser
@@ -203,6 +250,84 @@ public struct CodexCredentialReader: Sendable {
         }
 
         return .fresh(credential)
+    }
+}
+
+extension CodexCredentialReader: CodexCredentialReading {}
+
+public protocol HTTPTransport: Sendable {
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
+}
+
+public struct URLSessionHTTPTransport: HTTPTransport {
+    public init() {}
+
+    public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        return (data, httpResponse)
+    }
+}
+
+public struct CodexUsageProvider: UsageProvider {
+    private let credentialReader: any CodexCredentialReading
+    private let transport: any HTTPTransport
+    private let parser: CodexUsageParser
+    private let now: @Sendable () -> Date
+
+    public init(
+        credentialReader: any CodexCredentialReading,
+        transport: any HTTPTransport = URLSessionHTTPTransport(),
+        parser: CodexUsageParser = CodexUsageParser(),
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.credentialReader = credentialReader
+        self.transport = transport
+        self.parser = parser
+        self.now = now
+    }
+
+    public func fetch(previous: ProviderUsage?) async -> ProviderState {
+        let credential: CodexCredential
+        do {
+            switch try credentialReader.read() {
+            case let .fresh(freshCredential):
+                credential = freshCredential
+            case let .stale(reason):
+                return .stale(last: previous, reason: reason)
+            }
+        } catch {
+            return .stale(last: previous, reason: .credentialUnavailable)
+        }
+
+        do {
+            let (data, response) = try await transport.send(Self.usageRequest(for: credential))
+            guard response.statusCode == 200 else {
+                return .stale(last: previous, reason: staleReason(forHTTPStatusCode: response.statusCode))
+            }
+
+            return .fresh(try parser.parse(data), asOf: now())
+        } catch UsageParsingError.parseFailure {
+            return .stale(last: previous, reason: .parseFailure)
+        } catch {
+            return .stale(last: previous, reason: .networkError)
+        }
+    }
+
+    private static func usageRequest(for credential: CodexCredential) -> URLRequest {
+        var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("AIUsageBar/\(UsageCore.version)", forHTTPHeaderField: "User-Agent")
+        if let accountID = credential.accountID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !accountID.isEmpty {
+            request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
+        }
+
+        return request
     }
 }
 
@@ -510,6 +635,14 @@ private func percentRemaining(fromUsedPercentage usedPercentage: Int) -> Int {
     }
 
     return 100 - usedPercentage
+}
+
+private func staleReason(forHTTPStatusCode statusCode: Int) -> StaleReason {
+    if statusCode == 401 {
+        return .tokenExpired
+    }
+
+    return .networkError
 }
 
 private extension ProviderUsage {
