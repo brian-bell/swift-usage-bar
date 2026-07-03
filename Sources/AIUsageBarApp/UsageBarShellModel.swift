@@ -37,9 +37,9 @@ final class UsageBarShellModel {
         self.now = now
         self.pollInterval = settingsStore.pollInterval
         self.thresholdPercent = settingsStore.thresholdPercent
-        self.launchAtLoginEnabled = launchAtLoginManager.isEnabled
+        self.launchAtLoginEnabled = launchAtLoginManager.status.isRegistered
         applyStoredProviderVisibility()
-        settingsStore.launchAtLoginEnabled = launchAtLoginEnabled
+        applyLaunchAtLoginStatus()
     }
 
     func start() async {
@@ -79,13 +79,19 @@ final class UsageBarShellModel {
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
         do {
             try launchAtLoginManager.setEnabled(enabled)
-            let effectiveEnabled = launchAtLoginManager.isEnabled
-            launchAtLoginEnabled = effectiveEnabled
-            settingsStore.launchAtLoginEnabled = effectiveEnabled
-            launchAtLoginError = nil
+            applyLaunchAtLoginStatus()
+        } catch LaunchAtLoginError.requiresApproval {
+            applyLaunchAtLoginStatus()
         } catch {
             launchAtLoginError = "Launch at login could not be updated."
         }
+    }
+
+    private func applyLaunchAtLoginStatus() {
+        let status = launchAtLoginManager.status
+        launchAtLoginEnabled = status.isRegistered
+        settingsStore.launchAtLoginEnabled = status.isRegistered
+        launchAtLoginError = status == .requiresApproval ? "Approve launch at login in System Settings." : nil
     }
 
     private func applyStoredProviderVisibility() {

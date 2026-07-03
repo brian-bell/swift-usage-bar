@@ -4,7 +4,7 @@ import Testing
 
 @Test
 func systemLaunchAtLoginManagerRegistersOnlyWhenDisabled() throws {
-    let client = RecordingLaunchServiceClient(isEnabled: false)
+    let client = RecordingLaunchServiceClient(status: .disabled)
     let manager = SystemLaunchAtLoginManager(serviceClient: client)
 
     try manager.setEnabled(true)
@@ -14,7 +14,7 @@ func systemLaunchAtLoginManagerRegistersOnlyWhenDisabled() throws {
 
 @Test
 func systemLaunchAtLoginManagerSkipsRegisterWhenAlreadyEnabled() throws {
-    let client = RecordingLaunchServiceClient(isEnabled: true)
+    let client = RecordingLaunchServiceClient(status: .enabled)
     let manager = SystemLaunchAtLoginManager(serviceClient: client)
 
     try manager.setEnabled(true)
@@ -24,7 +24,7 @@ func systemLaunchAtLoginManagerSkipsRegisterWhenAlreadyEnabled() throws {
 
 @Test
 func systemLaunchAtLoginManagerUnregistersOnlyWhenEnabled() throws {
-    let client = RecordingLaunchServiceClient(isEnabled: true)
+    let client = RecordingLaunchServiceClient(status: .enabled)
     let manager = SystemLaunchAtLoginManager(serviceClient: client)
 
     try manager.setEnabled(false)
@@ -34,7 +34,7 @@ func systemLaunchAtLoginManagerUnregistersOnlyWhenEnabled() throws {
 
 @Test
 func systemLaunchAtLoginManagerSkipsUnregisterWhenAlreadyDisabled() throws {
-    let client = RecordingLaunchServiceClient(isEnabled: false)
+    let client = RecordingLaunchServiceClient(status: .disabled)
     let manager = SystemLaunchAtLoginManager(serviceClient: client)
 
     try manager.setEnabled(false)
@@ -45,7 +45,7 @@ func systemLaunchAtLoginManagerSkipsUnregisterWhenAlreadyDisabled() throws {
 @Test
 func systemLaunchAtLoginManagerPropagatesRegisterError() {
     let client = RecordingLaunchServiceClient(
-        isEnabled: false,
+        status: .disabled,
         registerError: LaunchServiceTestError.failed
     )
     let manager = SystemLaunchAtLoginManager(serviceClient: client)
@@ -58,7 +58,7 @@ func systemLaunchAtLoginManagerPropagatesRegisterError() {
 @Test
 func systemLaunchAtLoginManagerPropagatesUnregisterError() {
     let client = RecordingLaunchServiceClient(
-        isEnabled: true,
+        status: .enabled,
         unregisterError: LaunchServiceTestError.failed
     )
     let manager = SystemLaunchAtLoginManager(serviceClient: client)
@@ -68,18 +68,48 @@ func systemLaunchAtLoginManagerPropagatesUnregisterError() {
     }
 }
 
+@Test
+func systemLaunchAtLoginManagerReportsApprovalRequiredStatus() {
+    let client = RecordingLaunchServiceClient(status: .requiresApproval)
+    let manager = SystemLaunchAtLoginManager(serviceClient: client)
+
+    #expect(manager.status == .requiresApproval)
+}
+
+@Test
+func systemLaunchAtLoginManagerDoesNotReregisterWhenApprovalIsRequired() {
+    let client = RecordingLaunchServiceClient(status: .requiresApproval)
+    let manager = SystemLaunchAtLoginManager(serviceClient: client)
+
+    #expect(throws: LaunchAtLoginError.requiresApproval) {
+        try manager.setEnabled(true)
+    }
+    #expect(client.events.isEmpty)
+}
+
+@Test
+func systemLaunchAtLoginManagerUnregistersWhenApprovalIsRequired() throws {
+    let client = RecordingLaunchServiceClient(status: .requiresApproval)
+    let manager = SystemLaunchAtLoginManager(serviceClient: client)
+
+    try manager.setEnabled(false)
+
+    #expect(client.events == [.unregister])
+    #expect(client.status == .disabled)
+}
+
 private final class RecordingLaunchServiceClient: LaunchAtLoginServiceClient {
-    private(set) var isEnabled: Bool
+    private(set) var status: LaunchAtLoginStatus
     private let registerError: (any Error)?
     private let unregisterError: (any Error)?
     private(set) var events: [LaunchServiceEvent] = []
 
     init(
-        isEnabled: Bool,
+        status: LaunchAtLoginStatus,
         registerError: (any Error)? = nil,
         unregisterError: (any Error)? = nil
     ) {
-        self.isEnabled = isEnabled
+        self.status = status
         self.registerError = registerError
         self.unregisterError = unregisterError
     }
@@ -90,7 +120,7 @@ private final class RecordingLaunchServiceClient: LaunchAtLoginServiceClient {
         }
 
         events.append(.register)
-        isEnabled = true
+        status = .enabled
     }
 
     func unregister() throws {
@@ -99,7 +129,7 @@ private final class RecordingLaunchServiceClient: LaunchAtLoginServiceClient {
         }
 
         events.append(.unregister)
-        isEnabled = false
+        status = .disabled
     }
 }
 

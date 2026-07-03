@@ -149,7 +149,7 @@ func shellModelLaunchAtLoginIntentPersistsSuccessfulEnableAndDisable() {
 func shellModelLaunchAtLoginIntentPersistsEffectiveManagerState() {
     withIsolatedDefaults { defaults in
         let settingsStore = SettingsStore(defaults: defaults)
-        let launchManager = RecordingLaunchAtLoginManager(acceptsWithoutChangingState: true)
+        let launchManager = RecordingLaunchAtLoginManager(statusAfterSet: .disabled)
         let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
 
         model.setLaunchAtLoginEnabled(true)
@@ -158,6 +158,54 @@ func shellModelLaunchAtLoginIntentPersistsEffectiveManagerState() {
         #expect(!model.launchAtLoginEnabled)
         #expect(!settingsStore.launchAtLoginEnabled)
         #expect(model.launchAtLoginError == nil)
+    }
+}
+
+@Test
+@MainActor
+func shellModelLaunchAtLoginPromptTracksApprovalRequiredState() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let launchManager = RecordingLaunchAtLoginManager(status: .requiresApproval)
+        let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
+
+        #expect(model.launchAtLoginEnabled)
+        #expect(settingsStore.launchAtLoginEnabled)
+        #expect(model.launchAtLoginError == "Approve launch at login in System Settings.")
+    }
+}
+
+@Test
+@MainActor
+func shellModelLaunchAtLoginCanDisableApprovalRequiredRegistration() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let launchManager = RecordingLaunchAtLoginManager(status: .requiresApproval)
+        let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
+
+        model.setLaunchAtLoginEnabled(false)
+
+        #expect(launchManager.requests == [false])
+        #expect(!model.launchAtLoginEnabled)
+        #expect(!settingsStore.launchAtLoginEnabled)
+        #expect(model.launchAtLoginError == nil)
+    }
+}
+
+@Test
+@MainActor
+func shellModelLaunchAtLoginShowsApprovalPromptInsteadOfRetryingRegister() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let launchManager = RecordingLaunchAtLoginManager(status: .requiresApproval)
+        let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
+
+        model.setLaunchAtLoginEnabled(true)
+
+        #expect(launchManager.requests.isEmpty)
+        #expect(model.launchAtLoginEnabled)
+        #expect(settingsStore.launchAtLoginEnabled)
+        #expect(model.launchAtLoginError == "Approve launch at login in System Settings.")
     }
 }
 
@@ -227,23 +275,34 @@ private actor RecordingUsageController: UsageControlling {
 
 private final class RecordingLaunchAtLoginManager: LaunchAtLoginManaging {
     private let error: (any Error)?
-    private let acceptsWithoutChangingState: Bool
+    private let statusAfterSet: LaunchAtLoginStatus?
     var requests: [Bool] = []
-    var isEnabled = false
+    var status: LaunchAtLoginStatus
 
-    init(error: (any Error)? = nil, acceptsWithoutChangingState: Bool = false) {
+    init(
+        status: LaunchAtLoginStatus = .disabled,
+        error: (any Error)? = nil,
+        statusAfterSet: LaunchAtLoginStatus? = nil
+    ) {
+        self.status = status
         self.error = error
-        self.acceptsWithoutChangingState = acceptsWithoutChangingState
+        self.statusAfterSet = statusAfterSet
     }
 
     func setEnabled(_ enabled: Bool) throws {
+        if status == .requiresApproval, enabled {
+            throw LaunchAtLoginError.requiresApproval
+        }
+
         if let error {
             throw error
         }
 
         requests.append(enabled)
-        if !acceptsWithoutChangingState {
-            isEnabled = enabled
+        if let statusAfterSet {
+            status = statusAfterSet
+        } else {
+            status = enabled ? .enabled : .disabled
         }
     }
 }
