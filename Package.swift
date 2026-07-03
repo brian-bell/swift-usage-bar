@@ -50,6 +50,32 @@ let package = Package(
                     "/Library/Developer/CommandLineTools/Library/Developer/usr/lib",
                 ])
             ]
+        ),
+        .testTarget(
+            name: "AIUsageBarAppTests",
+            dependencies: ["AIUsageBarApp", "UsageCore"],
+            // CommandLineTools-only Swift 6.3 exposes Swift Testing from this
+            // framework path, but does not provide XCTest.framework.
+            swiftSettings: [
+                .unsafeFlags([
+                    "-F",
+                    "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                ])
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-F",
+                    "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                    "-Xlinker",
+                    "-rpath",
+                    "-Xlinker",
+                    "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                    "-Xlinker",
+                    "-rpath",
+                    "-Xlinker",
+                    "/Library/Developer/CommandLineTools/Library/Developer/usr/lib",
+                ])
+            ]
         )
     ]
 )

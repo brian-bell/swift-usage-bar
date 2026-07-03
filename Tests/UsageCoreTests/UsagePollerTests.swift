@@ -158,6 +158,377 @@ func usagePollerAppliesSuccessfulProviderWhenOtherProviderIsStale() async {
 }
 
 @Test
+func usagePollerSendsThresholdNotificationForFreshCrossing() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_200))
+    let previousUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let appState = await AppState(providerStates: [.claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_100))])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let currentUsage = sampleUsage(fiveHour: 18, weekly: 81)
+    let claude = RecordingUsageProvider(results: [.fresh(currentUsage, asOf: Date(timeIntervalSince1970: 4_150))])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+
+    #expect(await sender.sentNotifications() == [
+        UsageThresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: currentUsage.fiveHour.resetsAt
+        ),
+    ])
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerUsesPreviousUsageCapturedBeforeFetchForNotificationCrossing() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_300))
+    let previousUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let appState = await AppState(providerStates: [.claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_200))])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let currentUsage = sampleUsage(fiveHour: 18, weekly: 81)
+    let claude = PreviousRecordingUsageProvider(result: .fresh(currentUsage, asOf: Date(timeIntervalSince1970: 4_250)))
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+
+    #expect(await claude.previousUsages() == [previousUsage])
+    #expect(await sender.sentNotifications().count == 1)
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerDoesNotNotifyForStaleResults() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_400))
+    let previousUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let appState = await AppState(providerStates: [.claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_300))])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let claude = RecordingUsageProvider(results: [.stale(last: sampleUsage(fiveHour: 18, weekly: 81), reason: .networkError)])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+
+    #expect(await sender.sentNotifications().isEmpty)
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerReadsInjectedThresholdProviderDuringEvaluation() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_450))
+    let previousUsage = sampleUsage(fiveHour: 35, weekly: 81)
+    let appState = await AppState(providerStates: [.claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_350))])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let currentUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let claude = RecordingUsageProvider(results: [.fresh(currentUsage, asOf: Date(timeIntervalSince1970: 4_400))])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier,
+        thresholdProvider: { 30 }
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+
+    #expect(await sender.sentNotifications() == [
+        UsageThresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 25,
+            threshold: 30,
+            resetsAt: currentUsage.fiveHour.resetsAt
+        ),
+    ])
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerDoesNotEvaluateNotificationsForHiddenProviders() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_500))
+    let appState = await AppState(providerStates: [.claude: .hidden])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 18, weekly: 81), asOf: Date(timeIntervalSince1970: 4_450))])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier
+    )
+
+    await poller.start()
+    await poller.waitUntilIdle()
+
+    #expect(await claude.fetchCount == 0)
+    #expect(await sender.sentNotifications().isEmpty)
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerDoesNotNotifyForDiscardedInFlightResults() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_600))
+    let previousUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let appState = await AppState(providerStates: [.claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_500))])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let claude = BlockingUsageProvider(result: .fresh(sampleUsage(fiveHour: 18, weekly: 81), asOf: Date(timeIntervalSince1970: 4_550)))
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier
+    )
+
+    await poller.start()
+    await claude.waitUntilStarted()
+    await poller.stop()
+    await claude.release()
+    await claude.waitUntilFinished()
+    await Task.yield()
+
+    #expect(await sender.sentNotifications().isEmpty)
+}
+
+@Test
+func usagePollerDoesNotNotifyWhenStoppedDuringThresholdLookup() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_700))
+    let previousUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let appState = await AppState(providerStates: [.claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_600))])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 18, weekly: 81), asOf: Date(timeIntervalSince1970: 4_650))])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier,
+        thresholdProvider: {
+            await thresholdProvider.threshold()
+        }
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await thresholdProvider.waitForRequestCount(1)
+    await poller.stop()
+    await thresholdProvider.releaseAll()
+    await poller.start()
+    await claude.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+    await poller.stop()
+
+    #expect(await sender.sentNotifications().isEmpty)
+}
+
+@Test
+func usagePollerAppliesOtherProviderResultsWhileThresholdLookupIsSuspended() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_800))
+    let previousClaudeUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let previousCodexUsage = sampleUsage(fiveHour: 70, weekly: 91)
+    let currentClaudeUsage = sampleUsage(fiveHour: 18, weekly: 81)
+    let currentCodexUsage = sampleUsage(fiveHour: 66, weekly: 91)
+    let appState = await AppState(providerStates: [
+        .claude: .fresh(previousClaudeUsage, asOf: Date(timeIntervalSince1970: 4_700)),
+        .codex: .fresh(previousCodexUsage, asOf: Date(timeIntervalSince1970: 4_701)),
+    ])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let claude = RecordingUsageProvider(results: [.fresh(currentClaudeUsage, asOf: Date(timeIntervalSince1970: 4_750))])
+    let codex = BlockingUsageProvider(result: .fresh(currentCodexUsage, asOf: Date(timeIntervalSince1970: 4_751)))
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier,
+        thresholdProvider: {
+            await thresholdProvider.threshold()
+        }
+    )
+
+    await poller.start()
+    await thresholdProvider.waitForRequestCount(1)
+    await codex.release()
+    await codex.waitUntilFinished()
+    await waitForProviderState(
+        appState,
+        provider: .codex,
+        state: .fresh(currentCodexUsage, asOf: Date(timeIntervalSince1970: 4_751))
+    )
+
+    #expect(await appState.providerState(for: .codex) == .fresh(currentCodexUsage, asOf: Date(timeIntervalSince1970: 4_751)))
+
+    await thresholdProvider.releaseAll()
+    await poller.waitUntilIdle()
+    await poller.stop()
+}
+
+@Test
+func usagePollerSkipsSupersededThresholdEvaluation() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_900))
+    let previousUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let crossingUsage = sampleUsage(fiveHour: 18, weekly: 81)
+    let recoveredUsage = sampleUsage(fiveHour: 50, weekly: 81)
+    let appState = await AppState(providerStates: [
+        .claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_800)),
+    ])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let claude = RecordingUsageProvider(results: [
+        .fresh(crossingUsage, asOf: Date(timeIntervalSince1970: 4_850)),
+        .fresh(recoveredUsage, asOf: Date(timeIntervalSince1970: 4_851)),
+    ])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier,
+        thresholdProvider: {
+            await thresholdProvider.threshold()
+        }
+    )
+
+    await poller.start()
+    await thresholdProvider.waitForRequestCount(1)
+    await poller.refreshNow()
+    await claude.waitForFetchCount(2)
+    await thresholdProvider.waitForRequestCount(2)
+    await thresholdProvider.releaseAll()
+    await poller.waitUntilIdle()
+
+    #expect(await sender.sentNotifications().isEmpty)
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerSendsWhenSupersededThresholdEvaluationIsStillBelowThreshold() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_950))
+    let previousUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let crossingUsage = sampleUsage(fiveHour: 18, weekly: 81)
+    let stillBelowUsage = sampleUsage(fiveHour: 17, weekly: 81)
+    let appState = await AppState(providerStates: [
+        .claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_900)),
+    ])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let claude = RecordingUsageProvider(results: [
+        .fresh(crossingUsage, asOf: Date(timeIntervalSince1970: 4_901)),
+        .fresh(stillBelowUsage, asOf: Date(timeIntervalSince1970: 4_902)),
+    ])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier,
+        thresholdProvider: {
+            await thresholdProvider.threshold()
+        }
+    )
+
+    await poller.start()
+    await thresholdProvider.waitForRequestCount(1)
+    await poller.refreshNow()
+    await claude.waitForFetchCount(2)
+    await thresholdProvider.waitForRequestCount(2)
+    await thresholdProvider.releaseAll()
+    await poller.waitUntilIdle()
+
+    #expect(await sender.sentNotifications() == [
+        UsageThresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 17,
+            threshold: 20,
+            resetsAt: stillBelowUsage.fiveHour.resetsAt
+        ),
+    ])
+
+    await poller.stop()
+}
+
+@Test
+func usagePollerSendsWhenSupersededByStaleRefreshPreservingLastUsage() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_975))
+    let previousUsage = sampleUsage(fiveHour: 25, weekly: 81)
+    let crossingUsage = sampleUsage(fiveHour: 18, weekly: 81)
+    let appState = await AppState(providerStates: [
+        .claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_950)),
+    ])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let claude = RecordingUsageProvider(results: [
+        .fresh(crossingUsage, asOf: Date(timeIntervalSince1970: 4_951)),
+        .stale(last: nil, reason: .networkError),
+    ])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier,
+        thresholdProvider: {
+            await thresholdProvider.threshold()
+        }
+    )
+
+    await poller.start()
+    await thresholdProvider.waitForRequestCount(1)
+    await poller.refreshNow()
+    await claude.waitForFetchCount(2)
+    await thresholdProvider.releaseAll()
+    await poller.waitUntilIdle()
+
+    #expect(await sender.sentNotifications() == [
+        UsageThresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: crossingUsage.fiveHour.resetsAt
+        ),
+    ])
+
+    await poller.stop()
+}
+
+@Test
 func usagePollerStopPreventsLaterTimerFetches() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_000))
     let appState = await AppState()
@@ -657,6 +1028,107 @@ private actor RecordingUsageProvider: UsageProvider {
     }
 }
 
+private actor PreviousRecordingUsageProvider: UsageProvider {
+    private let result: ProviderState
+    private var previousValues: [ProviderUsage?] = []
+    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    init(result: ProviderState) {
+        self.result = result
+    }
+
+    func fetch(previous: ProviderUsage?) async -> ProviderState {
+        previousValues.append(previous)
+        resumeWaiters()
+        return result
+    }
+
+    func previousUsages() -> [ProviderUsage?] {
+        previousValues
+    }
+
+    func waitForFetchCount(_ count: Int) async {
+        if previousValues.count >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append((count, continuation))
+        }
+    }
+
+    private func resumeWaiters() {
+        let ready = waiters.filter { previousValues.count >= $0.0 }
+        waiters.removeAll { previousValues.count >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
+    }
+}
+
+private actor RecordingThresholdNotificationSender: NotificationSending {
+    private var notifications: [UsageThresholdNotification] = []
+
+    func send(_ notification: UsageThresholdNotification) async {
+        notifications.append(notification)
+    }
+
+    func sentNotifications() -> [UsageThresholdNotification] {
+        notifications
+    }
+}
+
+private actor SuspendingThresholdProvider {
+    private let resolvedThreshold: Int
+    private var requestCount = 0
+    private var released = false
+    private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var thresholdContinuations: [CheckedContinuation<Int, Never>] = []
+
+    init(threshold: Int) {
+        self.resolvedThreshold = threshold
+    }
+
+    func threshold() async -> Int {
+        requestCount += 1
+        resumeRequestWaiters()
+        if released {
+            return resolvedThreshold
+        }
+
+        return await withCheckedContinuation { continuation in
+            thresholdContinuations.append(continuation)
+        }
+    }
+
+    func waitForRequestCount(_ count: Int) async {
+        if requestCount >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            requestWaiters.append((count, continuation))
+        }
+    }
+
+    func releaseAll() {
+        released = true
+        let continuations = thresholdContinuations
+        thresholdContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume(returning: resolvedThreshold)
+        }
+    }
+
+    private func resumeRequestWaiters() {
+        let ready = requestWaiters.filter { requestCount >= $0.0 }
+        requestWaiters.removeAll { requestCount >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
+    }
+}
+
 private actor BlockingUsageProvider: UsageProvider {
     private let result: ProviderState
     private var startWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
@@ -799,4 +1271,18 @@ private func sampleUsage(fiveHour: Int, weekly: Int) -> ProviderUsage {
             resetsAt: Date(timeIntervalSince1970: 1_783_555_200)
         )
     )
+}
+
+private func waitForProviderState(
+    _ appState: AppState,
+    provider: ProviderID,
+    state expectedState: ProviderState
+) async {
+    for _ in 0..<100 {
+        if await appState.providerState(for: provider) == expectedState {
+            return
+        }
+
+        try? await Task.sleep(nanoseconds: 1_000_000)
+    }
 }
