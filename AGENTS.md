@@ -28,6 +28,8 @@ There is no Makefile or CI config; SwiftPM and shell scripts are the whole build
 | `scripts/bundle.sh --verify [APP_PATH]` | Verify an existing bundle (plist keys, executable, signature) |
 | `Tests/Scripts/bundle-script-test.sh` | Shell tests for the bundle script |
 | `Tests/Scripts/claude-statusline-cache-test.sh` | Shell tests for the statusline cache wrapper |
+| `scripts/setup-statusline` | Idempotently wire the cache wrapper into `statusLine` in Claude Code settings, preserving any existing statusline command in a passthrough shim |
+| `Tests/Scripts/setup-statusline-test.sh` | Shell tests for the statusline setup script |
 
 Note: `Package.swift` carries `unsafeFlags` on the test targets pointing at `/Library/Developer/CommandLineTools/Library/Developer/Frameworks` because a CommandLineTools-only install exposes Swift Testing there but ships no `XCTest.framework`. Tests use Swift Testing (`@Test`/`#expect`), not XCTest.
 
@@ -54,7 +56,8 @@ Package: AIUsageBar
 ├── Tests/AIUsageBarAppTests/     shell model, notification sender, launch-at-login tests
 ├── Tests/Fixtures/               sanitized captured payloads (claude-statusline.json, codex-usage.json)
 ├── Tests/Scripts/                shell tests for scripts/
-└── scripts/                      bundle.sh, run-swift-tests, claude-statusline-cache
+└── scripts/                      bundle.sh, run-swift-tests, claude-statusline-cache,
+                                  setup-statusline
 ```
 
 Note the plan's aspirational subdirectory layout (`Models/`, `Providers/`, …) was flattened in practice: `UsageCore.swift` is one ~1400-line file.

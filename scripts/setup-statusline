@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Wires scripts/claude-statusline-cache into Claude Code's statusLine setting
+# without changing what the statusline renders: the existing command (if any)
+# is preserved in a passthrough shim that the cache wrapper forwards to.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+wrapper="$repo_root/scripts/claude-statusline-cache"
+config_dir="${CLAUDE_CONFIG_DIR:-${HOME:?HOME must be set}/.claude}"
+settings_file="$config_dir/settings.json"
+shim_file="$config_dir/ai-usage-bar/statusline-passthrough.sh"
+
+export AI_USAGE_BAR_WRAPPER="$wrapper"
+export AI_USAGE_BAR_SETTINGS="$settings_file"
+export AI_USAGE_BAR_SHIM="$shim_file"
+
+python3 <<'PY'
+import json
+import os
+import shlex
+import shutil
+import sys
+import tempfile
+
+wrapper = os.environ["AI_USAGE_BAR_WRAPPER"]
+settings_path = os.environ["AI_USAGE_BAR_SETTINGS"]
+shim_path = os.environ["AI_USAGE_BAR_SHIM"]
+backup_path = settings_path + ".ai-usage-bar-backup"
+
+settings = {}
+if os.path.exists(settings_path):
+    with open(settings_path) as f:
+        try:
+            settings = json.load(f)
+        except ValueError as error:
+            sys.exit("%s is not valid JSON (%s); leaving it untouched." % (settings_path, error))
+
+status_line = settings.get("statusLine", {})
+original_command = status_line.get("command", "").strip()
+
+if "claude-statusline-cache" in original_command:
+    print("statusLine already goes through claude-statusline-cache; nothing to do.")
+    print("current command: %s" % original_command)
+    sys.exit(0)
+
+shim_body = "#!/bin/sh\n"
+shim_body += "# Written by scripts/setup-statusline. Forwards the statusline JSON to the\n"
+shim_body += "# command that was configured before the ai-usage-bar cache wrapper.\n"
+if original_command:
+    shim_body += original_command + "\n"
+else:
+    shim_body += "# No statusline was configured before; render nothing, as before.\n"
+    shim_body += "exit 0\n"
+
+os.makedirs(os.path.dirname(shim_path), exist_ok=True)
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(shim_path))
+with os.fdopen(fd, "w") as f:
+    f.write(shim_body)
+os.chmod(tmp, 0o755)
+os.replace(tmp, shim_path)
+
+if os.path.exists(settings_path) and not os.path.exists(backup_path):
+    shutil.copy2(settings_path, backup_path)
+    print("original settings backed up to: %s" % backup_path)
+
+status_line["type"] = "command"
+status_line["command"] = "CCSTATUSLINE_BIN=%s %s" % (
+    shlex.quote(shim_path),
+    shlex.quote(wrapper),
+)
+settings["statusLine"] = status_line
+
+os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(settings_path))
+with os.fdopen(fd, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+os.replace(tmp, settings_path)
+
+print("statusLine command set to: %s" % status_line["command"])
+if original_command:
+    print("previous command preserved in: %s" % shim_path)
+PY
