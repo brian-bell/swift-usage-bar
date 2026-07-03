@@ -36,8 +36,7 @@ struct MenuBarContentView: View {
     }
 
     private var lastUpdatedText: String {
-        let labels = model.dropdownViewModel.rows.compactMap(\.updatedLabel)
-        return labels.min() ?? "Not updated yet"
+        model.dropdownViewModel.updatedLabel ?? "Not updated yet"
     }
 }
 

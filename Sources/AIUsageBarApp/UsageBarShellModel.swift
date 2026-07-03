@@ -18,6 +18,9 @@ final class UsageBarShellModel {
     private let launchAtLoginManager: any LaunchAtLoginManaging
     private let now: @MainActor () -> Date
 
+    private(set) var pollInterval: TimeInterval
+    private(set) var thresholdPercent: Int
+    private(set) var launchAtLoginEnabled: Bool
     var launchAtLoginError: String?
 
     init(
@@ -32,32 +35,11 @@ final class UsageBarShellModel {
         self.usageController = usageController
         self.launchAtLoginManager = launchAtLoginManager
         self.now = now
+        self.pollInterval = settingsStore.pollInterval
+        self.thresholdPercent = settingsStore.thresholdPercent
+        self.launchAtLoginEnabled = launchAtLoginManager.isEnabled
         applyStoredProviderVisibility()
-        settingsStore.launchAtLoginEnabled = launchAtLoginManager.isEnabled
-    }
-
-    var menuBarTitle: AttributedString {
-        MenuBarTitleFormatter.format(appState.states)
-    }
-
-    var dropdownViewModel: DropdownViewModel {
-        DropdownViewModel(
-            states: appState.states,
-            lastUpdatedAt: lastUpdatedDates(),
-            now: now()
-        )
-    }
-
-    var pollInterval: TimeInterval {
-        settingsStore.pollInterval
-    }
-
-    var thresholdPercent: Int {
-        settingsStore.thresholdPercent
-    }
-
-    var launchAtLoginEnabled: Bool {
-        settingsStore.launchAtLoginEnabled
+        settingsStore.launchAtLoginEnabled = launchAtLoginEnabled
     }
 
     func start() async {
@@ -73,6 +55,7 @@ final class UsageBarShellModel {
     }
 
     func setPollInterval(_ interval: TimeInterval) {
+        pollInterval = interval
         settingsStore.pollInterval = interval
         Task {
             await usageController.setPollingInterval(interval)
@@ -89,13 +72,16 @@ final class UsageBarShellModel {
     }
 
     func setThresholdPercent(_ thresholdPercent: Int) {
+        self.thresholdPercent = thresholdPercent
         settingsStore.thresholdPercent = thresholdPercent
     }
 
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
         do {
             try launchAtLoginManager.setEnabled(enabled)
-            settingsStore.launchAtLoginEnabled = enabled
+            let effectiveEnabled = launchAtLoginManager.isEnabled
+            launchAtLoginEnabled = effectiveEnabled
+            settingsStore.launchAtLoginEnabled = effectiveEnabled
             launchAtLoginError = nil
         } catch {
             launchAtLoginError = "Launch at login could not be updated."
@@ -116,6 +102,25 @@ final class UsageBarShellModel {
 
             return (provider, updatedAt)
         })
+    }
+}
+
+extension UsageBarShellModel {
+    var menuBarTitle: AttributedString {
+        let title = MenuBarTitleFormatter.format(appState.states)
+        guard !String(title.characters).isEmpty else {
+            return AttributedString("AI Usage")
+        }
+
+        return title
+    }
+
+    var dropdownViewModel: DropdownViewModel {
+        DropdownViewModel(
+            states: appState.states,
+            lastUpdatedAt: lastUpdatedDates(),
+            now: now()
+        )
     }
 }
 

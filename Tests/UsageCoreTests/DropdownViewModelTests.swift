@@ -81,6 +81,78 @@ func dropdownRowsUsePlaceholdersForStaleProvidersWithoutData() throws {
     #expect(row.weekly.percentLabel == "--")
 }
 
+@Test
+func dropdownSummaryUsesMostRecentVisibleProviderUpdate() {
+    let model = DropdownViewModel(
+        states: [
+            .claude: .fresh(claudeUsage, asOf: referenceNow),
+            .codex: .fresh(codexUsage, asOf: referenceNow),
+        ],
+        lastUpdatedAt: [
+            .claude: referenceNow.addingTimeInterval(-10 * 60),
+            .codex: referenceNow.addingTimeInterval(-2 * 60),
+        ],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(model.updatedLabel == "Updated 2m ago")
+}
+
+@Test
+func dropdownSummaryIgnoresHiddenProviderUpdates() {
+    let model = DropdownViewModel(
+        states: [
+            .claude: .hidden,
+            .codex: .fresh(codexUsage, asOf: referenceNow),
+        ],
+        lastUpdatedAt: [
+            .claude: referenceNow,
+            .codex: referenceNow.addingTimeInterval(-3 * 60),
+        ],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(model.updatedLabel == "Updated 3m ago")
+}
+
+@Test
+func dropdownSummaryIsNilWhenAllProvidersAreHidden() {
+    let model = DropdownViewModel(
+        states: [
+            .claude: .hidden,
+            .codex: .hidden,
+        ],
+        lastUpdatedAt: [
+            .claude: referenceNow,
+            .codex: referenceNow,
+        ],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(model.rows.isEmpty)
+    #expect(model.updatedLabel == nil)
+}
+
+@Test
+func dropdownSummaryIsNilWhenVisibleProvidersHaveNoUpdateTimestamp() {
+    let model = DropdownViewModel(
+        states: [.claude: .fresh(claudeUsage, asOf: referenceNow)],
+        lastUpdatedAt: [:],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(model.rows.map(\.provider) == [.claude, .codex])
+    #expect(model.updatedLabel == nil)
+}
+
 private let referenceNow = Date(timeIntervalSince1970: 1_767_268_800) // 2026-01-01 12:00 UTC
 
 private let claudeUsage = ProviderUsage(

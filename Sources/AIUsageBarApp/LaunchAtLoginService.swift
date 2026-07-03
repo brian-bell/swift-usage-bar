@@ -8,23 +8,50 @@ protocol LaunchAtLoginManaging: AnyObject {
 }
 
 final class SystemLaunchAtLoginManager: LaunchAtLoginManaging {
+    private let serviceClient: any LaunchAtLoginServiceClient
+
+    init(serviceClient: any LaunchAtLoginServiceClient = MainAppServiceClient()) {
+        self.serviceClient = serviceClient
+    }
+
     var isEnabled: Bool {
-        SMAppService.mainApp.status == .enabled
+        serviceClient.isEnabled
     }
 
     func setEnabled(_ enabled: Bool) throws {
         if enabled {
-            guard SMAppService.mainApp.status != .enabled else {
+            guard !serviceClient.isEnabled else {
                 return
             }
 
-            try SMAppService.mainApp.register()
+            try serviceClient.register()
         } else {
-            guard SMAppService.mainApp.status == .enabled else {
+            guard serviceClient.isEnabled else {
                 return
             }
 
-            try SMAppService.mainApp.unregister()
+            try serviceClient.unregister()
         }
+    }
+}
+
+protocol LaunchAtLoginServiceClient: AnyObject {
+    var isEnabled: Bool { get }
+
+    func register() throws
+    func unregister() throws
+}
+
+final class MainAppServiceClient: LaunchAtLoginServiceClient {
+    var isEnabled: Bool {
+        SMAppService.mainApp.status == .enabled
+    }
+
+    func register() throws {
+        try SMAppService.mainApp.register()
+    }
+
+    func unregister() throws {
+        try SMAppService.mainApp.unregister()
     }
 }

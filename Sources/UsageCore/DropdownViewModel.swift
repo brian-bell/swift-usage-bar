@@ -2,6 +2,7 @@ import Foundation
 
 public struct DropdownViewModel: Equatable, Sendable {
     public let rows: [DropdownProviderRow]
+    public let updatedLabel: String?
 
     public init(
         states: [ProviderID: ProviderState],
@@ -10,7 +11,7 @@ public struct DropdownViewModel: Equatable, Sendable {
         calendar: Calendar = .current,
         locale: Locale = .current
     ) {
-        self.rows = ProviderID.allCases.compactMap { provider in
+        let rows = ProviderID.allCases.compactMap { provider -> DropdownProviderRow? in
             let state = states[provider] ?? .stale(last: nil, reason: .networkError)
             guard state != .hidden else {
                 return nil
@@ -25,6 +26,11 @@ public struct DropdownViewModel: Equatable, Sendable {
                 locale: locale
             )
         }
+        self.rows = rows
+        self.updatedLabel = rows
+            .compactMap { row in lastUpdatedAt[row.provider] }
+            .max()
+            .map { formatUpdatedLabel(updatedAt: $0, now: now) }
     }
 }
 
@@ -50,7 +56,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
     ) {
         self.provider = provider
         self.providerName = provider.dropdownDisplayName
-        self.updatedLabel = lastUpdatedAt.map { Self.updatedLabel(updatedAt: $0, now: now) }
+        self.updatedLabel = lastUpdatedAt.map { formatUpdatedLabel(updatedAt: $0, now: now) }
 
         switch state {
         case let .fresh(usage, asOf: _):
@@ -103,21 +109,21 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
             self.statusTone = nil
         }
     }
+}
 
-    private static func updatedLabel(updatedAt: Date, now: Date) -> String {
-        let elapsedSeconds = max(0, Int(now.timeIntervalSince(updatedAt)))
-        if elapsedSeconds < 60 {
-            return "Updated just now"
-        }
-
-        let elapsedMinutes = elapsedSeconds / 60
-        if elapsedMinutes < 60 {
-            return "Updated \(elapsedMinutes)m ago"
-        }
-
-        let elapsedHours = elapsedMinutes / 60
-        return "Updated \(elapsedHours)h ago"
+private func formatUpdatedLabel(updatedAt: Date, now: Date) -> String {
+    let elapsedSeconds = max(0, Int(now.timeIntervalSince(updatedAt)))
+    if elapsedSeconds < 60 {
+        return "Updated just now"
     }
+
+    let elapsedMinutes = elapsedSeconds / 60
+    if elapsedMinutes < 60 {
+        return "Updated \(elapsedMinutes)m ago"
+    }
+
+    let elapsedHours = elapsedMinutes / 60
+    return "Updated \(elapsedHours)h ago"
 }
 
 public struct DropdownUsageWindowRow: Equatable, Sendable {

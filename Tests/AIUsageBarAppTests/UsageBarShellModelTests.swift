@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 import UsageCore
 
@@ -14,6 +15,18 @@ func shellModelMenuBarTitleUsesCoreFormatter() {
     let model = shellModel(appState: appState)
 
     #expect(String(model.menuBarTitle.characters) == "* 62/81  # 72/90")
+}
+
+@Test
+@MainActor
+func shellModelMenuBarTitleFallsBackWhenAllProvidersAreHidden() {
+    let appState = AppState(providerStates: [
+        .claude: .hidden,
+        .codex: .hidden,
+    ])
+    let model = shellModel(appState: appState)
+
+    #expect(String(model.menuBarTitle.characters) == "AI Usage")
 }
 
 @Test
@@ -49,6 +62,73 @@ func shellModelProviderVisibilityUpdatesSettingsAndAppStateOnlyForThatProvider()
 
 @Test
 @MainActor
+func shellModelPollIntervalBindingPublishesObservationChange() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let model = shellModel(settingsStore: settingsStore)
+        let observedChanges = ObservationChangeRecorder()
+
+        withObservationTracking {
+            _ = model.pollInterval
+        } onChange: {
+            observedChanges.record()
+        }
+
+        model.setPollInterval(300)
+
+        #expect(observedChanges.count == 1)
+        #expect(model.pollInterval == 300)
+        #expect(settingsStore.pollInterval == 300)
+    }
+}
+
+@Test
+@MainActor
+func shellModelThresholdBindingPublishesObservationChange() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let model = shellModel(settingsStore: settingsStore)
+        let observedChanges = ObservationChangeRecorder()
+
+        withObservationTracking {
+            _ = model.thresholdPercent
+        } onChange: {
+            observedChanges.record()
+        }
+
+        model.setThresholdPercent(35)
+
+        #expect(observedChanges.count == 1)
+        #expect(model.thresholdPercent == 35)
+        #expect(settingsStore.thresholdPercent == 35)
+    }
+}
+
+@Test
+@MainActor
+func shellModelLaunchAtLoginBindingPublishesObservationChange() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let launchManager = RecordingLaunchAtLoginManager()
+        let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
+        let observedChanges = ObservationChangeRecorder()
+
+        withObservationTracking {
+            _ = model.launchAtLoginEnabled
+        } onChange: {
+            observedChanges.record()
+        }
+
+        model.setLaunchAtLoginEnabled(true)
+
+        #expect(observedChanges.count == 1)
+        #expect(model.launchAtLoginEnabled)
+        #expect(settingsStore.launchAtLoginEnabled)
+    }
+}
+
+@Test
+@MainActor
 func shellModelLaunchAtLoginIntentPersistsSuccessfulEnableAndDisable() {
     withIsolatedDefaults { defaults in
         let settingsStore = SettingsStore(defaults: defaults)
@@ -59,6 +139,23 @@ func shellModelLaunchAtLoginIntentPersistsSuccessfulEnableAndDisable() {
         model.setLaunchAtLoginEnabled(false)
 
         #expect(launchManager.requests == [true, false])
+        #expect(!settingsStore.launchAtLoginEnabled)
+        #expect(model.launchAtLoginError == nil)
+    }
+}
+
+@Test
+@MainActor
+func shellModelLaunchAtLoginIntentPersistsEffectiveManagerState() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let launchManager = RecordingLaunchAtLoginManager(acceptsWithoutChangingState: true)
+        let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
+
+        model.setLaunchAtLoginEnabled(true)
+
+        #expect(launchManager.requests == [true])
+        #expect(!model.launchAtLoginEnabled)
         #expect(!settingsStore.launchAtLoginEnabled)
         #expect(model.launchAtLoginError == nil)
     }
@@ -130,11 +227,13 @@ private actor RecordingUsageController: UsageControlling {
 
 private final class RecordingLaunchAtLoginManager: LaunchAtLoginManaging {
     private let error: (any Error)?
+    private let acceptsWithoutChangingState: Bool
     var requests: [Bool] = []
     var isEnabled = false
 
-    init(error: (any Error)? = nil) {
+    init(error: (any Error)? = nil, acceptsWithoutChangingState: Bool = false) {
         self.error = error
+        self.acceptsWithoutChangingState = acceptsWithoutChangingState
     }
 
     func setEnabled(_ enabled: Bool) throws {
@@ -143,12 +242,31 @@ private final class RecordingLaunchAtLoginManager: LaunchAtLoginManaging {
         }
 
         requests.append(enabled)
-        isEnabled = enabled
+        if !acceptsWithoutChangingState {
+            isEnabled = enabled
+        }
     }
 }
 
 private enum LaunchAtLoginTestError: Error {
     case failed
+}
+
+private final class ObservationChangeRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedCount = 0
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedCount
+    }
+
+    func record() {
+        lock.lock()
+        recordedCount += 1
+        lock.unlock()
+    }
 }
 
 private func withIsolatedDefaults(_ body: (UserDefaults) -> Void) {
