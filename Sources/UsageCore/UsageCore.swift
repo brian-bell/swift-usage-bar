@@ -170,6 +170,7 @@ public final class AppState: @unchecked Sendable {
 
 public actor UsagePoller {
     public static let defaultInterval: TimeInterval = 120
+    private static let minimumInterval: TimeInterval = 1
 
     private let providers: [ProviderID: any UsageProvider]
     private let appState: AppState
@@ -197,7 +198,7 @@ public actor UsagePoller {
         self.providers = providers
         self.appState = appState
         self.clock = clock
-        self.interval = max(0, interval)
+        self.interval = Self.normalizedInterval(interval)
         self.wakeEvents = wakeEvents
     }
 
@@ -244,7 +245,7 @@ public actor UsagePoller {
     }
 
     public func setPollingInterval(_ interval: TimeInterval) {
-        self.interval = max(0, interval)
+        self.interval = Self.normalizedInterval(interval)
         guard isRunning else {
             return
         }
@@ -432,6 +433,10 @@ public actor UsagePoller {
         for waiter in waiters {
             waiter.resume()
         }
+    }
+
+    private static func normalizedInterval(_ interval: TimeInterval) -> TimeInterval {
+        max(minimumInterval, interval)
     }
 }
 

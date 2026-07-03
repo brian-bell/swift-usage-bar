@@ -67,6 +67,45 @@ func usagePollerReschedulesWhenIntervalChanges() async {
 }
 
 @Test
+func usagePollerClampsNonPositiveIntervalsToPositiveDelay() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 2_500))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 2_400))])
+    let codex = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 2_401))])
+    let poller = UsagePoller(
+        providers: [.claude: claude, .codex: codex],
+        appState: appState,
+        clock: clock,
+        interval: 0
+    )
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(1)
+    await clock.advance(by: 0)
+    await Task.yield()
+
+    #expect(await claude.fetchCount == 1)
+
+    await clock.advance(by: 1)
+    await claude.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+    await poller.setPollingInterval(-10)
+    await clock.waitForSleepRegistrationCount(3)
+    await clock.advance(by: 0)
+    await Task.yield()
+
+    #expect(await claude.fetchCount == 2)
+
+    await clock.advance(by: 1)
+    await claude.waitForFetchCount(3)
+    await poller.waitUntilIdle()
+
+    await poller.stop()
+}
+
+@Test
 func usagePollerFetchesProvidersConcurrently() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 3_000))
     let appState = await AppState()
