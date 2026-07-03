@@ -125,6 +125,25 @@ public final class AppState: @unchecked Sendable {
         lastAttemptedRefreshes[provider] = attemptedAt
     }
 
+    public func recordRefreshAttemptAndApplyResult(
+        provider: ProviderID,
+        attemptedAt: Date,
+        state: ProviderState,
+        completedAt: Date,
+        shouldApply: @Sendable () -> Bool = { true }
+    ) {
+        guard shouldApply() else {
+            return
+        }
+
+        if case .hidden = providerStates[provider] {
+            return
+        }
+
+        recordRefreshAttempt(provider: provider, at: attemptedAt)
+        applyRefreshResult(provider: provider, state: state, completedAt: completedAt)
+    }
+
     public func applyRefreshResult(
         provider: ProviderID,
         state: ProviderState,
@@ -156,6 +175,7 @@ public actor UsagePoller {
     private let appState: AppState
     private let clock: any UsageClock
     private let wakeEvents: (@Sendable () -> AsyncStream<Void>)?
+    private let lifecycle = PollLifecycle()
     private var interval: TimeInterval
     private var isRunning = false
     private var isPolling = false
@@ -188,6 +208,7 @@ public actor UsagePoller {
 
         isRunning = true
         pollGeneration &+= 1
+        lifecycle.markRunning(generation: pollGeneration)
         startWakeTask()
         requestPoll()
     }
@@ -197,6 +218,7 @@ public actor UsagePoller {
         isPolling = false
         pendingPoll = false
         pollGeneration &+= 1
+        lifecycle.markStopped(generation: pollGeneration)
         timerGeneration &+= 1
         timerTask?.cancel()
         pollTask?.cancel()
@@ -355,15 +377,17 @@ public actor UsagePoller {
                     continue
                 }
 
-                guard isRunning, generation == pollGeneration, !Task.isCancelled else {
+                guard isRunning, generation == pollGeneration, lifecycle.isCurrent(generation), !Task.isCancelled else {
                     continue
                 }
 
-                await appState.recordRefreshAttempt(provider: result.provider, at: result.attemptedAt)
-                await appState.applyRefreshResult(
+                let lifecycle = lifecycle
+                await appState.recordRefreshAttemptAndApplyResult(
                     provider: result.provider,
+                    attemptedAt: result.attemptedAt,
                     state: result.state,
-                    completedAt: result.completedAt
+                    completedAt: result.completedAt,
+                    shouldApply: { lifecycle.isCurrent(generation) }
                 )
             }
         }
@@ -416,6 +440,32 @@ private struct ProviderPollResult: Sendable {
     let attemptedAt: Date
     let state: ProviderState
     let completedAt: Date
+}
+
+private final class PollLifecycle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var running = false
+    private var generation: UInt64 = 0
+
+    func markRunning(generation: UInt64) {
+        lock.withLock {
+            self.running = true
+            self.generation = generation
+        }
+    }
+
+    func markStopped(generation: UInt64) {
+        lock.withLock {
+            self.running = false
+            self.generation = generation
+        }
+    }
+
+    func isCurrent(_ generation: UInt64) -> Bool {
+        lock.withLock {
+            running && self.generation == generation
+        }
+    }
 }
 
 public enum UsageStatusTone: Equatable, Sendable {

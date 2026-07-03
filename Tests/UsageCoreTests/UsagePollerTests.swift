@@ -206,6 +206,24 @@ func appStatePreservesHiddenProviderWhenRefreshResultArrives() async {
 }
 
 @Test
+func appStateSkipsGuardedRefreshResultWhenGenerationIsStale() async {
+    let appState = await AppState()
+    let usage = sampleUsage(fiveHour: 62, weekly: 81)
+
+    await appState.recordRefreshAttemptAndApplyResult(
+        provider: .claude,
+        attemptedAt: Date(timeIntervalSince1970: 5_925),
+        state: .fresh(usage, asOf: Date(timeIntervalSince1970: 5_901)),
+        completedAt: Date(timeIntervalSince1970: 5_950),
+        shouldApply: { false }
+    )
+
+    #expect(await appState.providerState(for: .claude) == nil)
+    #expect(await appState.lastAttemptedRefresh(provider: .claude) == nil)
+    #expect(await appState.lastUpdated(provider: .claude) == nil)
+}
+
+@Test
 func usagePollerSkipsHiddenProviders() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_950))
     let appState = await AppState(providerStates: [.claude: .hidden])
