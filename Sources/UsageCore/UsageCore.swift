@@ -126,6 +126,10 @@ public final class AppState: @unchecked Sendable {
         state: ProviderState,
         completedAt: Date
     ) {
+        if case .hidden = providerStates[provider] {
+            return
+        }
+
         let resolvedState: ProviderState
         switch state {
         case let .stale(last: nil, reason: reason):

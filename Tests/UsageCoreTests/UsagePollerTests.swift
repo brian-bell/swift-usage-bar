@@ -18,6 +18,7 @@ func usagePollerFetchesImmediatelyAndRepeatsOnDefaultInterval() async {
     await claude.waitForFetchCount(1)
     await codex.waitForFetchCount(1)
     await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(1)
 
     await clock.advance(by: 120)
     await claude.waitForFetchCount(2)
@@ -42,8 +43,10 @@ func usagePollerReschedulesWhenIntervalChanges() async {
     await poller.start()
     await claude.waitForFetchCount(1)
     await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(1)
     await clock.advance(by: 30)
     await poller.setPollingInterval(10)
+    await clock.waitForSleepRegistrationCount(2)
     await clock.advance(by: 9)
     await Task.yield()
 
@@ -52,6 +55,7 @@ func usagePollerReschedulesWhenIntervalChanges() async {
     await clock.advance(by: 1)
     await claude.waitForFetchCount(2)
     await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(3)
     await clock.advance(by: 80)
     await claude.waitForFetchCount(3)
     await poller.waitUntilIdle()
@@ -129,6 +133,7 @@ func usagePollerStopPreventsLaterTimerFetches() async {
     await poller.start()
     await claude.waitForFetchCount(1)
     await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(1)
     await poller.stop()
     await clock.advance(by: 120)
     await Task.yield()
@@ -186,6 +191,21 @@ func usagePollerStopBeforeFetchPreventsProviderWorkAndAttemptMetadata() async {
 }
 
 @Test
+func appStatePreservesHiddenProviderWhenRefreshResultArrives() async {
+    let appState = await AppState(providerStates: [.claude: .hidden])
+    let usage = sampleUsage(fiveHour: 62, weekly: 81)
+
+    await appState.applyRefreshResult(
+        provider: .claude,
+        state: .fresh(usage, asOf: Date(timeIntervalSince1970: 5_801)),
+        completedAt: Date(timeIntervalSince1970: 5_900)
+    )
+
+    #expect(await appState.providerState(for: .claude) == .hidden)
+    #expect(await appState.lastUpdated(provider: .claude) == nil)
+}
+
+@Test
 func stalePollChainDoesNotMarkRestartedPollerIdle() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 5_750))
     let appState = await AppState()
@@ -236,10 +256,12 @@ func refreshNowFetchesImmediatelyAndResetsTimerPhase() async {
     await poller.start()
     await claude.waitForFetchCount(1)
     await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(1)
     await clock.advance(by: 30)
     await poller.refreshNow()
     await claude.waitForFetchCount(2)
     await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(2)
     await clock.advance(by: 119)
     await Task.yield()
 
@@ -274,6 +296,7 @@ func appStateLastUpdatedUsesSuccessfulRefreshCompletionTime() async {
     await poller.start()
     await claude.waitForFetchCount(1)
     await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(1)
 
     #expect(await appState.lastUpdated(provider: .claude) == Date(timeIntervalSince1970: 7_000))
     #expect(await appState.lastUpdated(provider: .codex) == nil)
@@ -310,10 +333,12 @@ func wakeEventTriggersImmediatePollAndResetsTimer() async {
     await poller.start()
     await claude.waitForFetchCount(1)
     await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(1)
     await clock.advance(by: 30)
     wakeEvents.send()
     await claude.waitForFetchCount(2)
     await poller.waitUntilIdle()
+    await clock.waitForSleepRegistrationCount(2)
     await clock.advance(by: 119)
     await Task.yield()
 
@@ -388,6 +413,8 @@ func overlappingManualAndWakeRefreshesCoalesceIntoOneFollowUpPoll() async {
 private actor ManualUsageClock: UsageClock {
     private var current: Date
     private var sleepers: [UUID: Sleeper] = [:]
+    private var sleepRegistrationCount = 0
+    private var sleepWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     init(now: Date) {
         self.current = now
@@ -407,6 +434,8 @@ private actor ManualUsageClock: UsageClock {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 sleepers[id] = Sleeper(deadline: deadline, continuation: continuation)
+                sleepRegistrationCount += 1
+                resumeSleepWaiters()
             }
         } onCancel: {
             Task { await self.cancelSleep(id) }
@@ -418,6 +447,16 @@ private actor ManualUsageClock: UsageClock {
         resumeReadySleepers()
     }
 
+    func waitForSleepRegistrationCount(_ count: Int) async {
+        if sleepRegistrationCount >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            sleepWaiters.append((count, continuation))
+        }
+    }
+
     private func cancelSleep(_ id: UUID) {
         sleepers.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
     }
@@ -426,6 +465,14 @@ private actor ManualUsageClock: UsageClock {
         let ready = sleepers.filter { $0.value.deadline <= current }.map(\.key)
         for id in ready {
             sleepers.removeValue(forKey: id)?.continuation.resume()
+        }
+    }
+
+    private func resumeSleepWaiters() {
+        let ready = sleepWaiters.filter { sleepRegistrationCount >= $0.0 }
+        sleepWaiters.removeAll { sleepRegistrationCount >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
         }
     }
 
