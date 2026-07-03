@@ -1,6 +1,6 @@
 # Implementation Plan: `mac-ai-usage-bar`
 
-> Status: **unreviewed draft** — the plan-review loop has not been run against this document yet.
+> Status: **historical** — all phases (0–7) were implemented and merged to `main` via PRs #1–#8 (July 2026). This document is kept as the original design record; the code is the source of truth where they differ (e.g. `UsageCore` ended up as flat source files rather than the subdirectory layout sketched below, and the menu bar symbols shipped as `*`/`#` rather than `✳`/`⬡`).
 
 ## Goal
 
