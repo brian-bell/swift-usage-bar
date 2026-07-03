@@ -651,6 +651,29 @@ func appStateUsesPreservedUsageForStaleFallbackAfterHideShow() async {
 }
 
 @Test
+func appStateApplyHiddenResultMarksProviderHiddenForFutureRefreshes() async {
+    let usage = sampleUsage(fiveHour: 62, weekly: 81)
+    let appState = await AppState(providerStates: [
+        .claude: .fresh(usage, asOf: Date(timeIntervalSince1970: 5_800)),
+    ])
+
+    await appState.applyRefreshResult(
+        provider: .claude,
+        state: .hidden,
+        completedAt: Date(timeIntervalSince1970: 5_900)
+    )
+    await appState.applyRefreshResult(
+        provider: .claude,
+        state: .fresh(usage, asOf: Date(timeIntervalSince1970: 5_901)),
+        completedAt: Date(timeIntervalSince1970: 5_901)
+    )
+
+    #expect(await appState.isHidden(provider: .claude))
+    #expect(await appState.providerState(for: .claude) == .hidden)
+    #expect(await appState.previousUsage(provider: .claude) == nil)
+}
+
+@Test
 func appStateSkipsGuardedRefreshResultWhenGenerationIsStale() async {
     let appState = await AppState()
     let usage = sampleUsage(fiveHour: 62, weekly: 81)

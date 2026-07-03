@@ -332,6 +332,12 @@ public final class AppState: @unchecked Sendable {
             return
         }
 
+        if state == .hidden {
+            providerStates.removeValue(forKey: provider)
+            hiddenProviders.insert(provider)
+            return
+        }
+
         let resolvedState: ProviderState
         switch state {
         case let .stale(last: nil, reason: reason):
