@@ -185,6 +185,47 @@ if [ "$status" -ne 0 ] || ! cmp -s "$input_file" "$corrupt_cache_file"; then
     exit 1
 fi
 
+# --- a wrong-typed field never clobbers usable data (primary guard) ---
+# The freshness guard's usability check must match the Swift decoder: a string
+# used_percentage the app can't parse must not replace a numeric cache, even
+# when python3 is available.
+
+guard_wrong_type_payload="$tmpdir/guard-wrong-type-payload.json"
+python3 -c '
+import json, sys
+payload = json.load(open(sys.argv[1]))
+payload["rate_limits"]["five_hour"]["used_percentage"] = "38"
+json.dump(payload, open(sys.argv[2], "w"))
+' "$input_file" "$guard_wrong_type_payload"
+
+guard_wrong_type_cache="$tmpdir/guard-wrong-type/claude-status.json"
+mkdir -p "$(dirname "$guard_wrong_type_cache")"
+cp "$input_file" "$guard_wrong_type_cache"
+
+set +e
+PATH="$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$guard_wrong_type_cache" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/guard-wrong-type-args" \
+    "$wrapper" --theme compact <"$guard_wrong_type_payload" >"$tmpdir/guard-wrong-type-stdout" 2>"$tmpdir/guard-wrong-type-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on a wrong-typed payload under the primary guard\n' "$status" >&2
+    cat "$tmpdir/guard-wrong-type-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$guard_wrong_type_payload" "$tmpdir/guard-wrong-type-stdout"; then
+    printf 'expected passthrough of the wrong-typed payload under the primary guard\n' >&2
+    exit 1
+fi
+
+if ! cmp -s "$input_file" "$guard_wrong_type_cache"; then
+    printf 'expected numeric cache to survive a string used_percentage under the primary guard\n' >&2
+    exit 1
+fi
+
 # --- a payload without rate limits never clobbers usable data ---
 
 no_limits_payload="$tmpdir/no-limits-payload.json"
@@ -303,6 +344,130 @@ fi
 
 if ! cmp -s "$input_file" "$failopen_stub_cache"; then
     printf 'expected cache with usage windows to survive an empty rate_limits stub even when the guard is broken\n' >&2
+    exit 1
+fi
+
+# --- fail-open rejects window stubs that name the windows but carry no usage ---
+# The token-level screen must look past the window key names: a payload like
+# {"rate_limits":{"five_hour":{},"seven_day":{}}} mentions every window token
+# yet has no resets_at/used_percentage for the app to parse.
+
+empty_windows_payload="$tmpdir/empty-windows-payload.json"
+python3 -c '
+import json, sys
+payload = json.load(open(sys.argv[1]))
+payload["rate_limits"] = {"five_hour": {}, "seven_day": {}}
+json.dump(payload, open(sys.argv[2], "w"))
+' "$input_file" "$empty_windows_payload"
+
+failopen_empty_windows_cache="$tmpdir/failopen-empty-windows/claude-status.json"
+mkdir -p "$(dirname "$failopen_empty_windows_cache")"
+cp "$input_file" "$failopen_empty_windows_cache"
+
+set +e
+PATH="$broken_bin:$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$failopen_empty_windows_cache" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/failopen-empty-windows-args" \
+    "$wrapper" --theme compact <"$empty_windows_payload" >"$tmpdir/failopen-empty-windows-stdout" 2>"$tmpdir/failopen-empty-windows-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on an empty-window rate-limit stub with a broken guard\n' "$status" >&2
+    cat "$tmpdir/failopen-empty-windows-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$empty_windows_payload" "$tmpdir/failopen-empty-windows-stdout"; then
+    printf 'expected passthrough of the empty-window stub with a broken guard\n' >&2
+    exit 1
+fi
+
+if ! cmp -s "$input_file" "$failopen_empty_windows_cache"; then
+    printf 'expected cache with usage data to survive an empty-window stub even when the guard is broken\n' >&2
+    exit 1
+fi
+
+# --- fail-open rejects payloads where only one window carries usage fields ---
+# Token names alone can't tell that the fields sit inside both required
+# windows: {"five_hour":{...both fields...},"seven_day":{}} mentions every
+# token yet the app can't parse seven_day.
+
+partial_windows_payload="$tmpdir/partial-windows-payload.json"
+python3 -c '
+import json, sys
+payload = json.load(open(sys.argv[1]))
+five_hour = payload["rate_limits"]["five_hour"]
+payload["rate_limits"] = {"five_hour": five_hour, "seven_day": {}}
+json.dump(payload, open(sys.argv[2], "w"))
+' "$input_file" "$partial_windows_payload"
+
+failopen_partial_cache="$tmpdir/failopen-partial/claude-status.json"
+mkdir -p "$(dirname "$failopen_partial_cache")"
+cp "$input_file" "$failopen_partial_cache"
+
+set +e
+PATH="$broken_bin:$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$failopen_partial_cache" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/failopen-partial-args" \
+    "$wrapper" --theme compact <"$partial_windows_payload" >"$tmpdir/failopen-partial-stdout" 2>"$tmpdir/failopen-partial-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on a partial-window payload with a broken guard\n' "$status" >&2
+    cat "$tmpdir/failopen-partial-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$partial_windows_payload" "$tmpdir/failopen-partial-stdout"; then
+    printf 'expected passthrough of the partial-window payload with a broken guard\n' >&2
+    exit 1
+fi
+
+if ! cmp -s "$input_file" "$failopen_partial_cache"; then
+    printf 'expected cache with both windows to survive a payload missing one window'\''s fields\n' >&2
+    exit 1
+fi
+
+# --- fail-open rejects windows whose fields are the wrong value type ---
+# Key presence isn't enough: the app decodes used_percentage as Int and
+# resets_at as a number, so a string like "38" (or an object) is unparseable
+# and must not clobber a usable cache.
+
+wrong_type_payload="$tmpdir/wrong-type-payload.json"
+python3 -c '
+import json, sys
+payload = json.load(open(sys.argv[1]))
+payload["rate_limits"]["five_hour"]["used_percentage"] = "38"
+json.dump(payload, open(sys.argv[2], "w"))
+' "$input_file" "$wrong_type_payload"
+
+failopen_wrong_type_cache="$tmpdir/failopen-wrong-type/claude-status.json"
+mkdir -p "$(dirname "$failopen_wrong_type_cache")"
+cp "$input_file" "$failopen_wrong_type_cache"
+
+set +e
+PATH="$broken_bin:$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$failopen_wrong_type_cache" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/failopen-wrong-type-args" \
+    "$wrapper" --theme compact <"$wrong_type_payload" >"$tmpdir/failopen-wrong-type-stdout" 2>"$tmpdir/failopen-wrong-type-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on a wrong-type payload with a broken guard\n' "$status" >&2
+    cat "$tmpdir/failopen-wrong-type-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$wrong_type_payload" "$tmpdir/failopen-wrong-type-stdout"; then
+    printf 'expected passthrough of the wrong-type payload with a broken guard\n' >&2
+    exit 1
+fi
+
+if ! cmp -s "$input_file" "$failopen_wrong_type_cache"; then
+    printf 'expected cache with numeric fields to survive a payload with a string used_percentage\n' >&2
     exit 1
 fi
 

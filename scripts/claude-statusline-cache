@@ -42,15 +42,29 @@ import sys
 input_path, cache_path = sys.argv[1], sys.argv[2]
 
 
+def number(value, allow_float):
+    # Match the Swift decoder, which reads used_percentage as Int and
+    # resets_at as a TimeInterval. A JSON string or bool that int(...) would
+    # happily coerce is unusable to the app, so treat it as a missing field
+    # rather than writing a cache the app can't parse.
+    if isinstance(value, bool):
+        raise TypeError("bool is not a usable numeric field")
+    if isinstance(value, int):
+        return value
+    if allow_float and isinstance(value, float):
+        return value
+    raise TypeError("field is not the expected numeric type")
+
+
 def windows(path):
     with open(path) as f:
         limits = json.load(f)["rate_limits"]
     weekly, five_hour = limits["seven_day"], limits["five_hour"]
     return (
-        int(weekly["resets_at"]),
-        int(weekly["used_percentage"]),
-        int(five_hour["resets_at"]),
-        int(five_hour["used_percentage"]),
+        number(weekly["resets_at"], True),
+        number(weekly["used_percentage"], False),
+        number(five_hour["resets_at"], True),
+        number(five_hour["used_percentage"], False),
     )
 
 
@@ -81,12 +95,27 @@ with open(cache_path + ".lock", "w") as lock:
 PY
 }
 
-# Token-level screen for payload usability when python3 can't judge:
-# the app needs rate_limits with both usage windows to parse anything.
-mentions_usage_windows() {
-    grep -q '"rate_limits"' "$1" 2>/dev/null \
-        && grep -q '"five_hour"' "$1" 2>/dev/null \
-        && grep -q '"seven_day"' "$1" 2>/dev/null
+# Structural screen for payload usability when python3 can't judge: the app
+# needs both usage windows, each carrying numeric resets_at and used_percentage.
+# A token-level grep can't tell those fields sit inside both windows, and even
+# `plutil -extract ... raw` alone only proves a key exists — it happily accepts
+# a string or object leaf that the Swift decoder (Int / TimeInterval) can't
+# parse. So use `-expect` to enforce the value types: used_percentage must be an
+# integer; resets_at is a TimeInterval, so accept an integer or float epoch.
+# plutil ships on every supported macOS; if it's missing we can't judge, so
+# treat the payload as usable and fall fully open to the always-write behavior.
+has_usable_windows() {
+    command -v plutil >/dev/null 2>&1 || return 0
+    local file="$1" window
+    for window in five_hour seven_day; do
+        plutil -extract "rate_limits.$window.used_percentage" raw -expect integer \
+            -o - -- "$file" >/dev/null 2>&1 || return 1
+        plutil -extract "rate_limits.$window.resets_at" raw -expect integer \
+            -o - -- "$file" >/dev/null 2>&1 \
+            || plutil -extract "rate_limits.$window.resets_at" raw -expect float \
+                -o - -- "$file" >/dev/null 2>&1 \
+            || return 1
+    done
 }
 
 if ! write_cache_if_fresh "$input_tmp" "$cache_file"; then
@@ -96,7 +125,7 @@ if ! write_cache_if_fresh "$input_tmp" "$cache_file"; then
     # clearly is not. This degraded path deliberately runs without the
     # guard's lock (macOS ships no flock(1)); the remaining race needs a
     # broken guard plus concurrent writers and heals on the next render.
-    if mentions_usage_windows "$input_tmp" || ! mentions_usage_windows "$cache_file"; then
+    if has_usable_windows "$input_tmp" || ! has_usable_windows "$cache_file"; then
         cache_tmp="$(mktemp "$cache_dir/${cache_base}.tmp.XXXXXX")"
         cp "$input_tmp" "$cache_tmp"
         chmod 600 "$cache_tmp"
