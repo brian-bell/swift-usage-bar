@@ -9,17 +9,16 @@ struct AIUsageBarApp {
 }
 
 final class UserNotificationSender: NotificationSending, @unchecked Sendable {
-    private let center: UNUserNotificationCenter
+    private let center: any NotificationCenterClient
     private let authorizationLock = NSLock()
-    private var isAuthorized = false
     private var authorizationTask: Task<Bool, any Error>?
 
-    init(center: UNUserNotificationCenter = .current()) {
+    init(center: any NotificationCenterClient = SystemNotificationCenterClient()) {
         self.center = center
     }
 
     func send(_ notification: UsageThresholdNotification) async throws {
-        try await requestAuthorizationIfNeeded()
+        try await verifyAuthorization()
 
         let content = UNMutableNotificationContent()
         content.title = notification.title
@@ -35,44 +34,44 @@ final class UserNotificationSender: NotificationSending, @unchecked Sendable {
         try await center.add(request)
     }
 
-    private func requestAuthorizationIfNeeded() async throws {
-        let task: Task<Bool, any Error>? = authorizationLock.withLock {
-            if isAuthorized {
-                return nil
+    private func verifyAuthorization() async throws {
+        switch await center.authorizationStatus() {
+        case .authorized:
+            return
+        case .denied:
+            throw NotificationDeliveryError.authorizationDenied
+        case .notDetermined:
+            let granted = try await requestAuthorization()
+            guard granted else {
+                throw NotificationDeliveryError.authorizationDenied
             }
+        }
+    }
 
+    private func requestAuthorization() async throws -> Bool {
+        let task: Task<Bool, any Error> = authorizationLock.withLock {
             if let authorizationTask {
-                return Optional(authorizationTask)
+                return authorizationTask
             }
 
             let task = Task { [center] in
-                try await center.requestAuthorization(options: [.alert, .sound])
+                try await center.requestAuthorization()
             }
             authorizationTask = task
-            return Optional(task)
+            return task
         }
 
-        guard let task else {
-            return
-        }
-
-        let granted: Bool
         do {
-            granted = try await task.value
+            let granted = try await task.value
+            authorizationLock.withLock {
+                authorizationTask = nil
+            }
+            return granted
         } catch {
             authorizationLock.withLock {
                 authorizationTask = nil
             }
             throw error
-        }
-
-        authorizationLock.withLock {
-            authorizationTask = nil
-            isAuthorized = granted
-        }
-
-        guard granted else {
-            throw NotificationDeliveryError.authorizationDenied
         }
     }
 
@@ -89,6 +88,49 @@ final class UserNotificationSender: NotificationSending, @unchecked Sendable {
 
 private enum NotificationDeliveryError: Error {
     case authorizationDenied
+}
+
+protocol NotificationCenterClient: Sendable {
+    func authorizationStatus() async -> NotificationAuthorizationStatus
+    func requestAuthorization() async throws -> Bool
+    func add(_ request: UNNotificationRequest) async throws
+}
+
+enum NotificationAuthorizationStatus: Sendable {
+    case authorized
+    case denied
+    case notDetermined
+}
+
+final class SystemNotificationCenterClient: NotificationCenterClient, @unchecked Sendable {
+    private let center: UNUserNotificationCenter
+
+    init(center: UNUserNotificationCenter = .current()) {
+        self.center = center
+    }
+
+    func authorizationStatus() async -> NotificationAuthorizationStatus {
+        let settings = await center.notificationSettings()
+
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            return .authorized
+        case .denied:
+            return .denied
+        case .notDetermined:
+            return .notDetermined
+        @unknown default:
+            return .denied
+        }
+    }
+
+    func requestAuthorization() async throws -> Bool {
+        try await center.requestAuthorization(options: [.alert, .sound])
+    }
+
+    func add(_ request: UNNotificationRequest) async throws {
+        try await center.add(request)
+    }
 }
 
 enum WorkspaceWakeEvents {
