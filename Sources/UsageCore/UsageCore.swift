@@ -27,6 +27,21 @@ public struct ProviderUsage: Equatable, Sendable {
     }
 }
 
+private extension ProviderUsage {
+    func windows(comparedWith previous: ProviderUsage) -> [UsageWindowComparison] {
+        [
+            UsageWindowComparison(kind: .fiveHour, previous: previous.fiveHour, current: fiveHour),
+            UsageWindowComparison(kind: .weekly, previous: previous.weekly, current: weekly),
+        ]
+    }
+}
+
+private struct UsageWindowComparison {
+    let kind: UsageWindowKind
+    let previous: UsageWindow
+    let current: UsageWindow
+}
+
 public enum UsageParsingError: Error, Equatable, Sendable {
     case parseFailure
 }
@@ -47,6 +62,131 @@ public enum ProviderState: Equatable, Sendable {
     case fresh(ProviderUsage, asOf: Date)
     case stale(last: ProviderUsage?, reason: StaleReason)
     case hidden
+}
+
+public enum UsageWindowKind: Equatable, Hashable, Sendable {
+    case fiveHour
+    case weekly
+}
+
+public struct UsageThresholdNotification: Equatable, Sendable {
+    public let provider: ProviderID
+    public let window: UsageWindowKind
+    public let percentRemaining: Int
+    public let threshold: Int
+    public let resetsAt: Date?
+
+    public init(
+        provider: ProviderID,
+        window: UsageWindowKind,
+        percentRemaining: Int,
+        threshold: Int,
+        resetsAt: Date?
+    ) {
+        self.provider = provider
+        self.window = window
+        self.percentRemaining = percentRemaining
+        self.threshold = threshold
+        self.resetsAt = resetsAt
+    }
+
+    public var title: String {
+        "\(provider.notificationDisplayName) \(window.notificationDisplayName) usage below \(threshold)%"
+    }
+
+    public var body: String {
+        "\(percentRemaining)% remaining before this window resets."
+    }
+}
+
+private extension ProviderID {
+    var notificationDisplayName: String {
+        switch self {
+        case .claude:
+            return "Claude"
+        case .codex:
+            return "Codex"
+        }
+    }
+}
+
+private extension UsageWindowKind {
+    var notificationDisplayName: String {
+        switch self {
+        case .fiveHour:
+            return "five-hour"
+        case .weekly:
+            return "weekly"
+        }
+    }
+}
+
+public protocol NotificationSending: Sendable {
+    func send(_ notification: UsageThresholdNotification) async
+}
+
+public actor ThresholdNotifier {
+    private let sender: any NotificationSending
+    private var firedCycles: Set<ThresholdNotificationKey> = []
+
+    public init(sender: any NotificationSending) {
+        self.sender = sender
+    }
+
+    public func evaluate(
+        previous: ProviderUsage?,
+        current: ProviderUsage,
+        provider: ProviderID,
+        threshold: Int
+    ) async {
+        guard let previous else {
+            return
+        }
+
+        for window in current.windows(comparedWith: previous) {
+            guard window.previous.percentRemaining >= threshold,
+                  window.current.percentRemaining < threshold
+            else {
+                continue
+            }
+
+            let key = ThresholdNotificationKey(
+                provider: provider,
+                window: window.kind,
+                resetCycle: ResetCycle(resetsAt: window.current.resetsAt)
+            )
+            guard firedCycles.insert(key).inserted else {
+                continue
+            }
+
+            await sender.send(UsageThresholdNotification(
+                provider: provider,
+                window: window.kind,
+                percentRemaining: window.current.percentRemaining,
+                threshold: threshold,
+                resetsAt: window.current.resetsAt
+            ))
+        }
+    }
+}
+
+private struct ThresholdNotificationKey: Hashable, Sendable {
+    let provider: ProviderID
+    let window: UsageWindowKind
+    let resetCycle: ResetCycle
+}
+
+private enum ResetCycle: Hashable, Sendable {
+    case known(Date)
+    case unknown
+
+    init(resetsAt: Date?) {
+        if let resetsAt {
+            self = .known(resetsAt)
+        } else {
+            self = .unknown
+        }
+    }
 }
 
 public protocol UsageProvider: Sendable {
@@ -125,23 +265,25 @@ public final class AppState: @unchecked Sendable {
         lastAttemptedRefreshes[provider] = attemptedAt
     }
 
+    @discardableResult
     public func recordRefreshAttemptAndApplyResult(
         provider: ProviderID,
         attemptedAt: Date,
         state: ProviderState,
         completedAt: Date,
         shouldApply: @Sendable () -> Bool = { true }
-    ) {
+    ) -> Bool {
         guard shouldApply() else {
-            return
+            return false
         }
 
         if case .hidden = providerStates[provider] {
-            return
+            return false
         }
 
         recordRefreshAttempt(provider: provider, at: attemptedAt)
         applyRefreshResult(provider: provider, state: state, completedAt: completedAt)
+        return true
     }
 
     public func applyRefreshResult(
@@ -176,6 +318,8 @@ public actor UsagePoller {
     private let appState: AppState
     private let clock: any UsageClock
     private let wakeEvents: (@Sendable () -> AsyncStream<Void>)?
+    private let thresholdNotifier: ThresholdNotifier?
+    private let thresholdProvider: @Sendable () async -> Int
     private let lifecycle = PollLifecycle()
     private var interval: TimeInterval
     private var isRunning = false
@@ -193,13 +337,17 @@ public actor UsagePoller {
         appState: AppState,
         clock: any UsageClock = SystemUsageClock(),
         interval: TimeInterval = UsagePoller.defaultInterval,
-        wakeEvents: (@Sendable () -> AsyncStream<Void>)? = nil
+        wakeEvents: (@Sendable () -> AsyncStream<Void>)? = nil,
+        thresholdNotifier: ThresholdNotifier? = nil,
+        thresholdProvider: @escaping @Sendable () async -> Int = { 20 }
     ) {
         self.providers = providers
         self.appState = appState
         self.clock = clock
         self.interval = Self.normalizedInterval(interval)
         self.wakeEvents = wakeEvents
+        self.thresholdNotifier = thresholdNotifier
+        self.thresholdProvider = thresholdProvider
     }
 
     public func start() {
@@ -332,6 +480,8 @@ public actor UsagePoller {
         let providers = providers
         let appState = appState
         let clock = clock
+        let thresholdNotifier = thresholdNotifier
+        let thresholdProvider = thresholdProvider
 
         await withTaskGroup(of: ProviderPollResult?.self) { group in
             for (providerID, provider) in providers {
@@ -366,6 +516,7 @@ public actor UsagePoller {
 
                     return ProviderPollResult(
                         provider: providerID,
+                        previousUsage: previous,
                         attemptedAt: attemptedAt,
                         state: state,
                         completedAt: completedAt
@@ -383,13 +534,26 @@ public actor UsagePoller {
                 }
 
                 let lifecycle = lifecycle
-                await appState.recordRefreshAttemptAndApplyResult(
+                let didApply = await appState.recordRefreshAttemptAndApplyResult(
                     provider: result.provider,
                     attemptedAt: result.attemptedAt,
                     state: result.state,
                     completedAt: result.completedAt,
                     shouldApply: { lifecycle.isCurrent(generation) }
                 )
+                guard didApply, let thresholdNotifier else {
+                    continue
+                }
+
+                if case let .fresh(usage, asOf: _) = result.state {
+                    let threshold = await thresholdProvider()
+                    await thresholdNotifier.evaluate(
+                        previous: result.previousUsage,
+                        current: usage,
+                        provider: result.provider,
+                        threshold: threshold
+                    )
+                }
             }
         }
     }
@@ -442,6 +606,7 @@ public actor UsagePoller {
 
 private struct ProviderPollResult: Sendable {
     let provider: ProviderID
+    let previousUsage: ProviderUsage?
     let attemptedAt: Date
     let state: ProviderState
     let completedAt: Date
