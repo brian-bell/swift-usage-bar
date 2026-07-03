@@ -52,11 +52,15 @@ else:
     shim_body += "# No statusline was configured before; render nothing, as before.\n"
     shim_body += "exit 0\n"
 
-os.makedirs(os.path.dirname(shim_path), exist_ok=True)
-fd, tmp = tempfile.mkstemp(dir=os.path.dirname(shim_path))
+# The shim republishes the command string from settings.json (typically
+# mode 600), so keep it and its directory owner-only.
+shim_dir = os.path.dirname(shim_path)
+os.makedirs(shim_dir, exist_ok=True)
+os.chmod(shim_dir, 0o700)
+fd, tmp = tempfile.mkstemp(dir=shim_dir)
 with os.fdopen(fd, "w") as f:
     f.write(shim_body)
-os.chmod(tmp, 0o755)
+os.chmod(tmp, 0o700)
 os.replace(tmp, shim_path)
 
 if os.path.exists(settings_path) and not os.path.exists(backup_path):

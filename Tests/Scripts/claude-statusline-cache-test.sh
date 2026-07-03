@@ -223,6 +223,26 @@ if ! cmp -s "$input_file" "$no_limits_cache_file"; then
     exit 1
 fi
 
+# --- if the freshness guard cannot run, fall open to always-write ---
+
+broken_bin="$tmpdir/broken-bin"
+mkdir -p "$broken_bin"
+printf '#!/bin/sh\nexit 1\n' >"$broken_bin/python3"
+chmod 755 "$broken_bin/python3"
+
+failopen_cache_file="$tmpdir/failopen/claude-status.json"
+mkdir -p "$(dirname "$failopen_cache_file")"
+cp "$fresher_payload" "$failopen_cache_file"
+
+run_wrapper "$tmpdir/failopen-stdout" "$tmpdir/failopen-stderr" "$tmpdir/failopen-args" "$failopen_cache_file" \
+    env PATH="$broken_bin:$fake_bin:$PATH"
+
+if [ "$status" -ne 0 ] || ! cmp -s "$input_file" "$failopen_cache_file"; then
+    printf 'expected a broken freshness guard to fall open to the original always-write behavior\n' >&2
+    exit 1
+fi
+assert_no_temp_files "$failopen_cache_file"
+
 actual_stdout="$tmpdir/failure-stdout"
 actual_stderr="$tmpdir/failure-stderr"
 args_file="$tmpdir/failure-args"

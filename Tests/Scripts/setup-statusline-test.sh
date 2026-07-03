@@ -119,6 +119,26 @@ if [ "$(json_get "$config_dir/settings.json" statusLine refreshInterval)" != "10
     exit 1
 fi
 
+# The shim republishes the command string from settings.json (mode 600),
+# so it must stay owner-only, as must its directory.
+file_mode() {
+    if stat -f '%Lp' "$1" 2>/dev/null; then
+        return
+    fi
+    stat -c '%a' "$1"
+}
+
+shim_file="$config_dir/ai-usage-bar/statusline-passthrough.sh"
+if [ "$(file_mode "$shim_file")" != "700" ]; then
+    printf 'expected shim mode 700, got %s\n' "$(file_mode "$shim_file")" >&2
+    exit 1
+fi
+
+if [ "$(file_mode "$(dirname "$shim_file")")" != "700" ]; then
+    printf 'expected shim directory mode 700, got %s\n' "$(file_mode "$(dirname "$shim_file")")" >&2
+    exit 1
+fi
+
 printf 'ok: existing statusline preserved\n'
 
 # --- rerunning is idempotent: the wrapper never wraps itself ---

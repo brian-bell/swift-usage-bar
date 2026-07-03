@@ -29,12 +29,17 @@ chmod 600 "$input_tmp"
 # last API response. Only overwrite the cache when the incoming payload is
 # at least as fresh, using the monotonic structure of the rate-limit data:
 # a later weekly reset means a new cycle; within a cycle, usage only climbs.
-# Prints "skip" to reject the write; anything else (including a python3
-# failure) falls open to the original always-write behavior.
-freshness_decision() {
-    python3 - "$1" "$2" 2>/dev/null <<'PY' || printf 'write'
+# Compare and replace happen under one exclusive lock so a concurrent
+# fresher write can't be clobbered between the decision and the rename.
+# Exits nonzero only when the guard itself couldn't run.
+write_cache_if_fresh() {
+    python3 - "$1" "$2" 2>/dev/null <<'PY'
+import fcntl
 import json
+import os
 import sys
+
+input_path, cache_path = sys.argv[1], sys.argv[2]
 
 
 def windows(path):
@@ -49,23 +54,36 @@ def windows(path):
     )
 
 
-try:
-    cached = windows(sys.argv[2])
-except Exception:
-    print("write")  # no usable cache to protect
-    sys.exit(0)
+with open(cache_path + ".lock", "w") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
 
-try:
-    incoming = windows(sys.argv[1])
-except Exception:
-    print("skip")  # never replace usable data with unusable data
-    sys.exit(0)
+    try:
+        cached = windows(cache_path)
+    except Exception:
+        cached = None  # no usable cache to protect
+    try:
+        incoming = windows(input_path)
+    except Exception:
+        incoming = None  # never replace usable data with unusable data
 
-print("write" if incoming >= cached else "skip")
+    if cached is not None and (incoming is None or incoming < cached):
+        sys.exit(0)
+
+    tmp_path = "%s.tmp.%d" % (cache_path, os.getpid())
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as out, open(input_path, "rb") as src:
+            out.write(src.read())
+        os.replace(tmp_path, cache_path)
+    except BaseException:
+        os.unlink(tmp_path)
+        raise
 PY
 }
 
-if [ "$(freshness_decision "$input_tmp" "$cache_file")" != "skip" ]; then
+if ! write_cache_if_fresh "$input_tmp" "$cache_file"; then
+    # python3 unavailable or the guard crashed: fall open to the original
+    # unconditional write rather than dropping usage data on the floor.
     cache_tmp="$(mktemp "$cache_dir/${cache_base}.tmp.XXXXXX")"
     cp "$input_tmp" "$cache_tmp"
     chmod 600 "$cache_tmp"
