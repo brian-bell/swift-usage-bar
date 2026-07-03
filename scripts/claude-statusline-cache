@@ -81,14 +81,28 @@ with open(cache_path + ".lock", "w") as lock:
 PY
 }
 
+# Token-level screen for payload usability when python3 can't judge:
+# the app needs rate_limits with both usage windows to parse anything.
+mentions_usage_windows() {
+    grep -q '"rate_limits"' "$1" 2>/dev/null \
+        && grep -q '"five_hour"' "$1" 2>/dev/null \
+        && grep -q '"seven_day"' "$1" 2>/dev/null
+}
+
 if ! write_cache_if_fresh "$input_tmp" "$cache_file"; then
     # python3 unavailable or the guard crashed: fall open to the original
-    # unconditional write rather than dropping usage data on the floor.
-    cache_tmp="$(mktemp "$cache_dir/${cache_base}.tmp.XXXXXX")"
-    cp "$input_tmp" "$cache_tmp"
-    chmod 600 "$cache_tmp"
-    mv "$cache_tmp" "$cache_file"
-    cache_tmp=""
+    # unconditional write rather than dropping usage data on the floor —
+    # except never replace a cache that looks usable with a payload that
+    # clearly is not. This degraded path deliberately runs without the
+    # guard's lock (macOS ships no flock(1)); the remaining race needs a
+    # broken guard plus concurrent writers and heals on the next render.
+    if mentions_usage_windows "$input_tmp" || ! mentions_usage_windows "$cache_file"; then
+        cache_tmp="$(mktemp "$cache_dir/${cache_base}.tmp.XXXXXX")"
+        cp "$input_tmp" "$cache_tmp"
+        chmod 600 "$cache_tmp"
+        mv "$cache_tmp" "$cache_file"
+        cache_tmp=""
+    fi
 fi
 
 set +e

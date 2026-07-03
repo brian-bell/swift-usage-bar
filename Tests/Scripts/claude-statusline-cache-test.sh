@@ -243,6 +243,69 @@ if [ "$status" -ne 0 ] || ! cmp -s "$input_file" "$failopen_cache_file"; then
 fi
 assert_no_temp_files "$failopen_cache_file"
 
+# --- even fail-open never replaces usable data with a rate-limit-free payload ---
+
+failopen_no_limits_cache="$tmpdir/failopen-no-limits/claude-status.json"
+mkdir -p "$(dirname "$failopen_no_limits_cache")"
+cp "$input_file" "$failopen_no_limits_cache"
+
+set +e
+PATH="$broken_bin:$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$failopen_no_limits_cache" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/failopen-no-limits-args" \
+    "$wrapper" --theme compact <"$no_limits_payload" >"$tmpdir/failopen-no-limits-stdout" 2>"$tmpdir/failopen-no-limits-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on a rate-limit-free payload with a broken guard\n' "$status" >&2
+    cat "$tmpdir/failopen-no-limits-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$no_limits_payload" "$tmpdir/failopen-no-limits-stdout"; then
+    printf 'expected passthrough of the rate-limit-free payload with a broken guard\n' >&2
+    exit 1
+fi
+
+if ! cmp -s "$input_file" "$failopen_no_limits_cache"; then
+    printf 'expected cache with rate limits to survive a rate-limit-free payload even when the guard is broken\n' >&2
+    exit 1
+fi
+
+# --- fail-open also rejects rate-limit stubs missing the usage windows ---
+
+stub_payload="$tmpdir/stub-payload.json"
+python3 -c '
+import json, sys
+payload = json.load(open(sys.argv[1]))
+payload["rate_limits"] = {}
+json.dump(payload, open(sys.argv[2], "w"))
+' "$input_file" "$stub_payload"
+
+failopen_stub_cache="$tmpdir/failopen-stub/claude-status.json"
+mkdir -p "$(dirname "$failopen_stub_cache")"
+cp "$input_file" "$failopen_stub_cache"
+
+set +e
+PATH="$broken_bin:$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$failopen_stub_cache" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/failopen-stub-args" \
+    "$wrapper" --theme compact <"$stub_payload" >"$tmpdir/failopen-stub-stdout" 2>"$tmpdir/failopen-stub-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on a rate-limit stub with a broken guard\n' "$status" >&2
+    cat "$tmpdir/failopen-stub-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$input_file" "$failopen_stub_cache"; then
+    printf 'expected cache with usage windows to survive an empty rate_limits stub even when the guard is broken\n' >&2
+    exit 1
+fi
+
 actual_stdout="$tmpdir/failure-stdout"
 actual_stderr="$tmpdir/failure-stderr"
 args_file="$tmpdir/failure-args"
