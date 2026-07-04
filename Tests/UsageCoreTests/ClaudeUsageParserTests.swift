@@ -35,6 +35,17 @@ func claudeUsageParserParsesSixDigitFractionalResetsAt() throws {
 }
 
 @Test
+func claudeUsageParserParsesShortFractionalResetsAt() throws {
+    let usage = try ClaudeUsageParser().parse(usageBody(
+        fiveHourResetsAt: "2026-07-04T06:10:00.2+00:00",
+        sevenDayResetsAt: "2026-07-06T10:00:00.22Z"
+    ))
+
+    #expect(epochSeconds(usage.fiveHour.resetsAt) == 1_783_145_400)
+    #expect(epochSeconds(usage.weekly.resetsAt) == 1_783_332_000)
+}
+
+@Test
 func claudeUsageParserClampsUtilizationToPercentRemainingBounds() throws {
     let cases: [(Double, Int)] = [
         (-5, 100),

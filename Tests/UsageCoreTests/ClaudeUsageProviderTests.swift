@@ -24,8 +24,16 @@ func claudeUsageProviderBuildsUsageRequestAndReturnsFreshUsageWithoutConsultingC
     let state = await provider.fetch(previous: nil)
     let request = try #require(transport.requests.first)
 
-    let expectedUsage = try ClaudeUsageParser().parse(fixtureData("claude-usage.json"))
-    #expect(state == .fresh(expectedUsage, asOf: asOf))
+    guard case let .fresh(usage, asOf: freshAsOf) = state else {
+        Issue.record("Expected fresh state, got \(state)")
+        return
+    }
+
+    #expect(usage.fiveHour.percentRemaining == 89)
+    #expect(usage.weekly.percentRemaining == 77)
+    #expect(usage.fiveHour.resetsAt.map { Int($0.timeIntervalSince1970) } == 1_783_145_400)
+    #expect(usage.weekly.resetsAt.map { Int($0.timeIntervalSince1970) } == 1_783_332_000)
+    #expect(freshAsOf == asOf)
     #expect(transport.requests.count == 1)
     #expect(request.httpMethod == "GET")
     #expect(request.url?.absoluteString == "https://api.anthropic.com/api/oauth/usage")

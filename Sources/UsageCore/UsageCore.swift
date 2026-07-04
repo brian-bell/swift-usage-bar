@@ -920,7 +920,7 @@ public struct ClaudeCredentialParser: Sendable {
     public func parse(_ data: Data) throws -> ClaudeCredential {
         do {
             let stored = try JSONDecoder().decode(ClaudeStoredCredential.self, from: data)
-            guard stored.claudeAiOauth.hasRequiredValues else {
+            guard stored.claudeAiOauth.hasUsableAccessToken else {
                 throw UsageParsingError.parseFailure
             }
 
@@ -1427,8 +1427,8 @@ private struct ClaudeUsageResponseWindow: Decodable {
 
 // The usage API emits ISO 8601 with 6-digit fractional seconds
 // (2026-07-04T06:10:00.229359+00:00); ISO8601DateFormatter's
-// .withFractionalSeconds only reliably parses 3, so longer fractions
-// are truncated before parsing.
+// .withFractionalSeconds only reliably parses exactly 3, so other
+// fraction lengths are normalized before parsing.
 private func claudeUsageResetDate(from string: String) -> Date? {
     let plain = ISO8601DateFormatter()
     if let date = plain.date(from: string) {
@@ -1441,14 +1441,14 @@ private func claudeUsageResetDate(from string: String) -> Date? {
         return date
     }
 
-    if let truncated = truncatingFractionalSeconds(string, to: 3) {
-        return fractional.date(from: truncated)
+    if let normalized = normalizingFractionalSeconds(string, to: 3) {
+        return fractional.date(from: normalized)
     }
 
     return nil
 }
 
-private func truncatingFractionalSeconds(_ string: String, to digits: Int) -> String? {
+private func normalizingFractionalSeconds(_ string: String, to digits: Int) -> String? {
     guard let dotIndex = string.firstIndex(of: ".") else {
         return nil
     }
@@ -1460,11 +1460,15 @@ private func truncatingFractionalSeconds(_ string: String, to digits: Int) -> St
     }
 
     let fraction = string[fractionStart..<fractionEnd]
-    guard fraction.count > digits else {
+    guard !fraction.isEmpty, fraction.count != digits else {
         return nil
     }
 
-    return string.replacingCharacters(in: fractionStart..<fractionEnd, with: fraction.prefix(digits))
+    let normalized = fraction.count > digits
+        ? String(fraction.prefix(digits))
+        : fraction.padding(toLength: digits, withPad: "0", startingAt: 0)
+
+    return string.replacingCharacters(in: fractionStart..<fractionEnd, with: normalized)
 }
 
 private struct CodexUsageResponse: Decodable {
@@ -1494,7 +1498,7 @@ private struct ClaudeStoredCredential: Decodable {
         // Claude Code stores this as epoch milliseconds.
         let expiresAt: Double
 
-        var hasRequiredValues: Bool {
+        var hasUsableAccessToken: Bool {
             !accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
