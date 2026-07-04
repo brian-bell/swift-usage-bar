@@ -24,11 +24,115 @@ trap cleanup EXIT
 cat >"$input_tmp"
 chmod 600 "$input_tmp"
 
-cache_tmp="$(mktemp "$cache_dir/${cache_base}.tmp.XXXXXX")"
-cp "$input_tmp" "$cache_tmp"
-chmod 600 "$cache_tmp"
-mv "$cache_tmp" "$cache_file"
-cache_tmp=""
+# Multiple concurrent Claude Code sessions all write this cache, and idle
+# sessions keep re-rendering their statusline with rate limits from their
+# last API response. Only overwrite the cache when the incoming payload is
+# at least as fresh, using the monotonic structure of the rate-limit data:
+# a later weekly reset means a new cycle; within a cycle, usage only climbs.
+# Compare and replace happen under one exclusive lock so a concurrent
+# fresher write can't be clobbered between the decision and the rename.
+# Exits nonzero only when the guard itself couldn't run.
+write_cache_if_fresh() {
+    python3 - "$1" "$2" 2>/dev/null <<'PY'
+import fcntl
+import json
+import os
+import sys
+
+input_path, cache_path = sys.argv[1], sys.argv[2]
+
+
+def number(value, allow_float):
+    # Match the Swift decoder, which reads used_percentage as Int and
+    # resets_at as a TimeInterval. A JSON string or bool that int(...) would
+    # happily coerce is unusable to the app, so treat it as a missing field
+    # rather than writing a cache the app can't parse.
+    if isinstance(value, bool):
+        raise TypeError("bool is not a usable numeric field")
+    if isinstance(value, int):
+        return value
+    if allow_float and isinstance(value, float):
+        return value
+    raise TypeError("field is not the expected numeric type")
+
+
+def windows(path):
+    with open(path) as f:
+        limits = json.load(f)["rate_limits"]
+    weekly, five_hour = limits["seven_day"], limits["five_hour"]
+    return (
+        number(weekly["resets_at"], True),
+        number(weekly["used_percentage"], False),
+        number(five_hour["resets_at"], True),
+        number(five_hour["used_percentage"], False),
+    )
+
+
+with open(cache_path + ".lock", "w") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+
+    try:
+        cached = windows(cache_path)
+    except Exception:
+        cached = None  # no usable cache to protect
+    try:
+        incoming = windows(input_path)
+    except Exception:
+        incoming = None  # never replace usable data with unusable data
+
+    if cached is not None and (incoming is None or incoming < cached):
+        sys.exit(0)
+
+    tmp_path = "%s.tmp.%d" % (cache_path, os.getpid())
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as out, open(input_path, "rb") as src:
+            out.write(src.read())
+        os.replace(tmp_path, cache_path)
+    except BaseException:
+        os.unlink(tmp_path)
+        raise
+PY
+}
+
+# Structural screen for payload usability when python3 can't judge: the app
+# needs both usage windows, each carrying numeric resets_at and used_percentage.
+# A token-level grep can't tell those fields sit inside both windows, and even
+# `plutil -extract ... raw` alone only proves a key exists — it happily accepts
+# a string or object leaf that the Swift decoder (Int / TimeInterval) can't
+# parse. So use `-expect` to enforce the value types: used_percentage must be an
+# integer; resets_at is a TimeInterval, so accept an integer or float epoch.
+# plutil ships on every supported macOS; if it's missing we can't judge, so
+# treat the payload as usable and fall fully open to the always-write behavior.
+has_usable_windows() {
+    command -v plutil >/dev/null 2>&1 || return 0
+    local file="$1" window
+    for window in five_hour seven_day; do
+        plutil -extract "rate_limits.$window.used_percentage" raw -expect integer \
+            -o - -- "$file" >/dev/null 2>&1 || return 1
+        plutil -extract "rate_limits.$window.resets_at" raw -expect integer \
+            -o - -- "$file" >/dev/null 2>&1 \
+            || plutil -extract "rate_limits.$window.resets_at" raw -expect float \
+                -o - -- "$file" >/dev/null 2>&1 \
+            || return 1
+    done
+}
+
+if ! write_cache_if_fresh "$input_tmp" "$cache_file"; then
+    # python3 unavailable or the guard crashed: fall open to the original
+    # unconditional write rather than dropping usage data on the floor —
+    # except never replace a cache that looks usable with a payload that
+    # clearly is not. This degraded path deliberately runs without the
+    # guard's lock (macOS ships no flock(1)); the remaining race needs a
+    # broken guard plus concurrent writers and heals on the next render.
+    if has_usable_windows "$input_tmp" || ! has_usable_windows "$cache_file"; then
+        cache_tmp="$(mktemp "$cache_dir/${cache_base}.tmp.XXXXXX")"
+        cp "$input_tmp" "$cache_tmp"
+        chmod 600 "$cache_tmp"
+        mv "$cache_tmp" "$cache_file"
+        cache_tmp=""
+    fi
+fi
 
 set +e
 "$statusline_bin" "$@" <"$input_tmp"

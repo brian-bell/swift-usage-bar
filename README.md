@@ -44,7 +44,15 @@ Enable "Launch at login" from the dropdown settings if you want it to persist ac
 
 ### Claude statusline cache setup
 
-The app reads Claude usage from a local cache written by your Claude Code statusline. Configure Claude Code to run `scripts/claude-statusline-cache` as its statusline command — it tees the statusline JSON to `${XDG_CACHE_HOME:-~/.cache}/ai-usage-bar/claude-status.json` and then forwards it to [`ccstatusline`](https://github.com/sirmalloc/ccstatusline) (override the binary with `CCSTATUSLINE_BIN`, the cache path with `AI_USAGE_BAR_CLAUDE_STATUS_JSON`). Until the cache exists, the Claude row shows a stale hint.
+The app reads Claude usage from a local cache written by your Claude Code statusline. Run the installer to wire it up:
+
+```sh
+scripts/setup-statusline
+```
+
+It rewrites `statusLine.command` in `~/.claude/settings.json` (respecting `CLAUDE_CONFIG_DIR`) to run `scripts/claude-statusline-cache`, which tees the statusline JSON to `${XDG_CACHE_HOME:-~/.cache}/ai-usage-bar/claude-status.json` before rendering. With several Claude Code sessions open at once, the wrapper keeps whichever session's rate-limit data is freshest — idle sessions re-rendering stale numbers can't overwrite it. Your existing statusline keeps rendering exactly as before: the previous command is preserved in a passthrough shim at `~/.claude/ai-usage-bar/statusline-passthrough.sh` that the wrapper forwards to (if none was configured, the statusline stays blank). The original `settings.json` is backed up to `settings.json.ai-usage-bar-backup` on first run, and rerunning the script is a no-op. To undo, restore the backup or set `statusLine.command` back to the shim's contents.
+
+If you'd rather configure it by hand: set `statusLine.command` to `scripts/claude-statusline-cache` (override the forwarded binary with `CCSTATUSLINE_BIN`, the cache path with `AI_USAGE_BAR_CLAUDE_STATUS_JSON`). Until the cache exists, the Claude row shows a stale hint.
 
 ## Develop
 

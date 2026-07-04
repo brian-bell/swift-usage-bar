@@ -8,7 +8,7 @@ Context for AI coding agents working in this repository. `CLAUDE.md` is a symlin
 
 Data access is strictly **read-only**: the app borrows existing CLI state and never writes to credential stores or refreshes OAuth tokens. When data can't be fetched, providers degrade to a greyed "stale" state instead of erroring.
 
-- **Claude**: reads Claude Code's statusline JSON from a local cache file (`${XDG_CACHE_HOME:-~/.cache}/ai-usage-bar/claude-status.json`, overridable via `AI_USAGE_BAR_CLAUDE_STATUS_JSON`). The cache is written by `scripts/claude-statusline-cache`, a passthrough wrapper the user configures as their Claude Code statusline command (it tees stdin to the cache, then forwards to `ccstatusline`). No network call is made for Claude — the live usage endpoint returned HTTP 429 during discovery (see `docs/endpoints.md`). Cache older than 3× the poll interval is treated as stale.
+- **Claude**: reads Claude Code's statusline JSON from a local cache file (`${XDG_CACHE_HOME:-~/.cache}/ai-usage-bar/claude-status.json`, overridable via `AI_USAGE_BAR_CLAUDE_STATUS_JSON`). The cache is written by `scripts/claude-statusline-cache`, a passthrough wrapper the user configures as their Claude Code statusline command (it tees stdin to the cache, then forwards to `ccstatusline`). Because multiple concurrent Claude Code sessions all run the wrapper — and idle sessions keep re-rendering with rate limits from their last API response — the wrapper only overwrites the cache when the incoming payload is at least as fresh, compared lexicographically on (weekly resets_at, weekly used, five-hour resets_at, five-hour used). The compare-and-replace runs under an exclusive `flock` on `claude-status.json.lock` (a persistent empty file next to the cache) so concurrent writers can't race the decision; if the guard itself can't run it falls open to writing, except that a payload without usable rate limits never replaces one with them. No network call is made for Claude — the live usage endpoint returned HTTP 429 during discovery (see `docs/endpoints.md`). Cache older than 3× the poll interval is treated as stale.
 - **Codex**: reads the Codex CLI credential from the macOS Keychain (service `Codex Auth`, account `cli|<first 8 bytes of sha256(canonical CODEX_HOME) as hex>`), checks JWT `exp` for expiry (expired token → no network call), then calls `GET https://chatgpt.com/backend-api/wham/usage` with the bearer token.
 
 ## Repository state
@@ -28,6 +28,8 @@ There is no Makefile or CI config; SwiftPM and shell scripts are the whole build
 | `scripts/bundle.sh --verify [APP_PATH]` | Verify an existing bundle (plist keys, executable, signature) |
 | `Tests/Scripts/bundle-script-test.sh` | Shell tests for the bundle script |
 | `Tests/Scripts/claude-statusline-cache-test.sh` | Shell tests for the statusline cache wrapper |
+| `scripts/setup-statusline` | Idempotently wire the cache wrapper into `statusLine` in Claude Code settings, preserving any existing statusline command in a passthrough shim |
+| `Tests/Scripts/setup-statusline-test.sh` | Shell tests for the statusline setup script |
 
 Note: `Package.swift` carries `unsafeFlags` on the test targets pointing at `/Library/Developer/CommandLineTools/Library/Developer/Frameworks` because a CommandLineTools-only install exposes Swift Testing there but ships no `XCTest.framework`. Tests use Swift Testing (`@Test`/`#expect`), not XCTest.
 
@@ -54,7 +56,8 @@ Package: AIUsageBar
 ├── Tests/AIUsageBarAppTests/     shell model, notification sender, launch-at-login tests
 ├── Tests/Fixtures/               sanitized captured payloads (claude-statusline.json, codex-usage.json)
 ├── Tests/Scripts/                shell tests for scripts/
-└── scripts/                      bundle.sh, run-swift-tests, claude-statusline-cache
+└── scripts/                      bundle.sh, run-swift-tests, claude-statusline-cache,
+                                  setup-statusline
 ```
 
 Note the plan's aspirational subdirectory layout (`Models/`, `Providers/`, …) was flattened in practice: `UsageCore.swift` is one ~1400-line file.
