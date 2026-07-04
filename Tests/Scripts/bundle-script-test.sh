@@ -146,3 +146,19 @@ fi
 
 "$bundle_script" --verify "$built_app"
 codesign -v "$built_app"
+
+# CODESIGN_IDENTITY selects the signing identity; a bogus identity fails at the
+# signing step with a deterministic message (the swift build is cached from above).
+bogus_identity="AIUsageBar No Such Signing Identity"
+assert_fails_with "codesign signing failed for identity: $bogus_identity" \
+    env CODESIGN_IDENTITY="$bogus_identity" "$bundle_script" --output "$built_app"
+
+# A failed signing run must not leave a staging directory next to the output.
+if compgen -G "$tmpdir/.AIUsageBar.bundle.*" >/dev/null; then
+    printf 'expected failed build to clean up its staging directory\n' >&2
+    exit 1
+fi
+
+# The default (unset CODESIGN_IDENTITY) signs ad-hoc and still verifies.
+(cd "$tmpdir" && "$bundle_script" --output "$built_app")
+"$bundle_script" --verify "$built_app"

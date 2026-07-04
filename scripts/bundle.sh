@@ -5,6 +5,14 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 default_app_path="$repo_root/AIUsageBar.app"
 product_name="AIUsageBarApp"
 bundle_identifier="dev.brianbell.AIUsageBar"
+staging_parent=""
+
+cleanup_staging() {
+    if [ -n "$staging_parent" ]; then
+        rm -rf "$staging_parent"
+    fi
+}
+trap cleanup_staging EXIT
 
 usage() {
     cat <<'USAGE'
@@ -12,7 +20,13 @@ Usage:
   scripts/bundle.sh [--output APP_PATH]
   scripts/bundle.sh --verify [APP_PATH]
 
-Builds and ad-hoc signs AIUsageBar.app, or verifies an existing bundle.
+Builds and signs AIUsageBar.app, or verifies an existing bundle.
+
+Environment:
+  CODESIGN_IDENTITY  Signing identity passed to `codesign --sign`. Defaults to
+                     "-" (ad-hoc). Set it to a self-signed code-signing
+                     certificate's name to get a stable signature across
+                     rebuilds, so Keychain "Always Allow" grants survive.
 USAGE
 }
 
@@ -139,7 +153,6 @@ build_bundle() {
     local bin_path
     local built_executable
     local output_parent
-    local staging_parent
     local staged_app
     local plist
     validate_build_output_path "$app_path"
@@ -187,7 +200,10 @@ build_bundle() {
 PLIST
 
     install -m 755 "$built_executable" "$staged_app/Contents/MacOS/$product_name"
-    codesign --force --sign - "$staged_app"
+    local codesign_identity="${CODESIGN_IDENTITY:--}"
+    if ! codesign --force --sign "$codesign_identity" "$staged_app"; then
+        fail "codesign signing failed for identity: $codesign_identity"
+    fi
     verify_bundle "$staged_app"
 
     replace_with_staged_bundle "$staged_app" "$app_path" "$staging_parent"
