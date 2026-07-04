@@ -156,6 +156,42 @@ if [ "$status" -ne 0 ] || ! cmp -s "$input_file" "$fresher_cache_file"; then
     exit 1
 fi
 
+# --- a float used_percentage is real data, not an unusable payload ---
+# Claude Code computes used_percentage as a float; floating-point noise like
+# 7.000000000000001 must still make it into the cache when it is fresher.
+
+float_payload="$tmpdir/float-payload.json"
+python3 -c '
+import json, sys
+payload = json.load(open(sys.argv[1]))
+payload["rate_limits"]["seven_day"]["used_percentage"] = 21.000000000000001
+payload["rate_limits"]["five_hour"]["used_percentage"] = 7.000000000000001
+json.dump(payload, open(sys.argv[2], "w"))
+' "$input_file" "$float_payload"
+
+float_cache_file="$tmpdir/float-writer/claude-status.json"
+mkdir -p "$(dirname "$float_cache_file")"
+cp "$input_file" "$float_cache_file"
+
+set +e
+PATH="$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$float_cache_file" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/float-args" \
+    "$wrapper" --theme compact <"$float_payload" >"$tmpdir/float-stdout" 2>"$tmpdir/float-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on a float used_percentage payload\n' "$status" >&2
+    cat "$tmpdir/float-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$float_payload" "$float_cache_file"; then
+    printf 'expected fresher float payload (weekly used 21.0...) to replace older cache (weekly used 19)\n' >&2
+    exit 1
+fi
+
 # --- a new weekly cycle wins even though its usage is lower ---
 
 new_cycle_payload="$tmpdir/new-cycle-payload.json"
@@ -283,6 +319,31 @@ if [ "$status" -ne 0 ] || ! cmp -s "$input_file" "$failopen_cache_file"; then
     exit 1
 fi
 assert_no_temp_files "$failopen_cache_file"
+
+# --- fail-open accepts float used_percentage as usable data ---
+
+failopen_float_cache="$tmpdir/failopen-float/claude-status.json"
+mkdir -p "$(dirname "$failopen_float_cache")"
+cp "$input_file" "$failopen_float_cache"
+
+set +e
+PATH="$broken_bin:$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$failopen_float_cache" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/failopen-float-args" \
+    "$wrapper" --theme compact <"$float_payload" >"$tmpdir/failopen-float-stdout" 2>"$tmpdir/failopen-float-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on a float payload with a broken guard\n' "$status" >&2
+    cat "$tmpdir/failopen-float-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$float_payload" "$failopen_float_cache"; then
+    printf 'expected fail-open to treat a float used_percentage payload as usable and write it\n' >&2
+    exit 1
+fi
 
 # --- even fail-open never replaces usable data with a rate-limit-free payload ---
 
@@ -470,6 +531,79 @@ if ! cmp -s "$input_file" "$failopen_wrong_type_cache"; then
     printf 'expected cache with numeric fields to survive a payload with a string used_percentage\n' >&2
     exit 1
 fi
+
+# --- temp files stranded by a killed render are reaped on the next run ---
+# SIGKILL (and Claude Code statusline timeouts) skip the cleanup trap, so old
+# strands must be garbage-collected. Fresh temp files may belong to a live
+# concurrent writer and must be left alone.
+
+reaper_cache_file="$tmpdir/reaper/claude-status.json"
+mkdir -p "$(dirname "$reaper_cache_file")"
+stranded_file="$(dirname "$reaper_cache_file")/claude-status.json.input.stale0"
+fresh_file="$(dirname "$reaper_cache_file")/claude-status.json.input.fresh0"
+touch -t 202601010000 "$stranded_file"
+touch "$fresh_file"
+
+run_wrapper "$tmpdir/reaper-stdout" "$tmpdir/reaper-stderr" "$tmpdir/reaper-args" "$reaper_cache_file" env
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s during the stranded-temp-file test\n' "$status" >&2
+    cat "$tmpdir/reaper-stderr" >&2
+    exit 1
+fi
+
+if [ -e "$stranded_file" ]; then
+    printf 'expected hour-old stranded temp file to be reaped on the next run\n' >&2
+    exit 1
+fi
+
+if [ ! -e "$fresh_file" ]; then
+    printf 'expected fresh temp file (possible live concurrent writer) to be left alone\n' >&2
+    exit 1
+fi
+
+cmp -s "$input_file" "$reaper_cache_file"
+
+# --- SIGTERM mid-render cleans up temp files ---
+# Pins existing platform behavior: macOS bash runs the EXIT trap on an
+# untrapped fatal signal, so a statusline timeout that TERMs the wrapper must
+# not strand temp files. (SIGKILL strands are covered by the reaper above.)
+
+cat >"$fake_bin/slow-statusline" <<'SH'
+#!/usr/bin/env bash
+touch "$SLOW_STATUSLINE_READY_FILE"
+sleep 30
+SH
+chmod 755 "$fake_bin/slow-statusline"
+
+term_cache_file="$tmpdir/term/claude-status.json"
+mkdir -p "$(dirname "$term_cache_file")"
+ready_file="$tmpdir/term-ready"
+
+set -m
+AI_USAGE_BAR_CLAUDE_STATUS_JSON="$term_cache_file" \
+    CCSTATUSLINE_BIN="$fake_bin/slow-statusline" \
+    SLOW_STATUSLINE_READY_FILE="$ready_file" \
+    "$wrapper" <"$input_file" >"$tmpdir/term-stdout" 2>"$tmpdir/term-stderr" &
+wrapper_pid=$!
+set +m
+
+for _ in $(seq 1 100); do
+    [ -e "$ready_file" ] && break
+    sleep 0.1
+done
+if [ ! -e "$ready_file" ]; then
+    printf 'slow statusline never signalled readiness\n' >&2
+    exit 1
+fi
+
+kill -TERM -"$wrapper_pid"
+set +e
+wait "$wrapper_pid" 2>/dev/null
+set -e
+
+assert_no_temp_files "$term_cache_file"
+cmp -s "$input_file" "$term_cache_file"
 
 actual_stdout="$tmpdir/failure-stdout"
 actual_stderr="$tmpdir/failure-stderr"

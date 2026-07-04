@@ -123,6 +123,54 @@ func claudeParserIgnoresNullOrAbsentModelSpecificWeeklyLimits() throws {
 }
 
 @Test
+func claudeParserRoundsFractionalUsedPercentages() throws {
+    // Claude Code computes used_percentage as a float; floating-point noise
+    // (7.000000000000001) and genuinely fractional values must both parse.
+    let data = Data("""
+    {
+      "rate_limits": {
+        "five_hour": {
+          "used_percentage": 7.000000000000001,
+          "resets_at": 1783008000
+        },
+        "seven_day": {
+          "used_percentage": 16.5,
+          "resets_at": 1783555200
+        }
+      }
+    }
+    """.utf8)
+
+    let usage = try ClaudeStatuslineParser().parse(data)
+
+    #expect(usage.fiveHour.percentRemaining == 93)
+    #expect(usage.weekly.percentRemaining == 83)
+}
+
+@Test
+func claudeParserClampsExtremeFractionalUsedPercentages() throws {
+    let data = Data("""
+    {
+      "rate_limits": {
+        "five_hour": {
+          "used_percentage": 1e300,
+          "resets_at": 1783008000
+        },
+        "seven_day": {
+          "used_percentage": -1e300,
+          "resets_at": 1783555200
+        }
+      }
+    }
+    """.utf8)
+
+    let usage = try ClaudeStatuslineParser().parse(data)
+
+    #expect(usage.fiveHour.percentRemaining == 0)
+    #expect(usage.weekly.percentRemaining == 100)
+}
+
+@Test
 func claudeParserThrowsParseFailureForMalformedJSON() throws {
     let data = Data(#"{"rate_limits": "#.utf8)
 

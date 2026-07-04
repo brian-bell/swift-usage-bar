@@ -10,6 +10,13 @@ cache_base="$(basename "$cache_file")"
 umask 077
 mkdir -p "$cache_dir"
 
+# Reap temp files stranded by killed renders (SIGKILL and statusline timeouts
+# skip the cleanup trap). An hour-old temp file can't belong to a live writer;
+# fresh ones might, so leave them alone.
+find "$cache_dir" -maxdepth 1 \
+    \( -name "${cache_base}.input.*" -o -name "${cache_base}.tmp.*" \) \
+    -mmin +60 -delete 2>/dev/null || true
+
 input_tmp="$(mktemp "$cache_dir/${cache_base}.input.XXXXXX")"
 cache_tmp=""
 
@@ -42,16 +49,15 @@ import sys
 input_path, cache_path = sys.argv[1], sys.argv[2]
 
 
-def number(value, allow_float):
-    # Match the Swift decoder, which reads used_percentage as Int and
-    # resets_at as a TimeInterval. A JSON string or bool that int(...) would
-    # happily coerce is unusable to the app, so treat it as a missing field
-    # rather than writing a cache the app can't parse.
+def number(value):
+    # Match the Swift decoder, which reads used_percentage and resets_at as
+    # numbers (Claude Code emits float percentages like 7.000000000000001).
+    # A JSON string or bool that int(...) would happily coerce is unusable to
+    # the app, so treat it as a missing field rather than writing a cache the
+    # app can't parse.
     if isinstance(value, bool):
         raise TypeError("bool is not a usable numeric field")
-    if isinstance(value, int):
-        return value
-    if allow_float and isinstance(value, float):
+    if isinstance(value, (int, float)):
         return value
     raise TypeError("field is not the expected numeric type")
 
@@ -61,10 +67,10 @@ def windows(path):
         limits = json.load(f)["rate_limits"]
     weekly, five_hour = limits["seven_day"], limits["five_hour"]
     return (
-        number(weekly["resets_at"], True),
-        number(weekly["used_percentage"], False),
-        number(five_hour["resets_at"], True),
-        number(five_hour["used_percentage"], False),
+        number(weekly["resets_at"]),
+        number(weekly["used_percentage"]),
+        number(five_hour["resets_at"]),
+        number(five_hour["used_percentage"]),
     )
 
 
@@ -99,22 +105,22 @@ PY
 # needs both usage windows, each carrying numeric resets_at and used_percentage.
 # A token-level grep can't tell those fields sit inside both windows, and even
 # `plutil -extract ... raw` alone only proves a key exists — it happily accepts
-# a string or object leaf that the Swift decoder (Int / TimeInterval) can't
-# parse. So use `-expect` to enforce the value types: used_percentage must be an
-# integer; resets_at is a TimeInterval, so accept an integer or float epoch.
+# a string or object leaf that the Swift decoder can't parse. So use `-expect`
+# to enforce the value types: both fields decode as numbers, so accept an
+# integer or float leaf (Claude Code emits float used_percentage values).
 # plutil ships on every supported macOS; if it's missing we can't judge, so
 # treat the payload as usable and fall fully open to the always-write behavior.
 has_usable_windows() {
     command -v plutil >/dev/null 2>&1 || return 0
-    local file="$1" window
+    local file="$1" window field
     for window in five_hour seven_day; do
-        plutil -extract "rate_limits.$window.used_percentage" raw -expect integer \
-            -o - -- "$file" >/dev/null 2>&1 || return 1
-        plutil -extract "rate_limits.$window.resets_at" raw -expect integer \
-            -o - -- "$file" >/dev/null 2>&1 \
-            || plutil -extract "rate_limits.$window.resets_at" raw -expect float \
+        for field in used_percentage resets_at; do
+            plutil -extract "rate_limits.$window.$field" raw -expect integer \
                 -o - -- "$file" >/dev/null 2>&1 \
-            || return 1
+                || plutil -extract "rate_limits.$window.$field" raw -expect float \
+                    -o - -- "$file" >/dev/null 2>&1 \
+                || return 1
+        done
     done
 }
 
