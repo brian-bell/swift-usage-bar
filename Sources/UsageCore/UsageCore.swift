@@ -1132,11 +1132,11 @@ public struct CodexUsageParser: Sendable {
 
             return ProviderUsage(
                 fiveHour: usageWindow(
-                    usedPercentage: response.rateLimit.primaryWindow.usedPercent,
+                    usedPercentage: Double(response.rateLimit.primaryWindow.usedPercent),
                     resetAt: response.rateLimit.primaryWindow.resetAt
                 ),
                 weekly: usageWindow(
-                    usedPercentage: response.rateLimit.secondaryWindow.usedPercent,
+                    usedPercentage: Double(response.rateLimit.secondaryWindow.usedPercent),
                     resetAt: response.rateLimit.secondaryWindow.resetAt
                 )
             )
@@ -1218,7 +1218,9 @@ private struct ClaudeStatuslineRateLimits: Decodable {
 }
 
 private struct ClaudeStatuslineWindow: Decodable {
-    let usedPercentage: Int
+    // Claude Code computes this as a float; whole values serialize as ints
+    // but floating-point noise (7.000000000000001) must still decode.
+    let usedPercentage: Double
     let resetsAt: TimeInterval
 
     enum CodingKeys: String, CodingKey {
@@ -1311,14 +1313,15 @@ private struct CodexRateLimitWindow: Decodable {
     }
 }
 
-private func usageWindow(usedPercentage: Int, resetAt: TimeInterval) -> UsageWindow {
+private func usageWindow(usedPercentage: Double, resetAt: TimeInterval) -> UsageWindow {
     UsageWindow(
         percentRemaining: percentRemaining(fromUsedPercentage: usedPercentage),
         resetsAt: Date(timeIntervalSince1970: resetAt)
     )
 }
 
-private func percentRemaining(fromUsedPercentage usedPercentage: Int) -> Int {
+// Clamp before converting to Int: extreme doubles (1e300) would trap in Int().
+private func percentRemaining(fromUsedPercentage usedPercentage: Double) -> Int {
     if usedPercentage <= 0 {
         return 100
     }
@@ -1327,7 +1330,7 @@ private func percentRemaining(fromUsedPercentage usedPercentage: Int) -> Int {
         return 0
     }
 
-    return 100 - usedPercentage
+    return 100 - Int(usedPercentage.rounded())
 }
 
 private func staleReason(forHTTPStatusCode statusCode: Int) -> StaleReason {
