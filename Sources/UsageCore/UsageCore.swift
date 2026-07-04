@@ -816,35 +816,91 @@ public struct ClaudeStatuslineCacheReader: Sendable {
 extension ClaudeStatuslineCacheReader: ClaudeStatuslineCacheReading {}
 
 public struct ClaudeUsageProvider: UsageProvider {
+    private let credentialReader: any ClaudeCredentialReading
     private let cacheReader: any ClaudeStatuslineCacheReading
+    private let transport: any HTTPTransport
+    private let parser: ClaudeUsageParser
     private let now: @Sendable () -> Date
 
     public init(
+        credentialReader: any ClaudeCredentialReading,
         cacheReader: any ClaudeStatuslineCacheReading,
+        transport: any HTTPTransport = URLSessionHTTPTransport(),
+        parser: ClaudeUsageParser = ClaudeUsageParser(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
+        self.credentialReader = credentialReader
         self.cacheReader = cacheReader
+        self.transport = transport
+        self.parser = parser
         self.now = now
     }
 
     public func fetch(previous: ProviderUsage?) async -> ProviderState {
-        do {
-            return Self.providerState(from: try cacheReader.read(now: now()), previous: previous)
-        } catch {
-            return .stale(last: previous, reason: .networkError)
+        switch await fetchFromAPI() {
+        case let .fresh(usage, asOf):
+            return .fresh(usage, asOf: asOf)
+        case let .stale(apiReason):
+            return fallbackState(apiReason: apiReason, previous: previous)
         }
     }
 
-    private static func providerState(
-        from result: ClaudeStatuslineCacheReadResult,
-        previous: ProviderUsage?
-    ) -> ProviderState {
-        switch result {
+    private enum APIOutcome {
+        case fresh(ProviderUsage, asOf: Date)
+        case stale(StaleReason)
+    }
+
+    private func fetchFromAPI() async -> APIOutcome {
+        let credential: ClaudeCredential
+        do {
+            switch try credentialReader.read() {
+            case let .fresh(freshCredential):
+                credential = freshCredential
+            case let .stale(reason):
+                return .stale(reason)
+            }
+        } catch {
+            return .stale(.credentialUnavailable)
+        }
+
+        do {
+            let (data, response) = try await transport.send(Self.usageRequest(for: credential))
+            guard response.statusCode == 200 else {
+                return .stale(staleReason(forHTTPStatusCode: response.statusCode))
+            }
+
+            return .fresh(try parser.parse(data), asOf: now())
+        } catch UsageParsingError.parseFailure {
+            return .stale(.parseFailure)
+        } catch {
+            return .stale(.networkError)
+        }
+    }
+
+    // The API's failure reason wins over the cache's: the API is the primary
+    // path and its reason is more actionable (tokenExpired -> run Claude Code,
+    // which also refreshes the statusline cache).
+    private func fallbackState(apiReason: StaleReason, previous: ProviderUsage?) -> ProviderState {
+        guard let cacheResult = try? cacheReader.read(now: now()) else {
+            return .stale(last: previous, reason: apiReason)
+        }
+
+        switch cacheResult {
         case let .fresh(data: _, usage: usage, asOf: asOf):
             return .fresh(usage, asOf: asOf)
-        case let .stale(last: last, reason: reason, hint: _):
-            return .stale(last: last ?? previous, reason: reason)
+        case let .stale(last: last, reason: _, hint: _):
+            return .stale(last: last ?? previous, reason: apiReason)
         }
+    }
+
+    private static func usageRequest(for credential: ClaudeCredential) -> URLRequest {
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        request.setValue("AIUsageBar/\(UsageCore.version)", forHTTPHeaderField: "User-Agent")
+
+        return request
     }
 }
 

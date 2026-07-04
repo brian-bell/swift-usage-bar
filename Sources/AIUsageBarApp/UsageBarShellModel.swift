@@ -176,6 +176,7 @@ extension UsageBarShellModel {
     private static func liveProviders() -> [ProviderID: any UsageProvider] {
         [
             .claude: ClaudeUsageProvider(
+                credentialReader: ClaudeCredentialReader(store: KeychainCredentialStore()),
                 cacheReader: ClaudeStatuslineCacheReader(
                     cacheURL: claudeStatuslineCacheURL(),
                     maximumAge: UsagePoller.defaultInterval * 3
