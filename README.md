@@ -38,13 +38,26 @@ See `docs/endpoints.md` for the discovered contracts and evidence.
 ```sh
 git clone https://github.com/brian-bell/swift-usage-bar.git
 cd swift-usage-bar
-./scripts/bundle.sh          # builds, ad-hoc signs, and verifies ./AIUsageBar.app
+./scripts/bundle.sh          # builds, signs (ad-hoc by default), and verifies ./AIUsageBar.app
 open AIUsageBar.app
+```
+
+To avoid repeated Keychain prompts after every rebuild (see below), sign with a stable
+identity instead of ad-hoc:
+
+```sh
+CODESIGN_IDENTITY="AIUsageBar Signing" ./scripts/bundle.sh
 ```
 
 Enable "Launch at login" from the dropdown settings if you want it to persist across restarts (macOS may ask you to approve it in System Settings › Login Items).
 
-On the first refresh macOS will ask whether AIUsageBar may read the `Claude Code-credentials` (and `Codex Auth`) Keychain items — click **Always Allow**. If you only click Allow, the prompt returns on a later poll; if you deny, the Claude row falls back to the statusline cache. Rebuilding the app re-signs it, which can re-trigger the prompt.
+On the first refresh macOS will ask whether AIUsageBar may read the `Claude Code-credentials` (and `Codex Auth`) Keychain items — click **Always Allow**. If you only click Allow, the prompt returns on a later poll; if you deny, the Claude row falls back to the statusline cache.
+
+An ad-hoc signature pins the Keychain grant to the exact binary hash, so **every rebuild re-triggers the prompt**. To make the grant survive rebuilds, sign with a stable code-signing certificate:
+
+1. Create a self-signed cert once in **Keychain Access › Certificate Assistant › Create a Certificate…** — Identity Type *Self-Signed Root*, Certificate Type *Code Signing* (e.g. named `AIUsageBar Signing`). It does not need to be trusted for Gatekeeper; `codesign` only needs its private key.
+2. Build with `CODESIGN_IDENTITY="AIUsageBar Signing" ./scripts/bundle.sh`. The signature's designated requirement is then pinned to the certificate rather than the binary hash, so it stays constant across rebuilds.
+3. Click **Always Allow** once for each item — the grant now persists until the certificate changes.
 
 ### Claude statusline cache setup (optional fallback)
 

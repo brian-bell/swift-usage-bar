@@ -25,7 +25,7 @@ There is no Makefile or CI config; SwiftPM and shell scripts are the whole build
 | `swift build` | Debug build; must be clean under Swift 6 strict concurrency |
 | `swift test --enable-swift-testing` | Build the Swift Testing suites (see caveat below) |
 | `scripts/run-swift-tests` | Full harness: build + test build + linkage check + UsageCore smoke compile |
-| `scripts/bundle.sh` | Release build → assemble `AIUsageBar.app` → ad-hoc codesign → verify |
+| `scripts/bundle.sh` | Release build → assemble `AIUsageBar.app` → codesign (ad-hoc, or `CODESIGN_IDENTITY`) → verify |
 | `scripts/bundle.sh --verify [APP_PATH]` | Verify an existing bundle (plist keys, executable, signature) |
 | `Tests/Scripts/bundle-script-test.sh` | Shell tests for the bundle script |
 | `Tests/Scripts/claude-statusline-cache-test.sh` | Shell tests for the statusline cache wrapper |
@@ -36,7 +36,7 @@ Note: `Package.swift` carries `unsafeFlags` on the test targets pointing at `/Li
 
 **Test-execution caveat:** on a CommandLineTools-only machine (no full Xcode), `swift test --enable-swift-testing` compiles and links the test bundle but exits after `Build complete!` without executing tests — there is no XCTest runner to host the bundle. `scripts/run-swift-tests` compensates by verifying the built test bundle links the expected Swift Testing symbols and by smoke-compiling a program against `UsageCore`. To actually execute the suites, run `swift test` on a machine with full Xcode installed. Don't mistake a green `swift test` here for executed tests.
 
-The app bundle is `AIUsageBar.app` (identifier `dev.brianbell.AIUsageBar`, `LSUIElement=true` so no Dock icon), ad-hoc signed for personal local use — no notarization or distribution.
+The app bundle is `AIUsageBar.app` (identifier `dev.brianbell.AIUsageBar`, `LSUIElement=true` so no Dock icon), signed for personal local use — no notarization or distribution. `bundle.sh` signs ad-hoc by default; set `CODESIGN_IDENTITY` to a self-signed code-signing certificate's name to get a stable designated requirement (pinned to the cert, not the binary hash) so Keychain "Always Allow" grants survive rebuilds instead of re-prompting after every build. A bad identity fails the signing step (`codesign signing failed for identity: …`) and the staging directory is cleaned up on any exit.
 
 ## Package layout
 
