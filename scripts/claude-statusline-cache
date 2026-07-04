@@ -43,6 +43,7 @@ write_cache_if_fresh() {
     python3 - "$1" "$2" 2>/dev/null <<'PY'
 import fcntl
 import json
+import math
 import os
 import sys
 
@@ -62,15 +63,22 @@ def number(value):
     raise TypeError("field is not the expected numeric type")
 
 
+def used_percentage(value):
+    # Compare the same whole-percent value the app displays. This strips
+    # tolerance-level float noise such as 7.000000000000001 before tuple order
+    # can decide freshness ahead of the five-hour fields.
+    return math.floor(number(value) + 0.5)
+
+
 def windows(path):
     with open(path) as f:
         limits = json.load(f)["rate_limits"]
     weekly, five_hour = limits["seven_day"], limits["five_hour"]
     return (
         number(weekly["resets_at"]),
-        number(weekly["used_percentage"]),
+        used_percentage(weekly["used_percentage"]),
         number(five_hour["resets_at"]),
-        number(five_hour["used_percentage"]),
+        used_percentage(five_hour["used_percentage"]),
     )
 
 

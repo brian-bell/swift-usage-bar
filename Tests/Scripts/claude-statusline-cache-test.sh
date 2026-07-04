@@ -192,6 +192,58 @@ if ! cmp -s "$float_payload" "$float_cache_file"; then
     exit 1
 fi
 
+# --- float noise must not make stale data look fresher ---
+# Weekly usage of 7 and 7.000000000000001 is the same logical value. The
+# cached payload has newer five-hour data, so the noisy incoming payload must
+# not win before five-hour fields are compared.
+
+noisy_stale_payload="$tmpdir/noisy-stale-payload.json"
+noisy_fresher_cache_payload="$tmpdir/noisy-fresher-cache-payload.json"
+python3 -c '
+import json, sys
+incoming = json.load(open(sys.argv[1]))
+cached = json.load(open(sys.argv[1]))
+
+incoming["rate_limits"]["seven_day"]["used_percentage"] = 7.000000000000001
+incoming["rate_limits"]["five_hour"]["resets_at"] = 1783007000
+incoming["rate_limits"]["five_hour"]["used_percentage"] = 10
+
+cached["rate_limits"]["seven_day"]["used_percentage"] = 7
+cached["rate_limits"]["five_hour"]["resets_at"] = 1783008000
+cached["rate_limits"]["five_hour"]["used_percentage"] = 20
+
+json.dump(incoming, open(sys.argv[2], "w"))
+json.dump(cached, open(sys.argv[3], "w"))
+' "$input_file" "$noisy_stale_payload" "$noisy_fresher_cache_payload"
+
+noisy_cache_file="$tmpdir/noisy-stale/claude-status.json"
+mkdir -p "$(dirname "$noisy_cache_file")"
+cp "$noisy_fresher_cache_payload" "$noisy_cache_file"
+
+set +e
+PATH="$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$noisy_cache_file" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/noisy-stale-args" \
+    "$wrapper" --theme compact <"$noisy_stale_payload" >"$tmpdir/noisy-stale-stdout" 2>"$tmpdir/noisy-stale-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on a noisy stale payload\n' "$status" >&2
+    cat "$tmpdir/noisy-stale-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$noisy_stale_payload" "$tmpdir/noisy-stale-stdout"; then
+    printf 'expected passthrough of the noisy stale payload\n' >&2
+    exit 1
+fi
+
+if ! cmp -s "$noisy_fresher_cache_payload" "$noisy_cache_file"; then
+    printf 'expected noisy weekly usage to leave newer five-hour cache data untouched\n' >&2
+    exit 1
+fi
+
 # --- a new weekly cycle wins even though its usage is lower ---
 
 new_cycle_payload="$tmpdir/new-cycle-payload.json"
