@@ -29,6 +29,38 @@ func usagePollerFetchesImmediatelyAndRepeatsOnDefaultInterval() async {
 }
 
 @Test
+func usagePollerUsesBackgroundModeForAutomaticPollsAndInteractiveForManualRefresh() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 1_000))
+    let appState = await AppState()
+    let provider = ModeRecordingUsageProvider(
+        result: .fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 900))
+    )
+    let poller = UsagePoller(
+        providers: [.claude: provider],
+        appState: appState,
+        clock: clock
+    )
+
+    await poller.start()
+    await provider.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+    #expect(await provider.recordedModes() == [.background])
+
+    await poller.refreshNow()
+    await provider.waitForFetchCount(2)
+    await poller.waitUntilIdle()
+    #expect(await provider.recordedModes() == [.background, .interactive])
+
+    await clock.waitForSleepRegistrationCount(1)
+    await clock.advance(by: 120)
+    await provider.waitForFetchCount(3)
+    await poller.waitUntilIdle()
+    #expect(await provider.recordedModes() == [.background, .interactive, .background])
+
+    await poller.stop()
+}
+
+@Test
 func usagePollerReschedulesWhenIntervalChanges() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 2_000))
     let appState = await AppState()
@@ -1057,7 +1089,7 @@ private actor RecordingUsageProvider: UsageProvider {
         self.results = results
     }
 
-    func fetch(previous _: ProviderUsage?) async -> ProviderState {
+    func fetch(previous _: ProviderUsage?, mode _: CredentialAccessMode) async -> ProviderState {
         fetchCount += 1
         resumeWaiters()
         if results.count > 1 {
@@ -1086,6 +1118,44 @@ private actor RecordingUsageProvider: UsageProvider {
     }
 }
 
+private actor ModeRecordingUsageProvider: UsageProvider {
+    private let result: ProviderState
+    private var modes: [CredentialAccessMode] = []
+    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    init(result: ProviderState) {
+        self.result = result
+    }
+
+    func fetch(previous _: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        modes.append(mode)
+        resumeWaiters()
+        return result
+    }
+
+    func recordedModes() -> [CredentialAccessMode] {
+        modes
+    }
+
+    func waitForFetchCount(_ count: Int) async {
+        if modes.count >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append((count, continuation))
+        }
+    }
+
+    private func resumeWaiters() {
+        let ready = waiters.filter { modes.count >= $0.0 }
+        waiters.removeAll { modes.count >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
+    }
+}
+
 private actor PreviousRecordingUsageProvider: UsageProvider {
     private let result: ProviderState
     private var previousValues: [ProviderUsage?] = []
@@ -1095,7 +1165,7 @@ private actor PreviousRecordingUsageProvider: UsageProvider {
         self.result = result
     }
 
-    func fetch(previous: ProviderUsage?) async -> ProviderState {
+    func fetch(previous: ProviderUsage?, mode _: CredentialAccessMode) async -> ProviderState {
         previousValues.append(previous)
         resumeWaiters()
         return result
@@ -1200,7 +1270,7 @@ private actor BlockingUsageProvider: UsageProvider {
         self.result = result
     }
 
-    func fetch(previous _: ProviderUsage?) async -> ProviderState {
+    func fetch(previous _: ProviderUsage?, mode _: CredentialAccessMode) async -> ProviderState {
         startCount += 1
         isSuspendedInFetch = true
         resumeStartWaiters()

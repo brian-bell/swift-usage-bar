@@ -72,7 +72,7 @@ private final class InMemoryClaudeCredentialStore: CredentialStore, @unchecked S
         self.data = data
     }
 
-    func read(_ credential: CredentialIdentifier) throws -> Data? {
+    func read(_ credential: CredentialIdentifier, mode _: CredentialAccessMode) throws -> Data? {
         readRequests.append(credential)
         return data
     }
@@ -81,7 +81,7 @@ private final class InMemoryClaudeCredentialStore: CredentialStore, @unchecked S
 private final class ThrowingClaudeCredentialStore: CredentialStore, @unchecked Sendable {
     private(set) var readRequests: [CredentialIdentifier] = []
 
-    func read(_ credential: CredentialIdentifier) throws -> Data? {
+    func read(_ credential: CredentialIdentifier, mode _: CredentialAccessMode) throws -> Data? {
         readRequests.append(credential)
         throw CredentialStoreReadError.unavailable
     }

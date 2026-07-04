@@ -190,9 +190,38 @@ func codexUsageProviderMapsTransportThrowToNetworkError() async {
     #expect(state == .stale(last: previous, reason: .networkError))
 }
 
+@Test
+func codexUsageProviderForwardsInteractiveModeToCredentialReader() async {
+    let reader = FakeCodexCredentialReader(result: .stale(reason: .tokenExpired))
+    let provider = CodexUsageProvider(
+        credentialReader: reader,
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+    )
+
+    _ = await provider.fetch(previous: nil, mode: .interactive)
+
+    #expect(reader.receivedModes == [.interactive])
+}
+
+@Test
+func codexUsageProviderDefaultsToBackgroundMode() async {
+    let reader = FakeCodexCredentialReader(result: .stale(reason: .tokenExpired))
+    let provider = CodexUsageProvider(
+        credentialReader: reader,
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+    )
+
+    _ = await provider.fetch(previous: nil)
+
+    #expect(reader.receivedModes == [.background])
+}
+
 private final class FakeCodexCredentialReader: CodexCredentialReading, @unchecked Sendable {
     private let result: CodexCredentialReadResult?
     private let error: (any Error)?
+    private(set) var receivedModes: [CredentialAccessMode] = []
 
     init(result: CodexCredentialReadResult) {
         self.result = result
@@ -204,7 +233,8 @@ private final class FakeCodexCredentialReader: CodexCredentialReading, @unchecke
         self.error = error
     }
 
-    func read() throws -> CodexCredentialReadResult {
+    func read(mode: CredentialAccessMode) throws -> CodexCredentialReadResult {
+        receivedModes.append(mode)
         if let error {
             throw error
         }

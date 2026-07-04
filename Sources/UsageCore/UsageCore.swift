@@ -206,8 +206,27 @@ private enum ResetCycle: Hashable, Sendable {
     }
 }
 
+/// Whether a credential read may present an interactive Keychain prompt.
+///
+/// Background polls must never prompt: if access would require interaction, the
+/// read fails and the provider degrades to its fallback (e.g. the Claude
+/// statusline cache) instead of popping a dialog. Only user-initiated refreshes
+/// use `.interactive`, so prompts are reserved for moments the user asked for.
+public enum CredentialAccessMode: Sendable, Equatable {
+    case interactive
+    case background
+}
+
 public protocol UsageProvider: Sendable {
-    func fetch(previous: ProviderUsage?) async -> ProviderState
+    func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState
+}
+
+public extension UsageProvider {
+    /// Convenience for callers that don't distinguish access modes; defaults to
+    /// the prompt-safe `.background` mode.
+    func fetch(previous: ProviderUsage?) async -> ProviderState {
+        await fetch(previous: previous, mode: .background)
+    }
 }
 
 public protocol UsageClock: Sendable {
@@ -368,6 +387,11 @@ public actor UsagePoller {
     private var isRunning = false
     private var isPolling = false
     private var pendingPoll = false
+    // Access mode for the in-flight cycle and for a coalesced pending poll. A
+    // manual refresh (.interactive) that lands mid-cycle upgrades the pending
+    // poll so the user-requested prompt isn't downgraded to a silent one.
+    private var pollMode: CredentialAccessMode = .background
+    private var pendingPollMode: CredentialAccessMode = .background
     private var pollGeneration: UInt64 = 0
     private var timerGeneration: UInt64 = 0
     private var timerTask: Task<Void, Never>?
@@ -403,7 +427,7 @@ public actor UsagePoller {
         pollGeneration &+= 1
         lifecycle.markRunning(generation: pollGeneration)
         startWakeTask()
-        requestPoll()
+        requestPoll(mode: .background)
     }
 
     public func stop() {
@@ -427,7 +451,9 @@ public actor UsagePoller {
     }
 
     public func refreshNow() {
-        requestPoll()
+        // User-initiated: allowed to present a Keychain prompt so the user can
+        // grant access after a token rotation reset the item's ACL.
+        requestPoll(mode: .interactive)
     }
 
     public func waitUntilIdle() async {
@@ -471,10 +497,10 @@ public actor UsagePoller {
     }
 
     private func wakeDidFire() {
-        requestPoll()
+        requestPoll(mode: .background)
     }
 
-    private func requestPoll() {
+    private func requestPoll(mode: CredentialAccessMode) {
         guard isRunning else {
             return
         }
@@ -483,10 +509,14 @@ public actor UsagePoller {
 
         if isPolling {
             pendingPoll = true
+            if mode == .interactive {
+                pendingPollMode = .interactive
+            }
             return
         }
 
         isPolling = true
+        pollMode = mode
         let generation = pollGeneration
         pollTask = Task {
             await self.runPollChain(generation: generation)
@@ -503,6 +533,8 @@ public actor UsagePoller {
 
             if pendingPoll, isRunning, !Task.isCancelled {
                 pendingPoll = false
+                pollMode = pendingPollMode
+                pendingPollMode = .background
                 continue
             }
 
@@ -530,6 +562,7 @@ public actor UsagePoller {
         let clock = clock
         let thresholdNotifier = thresholdNotifier
         let thresholdProvider = thresholdProvider
+        let mode = pollMode
 
         await withTaskGroup(of: ProviderPollResult?.self) { group in
             for (providerID, provider) in providers {
@@ -552,7 +585,7 @@ public actor UsagePoller {
                         return nil
                     }
 
-                    let state = await provider.fetch(previous: previous)
+                    let state = await provider.fetch(previous: previous, mode: mode)
                     if Task.isCancelled {
                         return nil
                     }
@@ -691,7 +724,7 @@ public actor UsagePoller {
         }
 
         timerTask = nil
-        requestPoll()
+        requestPoll(mode: .background)
     }
 
     private func resumeIdleWaiters() {
@@ -836,8 +869,8 @@ public struct ClaudeUsageProvider: UsageProvider {
         self.now = now
     }
 
-    public func fetch(previous: ProviderUsage?) async -> ProviderState {
-        switch await fetchFromAPI() {
+    public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        switch await fetchFromAPI(mode: mode) {
         case let .fresh(usage, asOf):
             return .fresh(usage, asOf: asOf)
         case let .stale(apiReason):
@@ -850,10 +883,10 @@ public struct ClaudeUsageProvider: UsageProvider {
         case stale(StaleReason)
     }
 
-    private func fetchFromAPI() async -> APIOutcome {
+    private func fetchFromAPI(mode: CredentialAccessMode) async -> APIOutcome {
         let credential: ClaudeCredential
         do {
-            switch try credentialReader.read() {
+            switch try credentialReader.read(mode: mode) {
             case let .fresh(freshCredential):
                 credential = freshCredential
             case let .stale(reason):
@@ -977,7 +1010,14 @@ public enum CredentialStoreReadError: Error, Equatable, Sendable {
 }
 
 public protocol CredentialStore: Sendable {
-    func read(_ credential: CredentialIdentifier) throws -> Data?
+    func read(_ credential: CredentialIdentifier, mode: CredentialAccessMode) throws -> Data?
+}
+
+public extension CredentialStore {
+    /// Convenience defaulting to the prompt-safe `.background` mode.
+    func read(_ credential: CredentialIdentifier) throws -> Data? {
+        try read(credential, mode: .background)
+    }
 }
 
 public enum ClaudeCredentialReadResult: Equatable, Sendable {
@@ -986,7 +1026,14 @@ public enum ClaudeCredentialReadResult: Equatable, Sendable {
 }
 
 public protocol ClaudeCredentialReading: Sendable {
-    func read() throws -> ClaudeCredentialReadResult
+    func read(mode: CredentialAccessMode) throws -> ClaudeCredentialReadResult
+}
+
+public extension ClaudeCredentialReading {
+    /// Convenience defaulting to the prompt-safe `.background` mode.
+    func read() throws -> ClaudeCredentialReadResult {
+        try read(mode: .background)
+    }
 }
 
 public struct ClaudeCredentialReader: Sendable {
@@ -1004,10 +1051,10 @@ public struct ClaudeCredentialReader: Sendable {
         self.now = now
     }
 
-    public func read() throws -> ClaudeCredentialReadResult {
+    public func read(mode: CredentialAccessMode) throws -> ClaudeCredentialReadResult {
         let data: Data?
         do {
-            data = try store.read(.claude)
+            data = try store.read(.claude, mode: mode)
         } catch {
             return .stale(reason: .credentialUnavailable)
         }
@@ -1041,7 +1088,14 @@ public enum CodexCredentialReadResult: Equatable, Sendable {
 }
 
 public protocol CodexCredentialReading: Sendable {
-    func read() throws -> CodexCredentialReadResult
+    func read(mode: CredentialAccessMode) throws -> CodexCredentialReadResult
+}
+
+public extension CodexCredentialReading {
+    /// Convenience defaulting to the prompt-safe `.background` mode.
+    func read() throws -> CodexCredentialReadResult {
+        try read(mode: .background)
+    }
 }
 
 public struct CodexCredentialReader: Sendable {
@@ -1059,10 +1113,10 @@ public struct CodexCredentialReader: Sendable {
         self.now = now
     }
 
-    public func read() throws -> CodexCredentialReadResult {
+    public func read(mode: CredentialAccessMode) throws -> CodexCredentialReadResult {
         let data: Data?
         do {
-            data = try store.read(.codex)
+            data = try store.read(.codex, mode: mode)
         } catch CredentialStoreReadError.unavailable {
             return .stale(reason: .credentialUnavailable)
         } catch {
@@ -1125,10 +1179,10 @@ public struct CodexUsageProvider: UsageProvider {
         self.now = now
     }
 
-    public func fetch(previous: ProviderUsage?) async -> ProviderState {
+    public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
         let credential: CodexCredential
         do {
-            switch try credentialReader.read() {
+            switch try credentialReader.read(mode: mode) {
             case let .fresh(freshCredential):
                 credential = freshCredential
             case let .stale(reason):
@@ -1198,7 +1252,7 @@ public struct KeychainCredentialStore: CredentialStore {
         self.copyMatching = copyMatching
     }
 
-    public func read(_ credential: CredentialIdentifier) throws -> Data? {
+    public func read(_ credential: CredentialIdentifier, mode: CredentialAccessMode) throws -> Data? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: credential.keychainService,
@@ -1208,6 +1262,22 @@ public struct KeychainCredentialStore: CredentialStore {
 
         if let account = accountResolver(credential) {
             query[kSecAttrAccount as String] = account
+        }
+
+        // Background polls must never present a Keychain prompt. When the item's
+        // ACL would require user confirmation (e.g. after Claude Code rewrote the
+        // item on token refresh and reset its ACL), `kSecUseAuthenticationUIFail`
+        // makes the read return errSecInteractionNotAllowed instead of popping a
+        // dialog, so the provider degrades to its fallback silently. Interactive
+        // reads (manual refresh) omit the key so the user can grant access.
+        //
+        // `kSecUseAuthenticationUI` is soft-deprecated in favor of
+        // `kSecUseAuthenticationContext`/`LAContext.interactionNotAllowed`, but
+        // that replacement governs the SecAccessControl/biometric flow; the
+        // legacy trusted-application ACL prompt this app hits is suppressed
+        // reliably only by `kSecUseAuthenticationUIFail`, so its use is deliberate.
+        if mode == .background {
+            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
         }
 
         var item: CFTypeRef?
