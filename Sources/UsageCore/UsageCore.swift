@@ -816,34 +816,120 @@ public struct ClaudeStatuslineCacheReader: Sendable {
 extension ClaudeStatuslineCacheReader: ClaudeStatuslineCacheReading {}
 
 public struct ClaudeUsageProvider: UsageProvider {
+    private let credentialReader: any ClaudeCredentialReading
     private let cacheReader: any ClaudeStatuslineCacheReading
+    private let transport: any HTTPTransport
+    private let parser: ClaudeUsageParser
     private let now: @Sendable () -> Date
 
     public init(
+        credentialReader: any ClaudeCredentialReading,
         cacheReader: any ClaudeStatuslineCacheReading,
+        transport: any HTTPTransport = URLSessionHTTPTransport(),
+        parser: ClaudeUsageParser = ClaudeUsageParser(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
+        self.credentialReader = credentialReader
         self.cacheReader = cacheReader
+        self.transport = transport
+        self.parser = parser
         self.now = now
     }
 
     public func fetch(previous: ProviderUsage?) async -> ProviderState {
-        do {
-            return Self.providerState(from: try cacheReader.read(now: now()), previous: previous)
-        } catch {
-            return .stale(last: previous, reason: .networkError)
+        switch await fetchFromAPI() {
+        case let .fresh(usage, asOf):
+            return .fresh(usage, asOf: asOf)
+        case let .stale(apiReason):
+            return fallbackState(apiReason: apiReason, previous: previous)
         }
     }
 
-    private static func providerState(
-        from result: ClaudeStatuslineCacheReadResult,
-        previous: ProviderUsage?
-    ) -> ProviderState {
-        switch result {
+    private enum APIOutcome {
+        case fresh(ProviderUsage, asOf: Date)
+        case stale(StaleReason)
+    }
+
+    private func fetchFromAPI() async -> APIOutcome {
+        let credential: ClaudeCredential
+        do {
+            switch try credentialReader.read() {
+            case let .fresh(freshCredential):
+                credential = freshCredential
+            case let .stale(reason):
+                return .stale(reason)
+            }
+        } catch {
+            return .stale(.credentialUnavailable)
+        }
+
+        do {
+            let (data, response) = try await transport.send(Self.usageRequest(for: credential))
+            guard response.statusCode == 200 else {
+                return .stale(staleReason(forHTTPStatusCode: response.statusCode))
+            }
+
+            return .fresh(try parser.parse(data), asOf: now())
+        } catch UsageParsingError.parseFailure {
+            return .stale(.parseFailure)
+        } catch {
+            return .stale(.networkError)
+        }
+    }
+
+    // The API's failure reason wins over the cache's: the API is the primary
+    // path and its reason is more actionable (tokenExpired -> run Claude Code,
+    // which also refreshes the statusline cache).
+    private func fallbackState(apiReason: StaleReason, previous: ProviderUsage?) -> ProviderState {
+        guard let cacheResult = try? cacheReader.read(now: now()) else {
+            return .stale(last: previous, reason: apiReason)
+        }
+
+        switch cacheResult {
         case let .fresh(data: _, usage: usage, asOf: asOf):
             return .fresh(usage, asOf: asOf)
-        case let .stale(last: last, reason: reason, hint: _):
-            return .stale(last: last ?? previous, reason: reason)
+        case let .stale(last: last, reason: _, hint: _):
+            return .stale(last: last ?? previous, reason: apiReason)
+        }
+    }
+
+    private static func usageRequest(for credential: ClaudeCredential) -> URLRequest {
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        request.setValue("AIUsageBar/\(UsageCore.version)", forHTTPHeaderField: "User-Agent")
+
+        return request
+    }
+}
+
+public struct ClaudeCredential: Equatable, Sendable {
+    public let accessToken: String
+    public let expiresAt: Date
+
+    public init(accessToken: String, expiresAt: Date) {
+        self.accessToken = accessToken
+        self.expiresAt = expiresAt
+    }
+}
+
+public struct ClaudeCredentialParser: Sendable {
+    public init() {}
+
+    public func parse(_ data: Data) throws -> ClaudeCredential {
+        do {
+            let stored = try JSONDecoder().decode(ClaudeStoredCredential.self, from: data)
+            guard stored.claudeAiOauth.hasUsableAccessToken else {
+                throw UsageParsingError.parseFailure
+            }
+
+            return ClaudeCredential(
+                accessToken: stored.claudeAiOauth.accessToken,
+                expiresAt: Date(timeIntervalSince1970: stored.claudeAiOauth.expiresAt / 1000)
+            )
+        } catch {
+            throw UsageParsingError.parseFailure
         }
     }
 }
@@ -882,6 +968,7 @@ public struct CodexCredentialParser: Sendable {
 }
 
 public enum CredentialIdentifier: Hashable, Sendable {
+    case claude
     case codex
 }
 
@@ -892,6 +979,61 @@ public enum CredentialStoreReadError: Error, Equatable, Sendable {
 public protocol CredentialStore: Sendable {
     func read(_ credential: CredentialIdentifier) throws -> Data?
 }
+
+public enum ClaudeCredentialReadResult: Equatable, Sendable {
+    case fresh(ClaudeCredential)
+    case stale(reason: StaleReason)
+}
+
+public protocol ClaudeCredentialReading: Sendable {
+    func read() throws -> ClaudeCredentialReadResult
+}
+
+public struct ClaudeCredentialReader: Sendable {
+    private let store: any CredentialStore
+    private let parser: ClaudeCredentialParser
+    private let now: @Sendable () -> Date
+
+    public init(
+        store: any CredentialStore,
+        parser: ClaudeCredentialParser = ClaudeCredentialParser(),
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.store = store
+        self.parser = parser
+        self.now = now
+    }
+
+    public func read() throws -> ClaudeCredentialReadResult {
+        let data: Data?
+        do {
+            data = try store.read(.claude)
+        } catch {
+            return .stale(reason: .credentialUnavailable)
+        }
+
+        guard let data else {
+            // Mirrors the Codex mapping: "no credential" and "expired
+            // credential" have the same user remedy — run the CLI.
+            return .stale(reason: .tokenExpired)
+        }
+
+        let credential: ClaudeCredential
+        do {
+            credential = try parser.parse(data)
+        } catch UsageParsingError.parseFailure {
+            return .stale(reason: .parseFailure)
+        }
+
+        guard credential.expiresAt > now() else {
+            return .stale(reason: .tokenExpired)
+        }
+
+        return .fresh(credential)
+    }
+}
+
+extension ClaudeCredentialReader: ClaudeCredentialReading {}
 
 public enum CodexCredentialReadResult: Equatable, Sendable {
     case fresh(CodexCredential)
@@ -1030,7 +1172,7 @@ public struct KeychainCredentialStore: CredentialStore {
         UnsafeMutablePointer<CFTypeRef?>?
     ) -> OSStatus
 
-    private let accountResolver: @Sendable (CredentialIdentifier) -> String
+    private let accountResolver: @Sendable (CredentialIdentifier) -> String?
     private let copyMatching: CopyMatching
 
     public init() {
@@ -1049,7 +1191,7 @@ public struct KeychainCredentialStore: CredentialStore {
     }
 
     public init(
-        accountResolver: @escaping @Sendable (CredentialIdentifier) -> String,
+        accountResolver: @escaping @Sendable (CredentialIdentifier) -> String?,
         copyMatching: @escaping CopyMatching = SecItemCopyMatching
     ) {
         self.accountResolver = accountResolver
@@ -1064,7 +1206,9 @@ public struct KeychainCredentialStore: CredentialStore {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
 
-        query[kSecAttrAccount as String] = accountResolver(credential)
+        if let account = accountResolver(credential) {
+            query[kSecAttrAccount as String] = account
+        }
 
         var item: CFTypeRef?
         let status = copyMatching(query as CFDictionary, &item)
@@ -1079,8 +1223,12 @@ public struct KeychainCredentialStore: CredentialStore {
         return item as? Data
     }
 
-    private static func defaultAccount(for credential: CredentialIdentifier) -> String {
+    private static func defaultAccount(for credential: CredentialIdentifier) -> String? {
         switch credential {
+        case .claude:
+            // The Claude Code item is unique per service; matching by service
+            // alone stays robust to whatever account string Claude Code writes.
+            return nil
         case .codex:
             return codexKeychainAccount(codexHomePath: defaultCodexHomePath())
         }
@@ -1120,6 +1268,34 @@ public struct ClaudeStatuslineParser: Sendable {
         } catch {
             throw UsageParsingError.parseFailure
         }
+    }
+}
+
+public struct ClaudeUsageParser: Sendable {
+    public init() {}
+
+    public func parse(_ data: Data) throws -> ProviderUsage {
+        do {
+            let response = try JSONDecoder().decode(ClaudeUsageResponse.self, from: data)
+
+            return ProviderUsage(
+                fiveHour: try usageWindow(from: response.fiveHour),
+                weekly: try usageWindow(from: response.sevenDay)
+            )
+        } catch {
+            throw UsageParsingError.parseFailure
+        }
+    }
+
+    private func usageWindow(from window: ClaudeUsageResponseWindow) throws -> UsageWindow {
+        guard let resetsAt = claudeUsageResetDate(from: window.resetsAt) else {
+            throw UsageParsingError.parseFailure
+        }
+
+        return UsageWindow(
+            percentRemaining: percentRemaining(fromUsedPercentage: window.utilization),
+            resetsAt: resetsAt
+        )
     }
 }
 
@@ -1229,6 +1405,72 @@ private struct ClaudeStatuslineWindow: Decodable {
     }
 }
 
+private struct ClaudeUsageResponse: Decodable {
+    let fiveHour: ClaudeUsageResponseWindow
+    let sevenDay: ClaudeUsageResponseWindow
+
+    enum CodingKeys: String, CodingKey {
+        case fiveHour = "five_hour"
+        case sevenDay = "seven_day"
+    }
+}
+
+private struct ClaudeUsageResponseWindow: Decodable {
+    let utilization: Double
+    let resetsAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case utilization
+        case resetsAt = "resets_at"
+    }
+}
+
+// The usage API emits ISO 8601 with 6-digit fractional seconds
+// (2026-07-04T06:10:00.229359+00:00); ISO8601DateFormatter's
+// .withFractionalSeconds only reliably parses exactly 3, so other
+// fraction lengths are normalized before parsing.
+private func claudeUsageResetDate(from string: String) -> Date? {
+    let plain = ISO8601DateFormatter()
+    if let date = plain.date(from: string) {
+        return date
+    }
+
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = fractional.date(from: string) {
+        return date
+    }
+
+    if let normalized = normalizingFractionalSeconds(string, to: 3) {
+        return fractional.date(from: normalized)
+    }
+
+    return nil
+}
+
+private func normalizingFractionalSeconds(_ string: String, to digits: Int) -> String? {
+    guard let dotIndex = string.firstIndex(of: ".") else {
+        return nil
+    }
+
+    let fractionStart = string.index(after: dotIndex)
+    var fractionEnd = fractionStart
+    while fractionEnd < string.endIndex, string[fractionEnd].isNumber {
+        fractionEnd = string.index(after: fractionEnd)
+    }
+
+    let fraction = string[fractionStart..<fractionEnd]
+    guard !fraction.isEmpty, fraction.count != digits else {
+        return nil
+    }
+
+    let normalized = fraction.count > digits
+        ? String(fraction.prefix(digits))
+        : fraction.padding(toLength: digits, withPad: "0", startingAt: 0)
+
+    return string.replacingCharacters(in: fractionStart..<fractionEnd, with: normalized)
+}
+
 private struct CodexUsageResponse: Decodable {
     let rateLimit: CodexRateLimit
 
@@ -1239,7 +1481,26 @@ private struct CodexUsageResponse: Decodable {
 
 private extension CredentialIdentifier {
     var keychainService: String {
-        "Codex Auth"
+        switch self {
+        case .claude:
+            return "Claude Code-credentials"
+        case .codex:
+            return "Codex Auth"
+        }
+    }
+}
+
+private struct ClaudeStoredCredential: Decodable {
+    let claudeAiOauth: OAuth
+
+    struct OAuth: Decodable {
+        let accessToken: String
+        // Claude Code stores this as epoch milliseconds.
+        let expiresAt: Double
+
+        var hasUsableAccessToken: Bool {
+            !accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 }
 

@@ -4,13 +4,15 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 
 ## Claude
 
-- Auth source: macOS Keychain generic password with service `Claude Code-credentials`.
+- Auth source: macOS Keychain generic password with service `Claude Code-credentials`. The app queries by service only (no account attribute): the item is unique per service, and Claude Code writes the local username as the account, which is not derivable in a robust way.
 - Credential shape: top-level `claudeAiOauth` object with `accessToken`, `refreshToken`, `expiresAt`, `scopes`, `subscriptionType`, and `rateLimitTier`.
-- Expiry detection: treat `claudeAiOauth.expiresAt` as the OAuth token expiry timestamp.
+- Expiry detection: `claudeAiOauth.expiresAt` is the OAuth token expiry in epoch **milliseconds** (verified against wall clock on 2026-07-03: value `1783154084847` ≈ 7 h ahead of `date +%s` × 1000). Expired token → no network call.
 - Usage request: `GET https://api.anthropic.com/api/oauth/usage`.
-- Headers: `Authorization: Bearer <claudeAiOauth.accessToken>` and `anthropic-beta: oauth-2025-04-20`.
+- Headers: `Authorization: Bearer <claudeAiOauth.accessToken>`, `anthropic-beta: oauth-2025-04-20`, and `User-Agent: AIUsageBar/<version>`.
 - Source evidence: local Claude Code 2.1.198 binary strings include `fetchUtilization: GET /api/oauth/usage`, `/api/oauth/usage`, `anthropic-beta`, and `oauth-2025-04-20`.
-- Live result: the controlled `curl` attempt on 2026-07-02 returned HTTP 429, so `Tests/Fixtures/claude-usage.json` was not created. Do not fabricate this fixture.
+- Live result: a controlled `curl` on 2026-07-02 returned HTTP 429, and the endpoint was initially abandoned. A re-probe on 2026-07-03 with the exact headers above returned **HTTP 200 in ~0.3 s** — the 429 was transient. The sanitized capture is `Tests/Fixtures/claude-usage.json` (the response contains no personal identifiers; committed as captured, pretty-printed).
+- Response shape (fields the app uses): top-level `five_hour` and `seven_day` objects, each with `utilization` (float, percent used — same semantics as the statusline's `used_percentage`) and `resets_at` (ISO 8601 string with 6-digit fractional seconds and offset, e.g. `2026-07-04T06:10:00.229359+00:00` — unlike the statusline's epoch seconds). Ignored: a `limits` array (including a model-scoped `weekly_scoped` entry the statusline doesn't carry), `extra_usage`, `spend`, and several null experiment fields.
+- Fallback order: the app tries the API first; on any API failure it falls back to the statusline cache below (fresh cache → fresh data), and only then degrades to stale, surfacing the API's failure reason.
 - Local fallback: `scripts/claude-statusline-cache` can be used as the Claude Code statusline command. It writes the raw statusline JSON to `${XDG_CACHE_HOME:-$HOME/.cache}/ai-usage-bar/claude-status.json` or `AI_USAGE_BAR_CLAUDE_STATUS_JSON`, then forwards the same stdin to `ccstatusline`. Writes are guarded: with several Claude Code sessions running the wrapper concurrently, a payload only replaces the cache when its `rate_limits` are at least as fresh as the cached ones (serialized via `claude-status.json.lock`), so idle sessions re-rendering stale numbers cannot regress the cache. This lets the app consume `rate_limits` from Claude Code's own statusline payload without calling the usage endpoint directly.
 - Fallback fixture: `Tests/Fixtures/claude-statusline.json` preserves the sanitized statusline shape used by `ccstatusline` 2.2.22. The relevant fields are `rate_limits.five_hour.used_percentage`, `rate_limits.five_hour.resets_at`, `rate_limits.seven_day.used_percentage`, and `rate_limits.seven_day.resets_at`; `resets_at` is Unix epoch seconds.
 

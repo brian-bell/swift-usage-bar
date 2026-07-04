@@ -3,68 +3,143 @@ import Testing
 import UsageCore
 
 @Test
-func claudeUsageProviderReturnsFreshUsageFromFreshStatuslineCache() async {
-    let asOf = Date(timeIntervalSince1970: 1_783_000_000)
-    let usage = sampleUsage(fiveHour: 62, weekly: 81)
+func claudeUsageProviderBuildsUsageRequestAndReturnsFreshUsageWithoutConsultingCache() async throws {
+    let asOf = Date(timeIntervalSince1970: 1_783_128_465)
+    let cacheReader = FakeClaudeStatuslineCacheReader(result: .fresh(
+        data: Data("{}".utf8),
+        usage: sampleUsage(fiveHour: 1, weekly: 1),
+        asOf: Date(timeIntervalSince1970: 1_783_000_000)
+    ))
+    let transport = FakeHTTPTransport(response: (
+        try fixtureData("claude-usage.json"),
+        try httpResponse(statusCode: 200)
+    ))
     let provider = ClaudeUsageProvider(
-        cacheReader: FakeClaudeStatuslineCacheReader(result: .fresh(
-            data: Data("{}".utf8),
-            usage: usage,
-            asOf: asOf
-        )),
-        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+        credentialReader: FakeClaudeCredentialReader(result: .fresh(validCredential())),
+        cacheReader: cacheReader,
+        transport: transport,
+        now: { asOf }
     )
 
     let state = await provider.fetch(previous: nil)
+    let request = try #require(transport.requests.first)
 
-    #expect(state == .fresh(usage, asOf: asOf))
+    guard case let .fresh(usage, asOf: freshAsOf) = state else {
+        Issue.record("Expected fresh state, got \(state)")
+        return
+    }
+
+    #expect(usage.fiveHour.percentRemaining == 89)
+    #expect(usage.weekly.percentRemaining == 77)
+    #expect(usage.fiveHour.resetsAt.map { Int($0.timeIntervalSince1970) } == 1_783_145_400)
+    #expect(usage.weekly.resetsAt.map { Int($0.timeIntervalSince1970) } == 1_783_332_000)
+    #expect(freshAsOf == asOf)
+    #expect(transport.requests.count == 1)
+    #expect(request.httpMethod == "GET")
+    #expect(request.url?.absoluteString == "https://api.anthropic.com/api/oauth/usage")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-token")
+    #expect(request.value(forHTTPHeaderField: "anthropic-beta") == "oauth-2025-04-20")
+    #expect(request.value(forHTTPHeaderField: "User-Agent")?.isEmpty == false)
+    #expect(cacheReader.readCount == 0)
 }
 
 @Test
-func claudeUsageProviderMapsMissingCacheToStaleNetworkErrorWithPreviousUsage() async {
-    let previous = sampleUsage(fiveHour: 55, weekly: 75)
-    let provider = ClaudeUsageProvider(
-        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
+func claudeUsageProviderSkipsRequestAndFallsBackToCacheWhenCredentialIsStale() async throws {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
+    let cases: [(ClaudeCredentialReadResult, StaleReason)] = [
+        (.stale(reason: .tokenExpired), .tokenExpired),
+        (.stale(reason: .credentialUnavailable), .credentialUnavailable),
+        (.stale(reason: .parseFailure), .parseFailure),
+    ]
+
+    for (credentialResult, expectedReason) in cases {
+        let cacheReader = FakeClaudeStatuslineCacheReader(result: .stale(
             last: nil,
             reason: .networkError,
             hint: "Configure Claude Code statusline to write its cache."
-        )),
-        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+        ))
+        let transport = FakeHTTPTransport(response: (
+            try fixtureData("claude-usage.json"),
+            try httpResponse(statusCode: 200)
+        ))
+        let provider = ClaudeUsageProvider(
+            credentialReader: FakeClaudeCredentialReader(result: credentialResult),
+            cacheReader: cacheReader,
+            transport: transport,
+            now: { Date(timeIntervalSince1970: 1_783_128_465) }
+        )
+
+        let state = await provider.fetch(previous: previous)
+
+        #expect(state == .stale(last: previous, reason: expectedReason))
+        #expect(transport.requests.isEmpty)
+        #expect(cacheReader.readCount == 1)
+    }
+}
+
+@Test
+func claudeUsageProviderMapsThrowingCredentialReaderToCredentialUnavailable() async throws {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
+    let transport = FakeHTTPTransport(response: (
+        try fixtureData("claude-usage.json"),
+        try httpResponse(statusCode: 200)
+    ))
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(error: FakeCredentialReaderError.failed),
+        cacheReader: FakeClaudeStatuslineCacheReader(error: CocoaError(.fileReadUnknown)),
+        transport: transport,
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
     let state = await provider.fetch(previous: previous)
 
-    #expect(state == .stale(last: previous, reason: .networkError))
+    #expect(state == .stale(last: previous, reason: .credentialUnavailable))
+    #expect(transport.requests.isEmpty)
 }
 
 @Test
-func claudeUsageProviderMapsStaleCacheToStaleNetworkErrorWithCacheUsage() async {
-    let cached = sampleUsage(fiveHour: 62, weekly: 81)
-    let previous = sampleUsage(fiveHour: 55, weekly: 75)
-    let provider = ClaudeUsageProvider(
-        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
-            last: cached,
-            reason: .networkError,
-            hint: "Configure Claude Code statusline to write its cache."
-        )),
-        now: { Date(timeIntervalSince1970: 1_783_000_301) }
-    )
+func claudeUsageProviderMapsHTTPFailuresToAPIStaleReasons() async throws {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
+    let cases: [(Int, StaleReason)] = [
+        (401, .tokenExpired),
+        (429, .networkError),
+        (500, .networkError),
+    ]
 
-    let state = await provider.fetch(previous: previous)
+    for (statusCode, expectedReason) in cases {
+        let transport = FakeHTTPTransport(response: (
+            try fixtureData("claude-usage.json"),
+            try httpResponse(statusCode: statusCode)
+        ))
+        let provider = ClaudeUsageProvider(
+            credentialReader: FakeClaudeCredentialReader(result: .fresh(validCredential())),
+            cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
+                last: nil,
+                reason: .networkError,
+                hint: "Configure Claude Code statusline to write its cache."
+            )),
+            transport: transport,
+            now: { Date(timeIntervalSince1970: 1_783_128_465) }
+        )
 
-    #expect(state == .stale(last: cached, reason: .networkError))
+        let state = await provider.fetch(previous: previous)
+
+        #expect(state == .stale(last: previous, reason: expectedReason))
+        #expect(transport.requests.count == 1)
+    }
 }
 
 @Test
-func claudeUsageProviderMapsMalformedCacheToStaleParseFailureWithPreviousUsage() async {
-    let previous = sampleUsage(fiveHour: 55, weekly: 75)
+func claudeUsageProviderMapsMalformedResponseBodyToParseFailure() async throws {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
     let provider = ClaudeUsageProvider(
-        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
-            last: nil,
-            reason: .parseFailure,
-            hint: "Configure Claude Code statusline to write its cache."
+        credentialReader: FakeClaudeCredentialReader(result: .fresh(validCredential())),
+        cacheReader: FakeClaudeStatuslineCacheReader(error: CocoaError(.fileReadUnknown)),
+        transport: FakeHTTPTransport(response: (
+            Data("not json".utf8),
+            try httpResponse(statusCode: 200)
         )),
-        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
     let state = await provider.fetch(previous: previous)
@@ -73,11 +148,13 @@ func claudeUsageProviderMapsMalformedCacheToStaleParseFailureWithPreviousUsage()
 }
 
 @Test
-func claudeUsageProviderMapsReaderThrowToStaleNetworkErrorWithPreviousUsage() async {
-    let previous = sampleUsage(fiveHour: 55, weekly: 75)
+func claudeUsageProviderMapsTransportThrowToNetworkError() async {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
     let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .fresh(validCredential())),
         cacheReader: FakeClaudeStatuslineCacheReader(error: CocoaError(.fileReadUnknown)),
-        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
     let state = await provider.fetch(previous: previous)
@@ -85,11 +162,95 @@ func claudeUsageProviderMapsReaderThrowToStaleNetworkErrorWithPreviousUsage() as
     #expect(state == .stale(last: previous, reason: .networkError))
 }
 
-private struct FakeClaudeStatuslineCacheReader: ClaudeStatuslineCacheReading {
-    var result: ClaudeStatuslineCacheReadResult?
-    var error: (any Error)?
+@Test
+func claudeUsageProviderReturnsFreshCacheUsageWhenAPIPathIsStale() async {
+    let cacheAsOf = Date(timeIntervalSince1970: 1_783_000_000)
+    let cached = sampleUsage(fiveHour: 62, weekly: 81)
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .stale(reason: .tokenExpired)),
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .fresh(
+            data: Data("{}".utf8),
+            usage: cached,
+            asOf: cacheAsOf
+        )),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
 
-    func read(now _: Date) throws -> ClaudeStatuslineCacheReadResult {
+    let state = await provider.fetch(previous: nil)
+
+    #expect(state == .fresh(cached, asOf: cacheAsOf))
+}
+
+@Test
+func claudeUsageProviderPrefersStaleCacheUsageOverPreviousWithAPIStaleReason() async {
+    let cached = sampleUsage(fiveHour: 62, weekly: 81)
+    let previous = sampleUsage(fiveHour: 55, weekly: 75)
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .stale(reason: .tokenExpired)),
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
+            last: cached,
+            reason: .networkError,
+            hint: "Configure Claude Code statusline to write its cache."
+        )),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    let state = await provider.fetch(previous: previous)
+
+    #expect(state == .stale(last: cached, reason: .tokenExpired))
+}
+
+@Test
+func claudeUsageProviderFallsBackToPreviousUsageWhenCacheHasNoData() async {
+    let previous = sampleUsage(fiveHour: 55, weekly: 75)
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .stale(reason: .tokenExpired)),
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
+            last: nil,
+            reason: .parseFailure,
+            hint: "Configure Claude Code statusline to write its cache."
+        )),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    let state = await provider.fetch(previous: previous)
+
+    #expect(state == .stale(last: previous, reason: .tokenExpired))
+}
+
+@Test
+func claudeUsageProviderFallsBackToPreviousUsageWhenCacheReaderThrows() async {
+    let previous = sampleUsage(fiveHour: 55, weekly: 75)
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .stale(reason: .tokenExpired)),
+        cacheReader: FakeClaudeStatuslineCacheReader(error: CocoaError(.fileReadUnknown)),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    let state = await provider.fetch(previous: previous)
+
+    #expect(state == .stale(last: previous, reason: .tokenExpired))
+}
+
+private final class FakeClaudeCredentialReader: ClaudeCredentialReading, @unchecked Sendable {
+    private let result: ClaudeCredentialReadResult?
+    private let error: (any Error)?
+
+    init(result: ClaudeCredentialReadResult) {
+        self.result = result
+        self.error = nil
+    }
+
+    init(error: any Error) {
+        self.result = nil
+        self.error = error
+    }
+
+    func read() throws -> ClaudeCredentialReadResult {
         if let error {
             throw error
         }
@@ -98,15 +259,101 @@ private struct FakeClaudeStatuslineCacheReader: ClaudeStatuslineCacheReading {
     }
 }
 
+private enum FakeCredentialReaderError: Error {
+    case failed
+}
+
+private final class FakeClaudeStatuslineCacheReader: ClaudeStatuslineCacheReading, @unchecked Sendable {
+    private let result: ClaudeStatuslineCacheReadResult?
+    private let error: (any Error)?
+    private(set) var readCount = 0
+
+    init(result: ClaudeStatuslineCacheReadResult) {
+        self.result = result
+        self.error = nil
+    }
+
+    init(error: any Error) {
+        self.result = nil
+        self.error = error
+    }
+
+    func read(now _: Date) throws -> ClaudeStatuslineCacheReadResult {
+        readCount += 1
+        if let error {
+            throw error
+        }
+
+        return result!
+    }
+}
+
+private final class FakeHTTPTransport: HTTPTransport, @unchecked Sendable {
+    private let response: (Data, HTTPURLResponse)?
+    private let error: (any Error)?
+    private(set) var requests: [URLRequest] = []
+
+    init(response: (Data, HTTPURLResponse)) {
+        self.response = response
+        self.error = nil
+    }
+
+    init(error: any Error) {
+        self.response = nil
+        self.error = error
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        if let error {
+            throw error
+        }
+
+        return response!
+    }
+}
+
+private func validCredential() -> ClaudeCredential {
+    ClaudeCredential(
+        accessToken: "access-token",
+        expiresAt: Date(timeIntervalSince1970: 1_783_154_084.847)
+    )
+}
+
 private func sampleUsage(fiveHour: Int, weekly: Int) -> ProviderUsage {
     ProviderUsage(
         fiveHour: UsageWindow(
             percentRemaining: fiveHour,
-            resetsAt: Date(timeIntervalSince1970: 1_783_008_000)
+            resetsAt: Date(timeIntervalSince1970: 1_783_145_400)
         ),
         weekly: UsageWindow(
             percentRemaining: weekly,
-            resetsAt: Date(timeIntervalSince1970: 1_783_555_200)
+            resetsAt: Date(timeIntervalSince1970: 1_783_332_000)
         )
     )
+}
+
+private func httpResponse(statusCode: Int) throws -> HTTPURLResponse {
+    let url = try #require(URL(string: "https://api.anthropic.com/api/oauth/usage"))
+
+    return try #require(HTTPURLResponse(
+        url: url,
+        statusCode: statusCode,
+        httpVersion: nil,
+        headerFields: nil
+    ))
+}
+
+private func fixtureData(_ name: String) throws -> Data {
+    let testFile = URL(fileURLWithPath: #filePath)
+    let packageRoot = testFile
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let fixtureURL = packageRoot
+        .appendingPathComponent("Tests")
+        .appendingPathComponent("Fixtures")
+        .appendingPathComponent(name)
+
+    return try Data(contentsOf: fixtureURL)
 }

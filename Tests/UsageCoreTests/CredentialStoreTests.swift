@@ -126,6 +126,27 @@ func keychainCredentialStoreUsesDefaultCodexAccountHash() throws {
 }
 
 @Test
+func keychainCredentialStoreBuildsClaudeReadQueryWithoutAccount() throws {
+    let recorder = KeychainQueryRecorder()
+    let store = KeychainCredentialStore(
+        copyMatching: { query, _ in
+            recorder.record(query)
+            return errSecItemNotFound
+        }
+    )
+
+    let data = try store.read(.claude)
+    let query = try #require(recorder.query)
+
+    #expect(data == nil)
+    #expect(query[kSecClass as String] as? String == kSecClassGenericPassword as String)
+    #expect(query[kSecAttrService as String] as? String == "Claude Code-credentials")
+    #expect(query[kSecAttrAccount as String] == nil)
+    #expect(query[kSecReturnData as String] as? Bool == true)
+    #expect(query[kSecMatchLimit as String] as? String == kSecMatchLimitOne as String)
+}
+
+@Test
 func keychainCredentialStoreThrowsWhenKeychainReadFails() throws {
     let store = KeychainCredentialStore(
         accountResolver: { _ in "cli|abc123" },

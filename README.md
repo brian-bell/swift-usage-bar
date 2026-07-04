@@ -19,8 +19,10 @@ Access is strictly **read-only**: the app borrows state your CLIs already mainta
 
 | Provider | Source |
 |---|---|
-| Claude | Claude Code's statusline JSON, cached locally by `scripts/claude-statusline-cache` (no network call) |
+| Claude | Claude Code's Keychain credential (read-only) → `GET https://api.anthropic.com/api/oauth/usage`; falls back to the statusline JSON cached locally by `scripts/claude-statusline-cache` when the API is unavailable |
 | Codex | Codex CLI's Keychain credential (read-only) → `GET https://chatgpt.com/backend-api/wham/usage` |
+
+The app never refreshes OAuth tokens, so live Claude data depends on Claude Code keeping its token fresh; on a machine with no recent Claude Code activity the row degrades to the statusline cache, then to a greyed stale display.
 
 See `docs/endpoints.md` for the discovered contracts and evidence.
 
@@ -28,7 +30,7 @@ See `docs/endpoints.md` for the discovered contracts and evidence.
 
 - macOS 14+
 - Swift 6 toolchain to build (developed with CommandLineTools-only Swift 6.3)
-- [Claude Code](https://claude.com/claude-code) with a statusline configured through the cache wrapper (below), for Claude numbers
+- [Claude Code](https://claude.com/claude-code) logged in, for Claude numbers (the statusline cache wrapper below is an optional fallback)
 - [Codex CLI](https://github.com/openai/codex) logged in via ChatGPT, for Codex numbers
 
 ## Install
@@ -42,9 +44,11 @@ open AIUsageBar.app
 
 Enable "Launch at login" from the dropdown settings if you want it to persist across restarts (macOS may ask you to approve it in System Settings › Login Items).
 
-### Claude statusline cache setup
+On the first refresh macOS will ask whether AIUsageBar may read the `Claude Code-credentials` (and `Codex Auth`) Keychain items — click **Always Allow**. If you only click Allow, the prompt returns on a later poll; if you deny, the Claude row falls back to the statusline cache. Rebuilding the app re-signs it, which can re-trigger the prompt.
 
-The app reads Claude usage from a local cache written by your Claude Code statusline. Run the installer to wire it up:
+### Claude statusline cache setup (optional fallback)
+
+Claude usage is fetched live from the OAuth usage API. As a fallback for when the API can't be reached (or the token has expired), the app can also read a local cache written by your Claude Code statusline. Run the installer to wire it up:
 
 ```sh
 scripts/setup-statusline
