@@ -236,9 +236,46 @@ func claudeUsageProviderFallsBackToPreviousUsageWhenCacheReaderThrows() async {
     #expect(state == .stale(last: previous, reason: .tokenExpired))
 }
 
+@Test
+func claudeUsageProviderForwardsInteractiveModeToCredentialReader() async {
+    let reader = FakeClaudeCredentialReader(result: .stale(reason: .tokenExpired))
+    let cacheReader = FakeClaudeStatuslineCacheReader(
+        result: .stale(last: nil, reason: .parseFailure, hint: "hint")
+    )
+    let provider = ClaudeUsageProvider(
+        credentialReader: reader,
+        cacheReader: cacheReader,
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    _ = await provider.fetch(previous: nil, mode: .interactive)
+
+    #expect(reader.receivedModes == [.interactive])
+}
+
+@Test
+func claudeUsageProviderDefaultsToBackgroundMode() async {
+    let reader = FakeClaudeCredentialReader(result: .stale(reason: .tokenExpired))
+    let cacheReader = FakeClaudeStatuslineCacheReader(
+        result: .stale(last: nil, reason: .parseFailure, hint: "hint")
+    )
+    let provider = ClaudeUsageProvider(
+        credentialReader: reader,
+        cacheReader: cacheReader,
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    _ = await provider.fetch(previous: nil)
+
+    #expect(reader.receivedModes == [.background])
+}
+
 private final class FakeClaudeCredentialReader: ClaudeCredentialReading, @unchecked Sendable {
     private let result: ClaudeCredentialReadResult?
     private let error: (any Error)?
+    private(set) var receivedModes: [CredentialAccessMode] = []
 
     init(result: ClaudeCredentialReadResult) {
         self.result = result
@@ -250,7 +287,8 @@ private final class FakeClaudeCredentialReader: ClaudeCredentialReading, @unchec
         self.error = error
     }
 
-    func read() throws -> ClaudeCredentialReadResult {
+    func read(mode: CredentialAccessMode) throws -> ClaudeCredentialReadResult {
+        receivedModes.append(mode)
         if let error {
             throw error
         }

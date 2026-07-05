@@ -166,7 +166,7 @@ func keychainCredentialStoreThrowsWhenKeychainReadFails() throws {
 @Test
 func credentialStoreProtocolRequiresOnlyReadAccess() throws {
     struct ReadOnlyStore: CredentialStore {
-        func read(_ credential: CredentialIdentifier) throws -> Data? {
+        func read(_ credential: CredentialIdentifier, mode _: CredentialAccessMode) throws -> Data? {
             nil
         }
     }
@@ -174,6 +174,74 @@ func credentialStoreProtocolRequiresOnlyReadAccess() throws {
     let store: any CredentialStore = ReadOnlyStore()
 
     #expect(try store.read(.codex) == nil)
+}
+
+@Test
+func keychainCredentialStoreBackgroundReadForbidsInteractiveUI() throws {
+    let recorder = KeychainQueryRecorder()
+    let store = KeychainCredentialStore(
+        copyMatching: { query, _ in
+            recorder.record(query)
+            return errSecItemNotFound
+        }
+    )
+
+    _ = try store.read(.claude, mode: .background)
+    let query = try #require(recorder.query)
+
+    #expect(query[kSecUseAuthenticationUI as String] as? String == kSecUseAuthenticationUIFail as String)
+}
+
+@Test
+func keychainCredentialStoreInteractiveReadAllowsInteractiveUI() throws {
+    let recorder = KeychainQueryRecorder()
+    let store = KeychainCredentialStore(
+        copyMatching: { query, _ in
+            recorder.record(query)
+            return errSecItemNotFound
+        }
+    )
+
+    _ = try store.read(.claude, mode: .interactive)
+    let query = try #require(recorder.query)
+
+    #expect(query[kSecUseAuthenticationUI as String] == nil)
+}
+
+@Test
+func keychainCredentialStoreDefaultReadIsBackgroundNoUI() throws {
+    let recorder = KeychainQueryRecorder()
+    let store = KeychainCredentialStore(
+        copyMatching: { query, _ in
+            recorder.record(query)
+            return errSecItemNotFound
+        }
+    )
+
+    _ = try store.read(.claude)
+    let query = try #require(recorder.query)
+
+    #expect(query[kSecUseAuthenticationUI as String] as? String == kSecUseAuthenticationUIFail as String)
+}
+
+@Test
+func claudeCredentialReaderForwardsAccessModeToStore() throws {
+    let store = InMemoryCredentialStore(dataByCredential: [:])
+    let reader = ClaudeCredentialReader(store: store)
+
+    _ = try reader.read(mode: .interactive)
+
+    #expect(store.readModes == [.interactive])
+}
+
+@Test
+func codexCredentialReaderDefaultsToBackgroundAccessMode() throws {
+    let store = InMemoryCredentialStore(dataByCredential: [:])
+    let reader = CodexCredentialReader(store: store)
+
+    _ = try reader.read()
+
+    #expect(store.readModes == [.background])
 }
 
 @Test(.disabled("integration: reads the user's real Codex Keychain item"))
@@ -186,13 +254,15 @@ func keychainCredentialStoreCanReadCodexCredentialWhenInstalled() throws {
 private final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable {
     private let dataByCredential: [CredentialIdentifier: Data]
     private(set) var readRequests: [CredentialIdentifier] = []
+    private(set) var readModes: [CredentialAccessMode] = []
 
     init(dataByCredential: [CredentialIdentifier: Data]) {
         self.dataByCredential = dataByCredential
     }
 
-    func read(_ credential: CredentialIdentifier) throws -> Data? {
+    func read(_ credential: CredentialIdentifier, mode: CredentialAccessMode) throws -> Data? {
         readRequests.append(credential)
+        readModes.append(mode)
         return dataByCredential[credential]
     }
 }
@@ -200,7 +270,7 @@ private final class InMemoryCredentialStore: CredentialStore, @unchecked Sendabl
 private final class FailingCredentialStore: CredentialStore, @unchecked Sendable {
     private(set) var readRequests: [CredentialIdentifier] = []
 
-    func read(_ credential: CredentialIdentifier) throws -> Data? {
+    func read(_ credential: CredentialIdentifier, mode _: CredentialAccessMode) throws -> Data? {
         readRequests.append(credential)
         throw CredentialStoreReadError.unavailable
     }
@@ -213,7 +283,7 @@ private final class UnexpectedFailingCredentialStore: CredentialStore, @unchecke
 
     private(set) var readRequests: [CredentialIdentifier] = []
 
-    func read(_ credential: CredentialIdentifier) throws -> Data? {
+    func read(_ credential: CredentialIdentifier, mode _: CredentialAccessMode) throws -> Data? {
         readRequests.append(credential)
         throw Error.failed
     }
