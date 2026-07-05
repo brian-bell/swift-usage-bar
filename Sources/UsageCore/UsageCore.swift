@@ -434,6 +434,7 @@ public actor UsagePoller {
         isRunning = false
         isPolling = false
         pendingPoll = false
+        pendingPollMode = .background
         pollGeneration &+= 1
         lifecycle.markStopped(generation: pollGeneration)
         timerGeneration &+= 1

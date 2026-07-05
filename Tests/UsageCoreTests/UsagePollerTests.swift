@@ -953,6 +953,46 @@ func overlappingManualAndWakeRefreshesCoalesceIntoOneFollowUpPoll() async {
     await poller.stop()
 }
 
+@Test
+func stopDiscardsQueuedInteractiveModeSoCoalescedPollsAfterRestartStayBackground() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 9_500))
+    let appState = await AppState()
+    let claude = BlockingUsageProvider(result: .fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 9_400)))
+    let wakeEvents = RestartableWakeEventProbe()
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        wakeEvents: wakeEvents.stream
+    )
+
+    // A manual refresh coalesces onto the in-flight first poll, queueing an
+    // interactive follow-up; stop() must discard that queued mode along with
+    // the pending poll it belonged to.
+    await poller.start()
+    await claude.waitUntilStarted()
+    await poller.refreshNow()
+    await poller.stop()
+    await claude.release()
+    await claude.waitUntilFinished()
+
+    // After a restart, a wake event coalescing onto the in-flight poll is
+    // automatic and must not inherit the discarded interactive mode.
+    await poller.start()
+    await claude.waitForStartCount(2)
+    wakeEvents.send()
+    await claude.release()
+    await claude.waitForFinishCount(2)
+    await claude.waitForStartCount(3)
+    await claude.release()
+    await claude.waitForFinishCount(3)
+    await poller.waitUntilIdle()
+
+    #expect(await claude.recordedModes() == [.background, .background, .background])
+
+    await poller.stop()
+}
+
 private actor ManualUsageClock: UsageClock {
     private var current: Date
     private var sleepers: [UUID: Sleeper] = [:]
@@ -1262,6 +1302,7 @@ private actor BlockingUsageProvider: UsageProvider {
     private var startWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var finishWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+    private var modes: [CredentialAccessMode] = []
     private(set) var startCount = 0
     private(set) var finishCount = 0
     private(set) var isSuspendedInFetch = false
@@ -1270,7 +1311,8 @@ private actor BlockingUsageProvider: UsageProvider {
         self.result = result
     }
 
-    func fetch(previous _: ProviderUsage?, mode _: CredentialAccessMode) async -> ProviderState {
+    func fetch(previous _: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        modes.append(mode)
         startCount += 1
         isSuspendedInFetch = true
         resumeStartWaiters()
@@ -1282,6 +1324,10 @@ private actor BlockingUsageProvider: UsageProvider {
         resumeFinishWaiters()
 
         return result
+    }
+
+    func recordedModes() -> [CredentialAccessMode] {
+        modes
     }
 
     func release() {
