@@ -8,6 +8,13 @@
 APP        := AIUsageBar.app
 EXECUTABLE := $(APP)/Contents/MacOS/AIUsageBarApp
 
+# Signing identity handed to scripts/bundle.sh. A stable self-signed cert (vs.
+# ad-hoc) pins the designated requirement to the cert, so Keychain "Always
+# Allow" grants survive rebuilds instead of re-prompting. Override on the CLI,
+# e.g. `make bundle CODESIGN_IDENTITY=-` for an ad-hoc signature.
+CODESIGN_IDENTITY ?= AIUsageBar Signing
+export CODESIGN_IDENTITY
+
 .DEFAULT_GOAL := help
 
 .PHONY: help build test script-tests bundle verify run stop clean setup-statusline
