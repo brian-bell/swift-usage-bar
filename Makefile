@@ -48,7 +48,9 @@ run: bundle stop ## Rebuild the bundle, stop any running copy, and launch the fr
 	@printf 'Launched %s (built %s)\n' "$(APP)" "$$(stat -f %Sm $(EXECUTABLE))"
 
 stop: ## Quit any running AIUsageBar instance
-	@pkill -f '$(APP)/Contents/MacOS/AIUsageBarApp' 2>/dev/null && echo 'Stopped running instance' || echo 'No running instance'
+	@# Exact process-name match: -f would scan full command lines and could
+	@# match this recipe's own /bin/sh (its argv holds the pattern).
+	@pkill -x AIUsageBarApp 2>/dev/null && echo 'Stopped running instance' || echo 'No running instance'
 
 clean: ## Remove build artifacts and the app bundle
 	rm -rf .build $(APP)
