@@ -44,6 +44,36 @@ func claudeUsageProviderBuildsUsageRequestAndReturnsFreshUsageWithoutConsultingC
 }
 
 @Test
+func claudeUsageProviderExposesFableScopedWeeklyWindowFromLimits() async throws {
+    let asOf = Date(timeIntervalSince1970: 1_783_128_465)
+    let transport = FakeHTTPTransport(response: (
+        try fixtureData("claude-usage.json"),
+        try httpResponse(statusCode: 200)
+    ))
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .fresh(validCredential())),
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
+            last: nil,
+            reason: .networkError,
+            hint: ""
+        )),
+        transport: transport,
+        now: { asOf }
+    )
+
+    let state = await provider.fetch(previous: nil)
+
+    guard case let .fresh(usage, asOf: _) = state else {
+        Issue.record("Expected fresh state, got \(state)")
+        return
+    }
+
+    let fable = try #require(usage.fable)
+    #expect(fable.percentRemaining == 56)
+    #expect(fable.resetsAt.map { Int($0.timeIntervalSince1970) } == 1_783_332_001)
+}
+
+@Test
 func claudeUsageProviderSkipsRequestAndFallsBackToCacheWhenCredentialIsStale() async throws {
     let previous = sampleUsage(fiveHour: 44, weekly: 66)
     let cases: [(ClaudeCredentialReadResult, StaleReason)] = [

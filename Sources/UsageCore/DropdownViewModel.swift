@@ -44,6 +44,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
     public let updatedLabel: String?
     public let fiveHour: DropdownUsageWindowRow
     public let weekly: DropdownUsageWindowRow
+    public let fable: DropdownUsageWindowRow?
     public let statusTone: UsageStatusTone?
 
     fileprivate init(
@@ -76,6 +77,15 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 calendar: calendar,
                 locale: locale
             )
+            self.fable = usage.fable.map { fable in
+                DropdownUsageWindowRow(
+                    title: "Fable",
+                    usageWindow: fable,
+                    now: now,
+                    calendar: calendar,
+                    locale: locale
+                )
+            }
             self.statusTone = tone(for: usage)
         case let .stale(last: usage?, reason: reason):
             self.isStale = true
@@ -94,18 +104,29 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 calendar: calendar,
                 locale: locale
             )
+            self.fable = usage.fable.map { fable in
+                DropdownUsageWindowRow(
+                    title: "Fable",
+                    usageWindow: fable,
+                    now: now,
+                    calendar: calendar,
+                    locale: locale
+                )
+            }
             self.statusTone = tone(for: usage)
         case let .stale(last: nil, reason: reason):
             self.isStale = true
             self.staleMessage = "Stale: \(reason.dropdownMessage)"
             self.fiveHour = DropdownUsageWindowRow.placeholder(title: "5h")
             self.weekly = DropdownUsageWindowRow.placeholder(title: "Weekly")
+            self.fable = nil
             self.statusTone = nil
         case .hidden:
             self.isStale = false
             self.staleMessage = nil
             self.fiveHour = DropdownUsageWindowRow.placeholder(title: "5h")
             self.weekly = DropdownUsageWindowRow.placeholder(title: "Weekly")
+            self.fable = nil
             self.statusTone = nil
         }
     }

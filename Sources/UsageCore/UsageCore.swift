@@ -20,10 +20,13 @@ public struct UsageWindow: Equatable, Sendable {
 public struct ProviderUsage: Equatable, Sendable {
     public let fiveHour: UsageWindow
     public let weekly: UsageWindow
+    // Model-scoped weekly window (Claude's "Fable" limit), when the API reports one.
+    public let fable: UsageWindow?
 
-    public init(fiveHour: UsageWindow, weekly: UsageWindow) {
+    public init(fiveHour: UsageWindow, weekly: UsageWindow, fable: UsageWindow? = nil) {
         self.fiveHour = fiveHour
         self.weekly = weekly
+        self.fable = fable
     }
 }
 
@@ -1351,7 +1354,8 @@ public struct ClaudeUsageParser: Sendable {
 
             return ProviderUsage(
                 fiveHour: try usageWindow(from: response.fiveHour),
-                weekly: try usageWindow(from: response.sevenDay)
+                weekly: try usageWindow(from: response.sevenDay),
+                fable: fableWindow(from: response.limits)
             )
         } catch {
             throw UsageParsingError.parseFailure
@@ -1366,6 +1370,22 @@ public struct ClaudeUsageParser: Sendable {
         return UsageWindow(
             percentRemaining: percentRemaining(fromUsedPercentage: window.utilization),
             resetsAt: resetsAt
+        )
+    }
+
+    // The Fable weekly limit arrives as a model-scoped entry in `limits`, not a
+    // top-level window. A missing/unparseable reset degrades to nil (shown as
+    // "reset unknown") rather than dropping the whole window.
+    private func fableWindow(from limits: [ClaudeUsageLimit]?) -> UsageWindow? {
+        guard let limit = limits?.first(where: {
+            $0.scope?.model?.displayName?.caseInsensitiveCompare("Fable") == .orderedSame
+        }) else {
+            return nil
+        }
+
+        return UsageWindow(
+            percentRemaining: percentRemaining(fromUsedPercentage: limit.percent),
+            resetsAt: limit.resetsAt.flatMap(claudeUsageResetDate(from:))
         )
     }
 }
@@ -1479,10 +1499,12 @@ private struct ClaudeStatuslineWindow: Decodable {
 private struct ClaudeUsageResponse: Decodable {
     let fiveHour: ClaudeUsageResponseWindow
     let sevenDay: ClaudeUsageResponseWindow
+    let limits: [ClaudeUsageLimit]?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
+        case limits
     }
 }
 
@@ -1493,6 +1515,32 @@ private struct ClaudeUsageResponseWindow: Decodable {
     enum CodingKeys: String, CodingKey {
         case utilization
         case resetsAt = "resets_at"
+    }
+}
+
+// A model-scoped rate-limit entry from the usage API's `limits` array; the app
+// only reads its percent/reset for the Fable weekly window.
+private struct ClaudeUsageLimit: Decodable {
+    let percent: Double
+    let resetsAt: String?
+    let scope: ClaudeUsageLimitScope?
+
+    enum CodingKeys: String, CodingKey {
+        case percent
+        case resetsAt = "resets_at"
+        case scope
+    }
+}
+
+private struct ClaudeUsageLimitScope: Decodable {
+    let model: ClaudeUsageLimitModel?
+}
+
+private struct ClaudeUsageLimitModel: Decodable {
+    let displayName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
     }
 }
 
