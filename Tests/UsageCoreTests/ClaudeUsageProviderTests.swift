@@ -74,6 +74,28 @@ func claudeUsageProviderExposesFableScopedWeeklyWindowFromLimits() async throws 
 }
 
 @Test
+func claudeUsageParserKeepsPrimaryWindowsWhenALimitEntryIsMalformed() throws {
+    // A future/non-Fable limit entry missing `percent` must not fail the whole
+    // decode; the valid five_hour/seven_day windows and Fable still parse.
+    let json = """
+    {
+      "five_hour": {"utilization": 11.0, "resets_at": "2026-07-04T06:10:00.229359+00:00"},
+      "seven_day": {"utilization": 23.0, "resets_at": "2026-07-06T10:00:00.229385+00:00"},
+      "limits": [
+        {"kind": "session", "group": "session"},
+        {"kind": "weekly_scoped", "percent": 44, "resets_at": "2026-07-06T10:00:01.229732+00:00", "scope": {"model": {"display_name": "Fable"}}}
+      ]
+    }
+    """
+    let usage = try ClaudeUsageParser().parse(Data(json.utf8))
+
+    #expect(usage.fiveHour.percentRemaining == 89)
+    #expect(usage.weekly.percentRemaining == 77)
+    let fable = try #require(usage.fable)
+    #expect(fable.percentRemaining == 56)
+}
+
+@Test
 func claudeUsageProviderSkipsRequestAndFallsBackToCacheWhenCredentialIsStale() async throws {
     let previous = sampleUsage(fiveHour: 44, weekly: 66)
     let cases: [(ClaudeCredentialReadResult, StaleReason)] = [

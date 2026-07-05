@@ -1376,8 +1376,8 @@ public struct ClaudeUsageParser: Sendable {
     // The Fable weekly limit arrives as a model-scoped entry in `limits`, not a
     // top-level window. A missing/unparseable reset degrades to nil (shown as
     // "reset unknown") rather than dropping the whole window.
-    private func fableWindow(from limits: [ClaudeUsageLimit]?) -> UsageWindow? {
-        guard let limit = limits?.first(where: {
+    private func fableWindow(from limits: [FailableDecodable<ClaudeUsageLimit>]?) -> UsageWindow? {
+        guard let limit = limits?.compactMap(\.value).first(where: {
             $0.scope?.model?.displayName?.caseInsensitiveCompare("Fable") == .orderedSame
         }) else {
             return nil
@@ -1499,12 +1499,25 @@ private struct ClaudeStatuslineWindow: Decodable {
 private struct ClaudeUsageResponse: Decodable {
     let fiveHour: ClaudeUsageResponseWindow
     let sevenDay: ClaudeUsageResponseWindow
-    let limits: [ClaudeUsageLimit]?
+    // Lossy: a malformed or restructured limit entry (e.g. a future non-Fable
+    // limit missing `percent`) must not fail the whole decode and strand the
+    // valid five_hour/seven_day windows in a parseFailure.
+    let limits: [FailableDecodable<ClaudeUsageLimit>]?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case limits
+    }
+}
+
+// Decodes each array element independently: an element that fails becomes nil
+// instead of throwing out of the enclosing container.
+private struct FailableDecodable<Value: Decodable>: Decodable {
+    let value: Value?
+
+    init(from decoder: Decoder) throws {
+        value = try? Value(from: decoder)
     }
 }
 
