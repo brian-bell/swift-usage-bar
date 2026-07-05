@@ -96,6 +96,27 @@ func claudeUsageParserKeepsPrimaryWindowsWhenALimitEntryIsMalformed() throws {
 }
 
 @Test
+func claudeUsageParserKeepsFableRowWhenResetsAtIsWrongType() throws {
+    // A Fable limit whose `resets_at` is present but the wrong JSON type (a
+    // number, not a string) must degrade to an unknown reset on a surviving
+    // row, not drop the whole Fable entry.
+    let json = """
+    {
+      "five_hour": {"utilization": 11.0, "resets_at": "2026-07-04T06:10:00.229359+00:00"},
+      "seven_day": {"utilization": 23.0, "resets_at": "2026-07-06T10:00:00.229385+00:00"},
+      "limits": [
+        {"kind": "weekly_scoped", "percent": 44, "resets_at": 1783332001, "scope": {"model": {"display_name": "Fable"}}}
+      ]
+    }
+    """
+    let usage = try ClaudeUsageParser().parse(Data(json.utf8))
+
+    let fable = try #require(usage.fable)
+    #expect(fable.percentRemaining == 56)
+    #expect(fable.resetsAt == nil)
+}
+
+@Test
 func claudeUsageProviderSkipsRequestAndFallsBackToCacheWhenCredentialIsStale() async throws {
     let previous = sampleUsage(fiveHour: 44, weekly: 66)
     let cases: [(ClaudeCredentialReadResult, StaleReason)] = [

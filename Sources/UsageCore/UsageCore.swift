@@ -1543,6 +1543,16 @@ private struct ClaudeUsageLimit: Decodable {
         case resetsAt = "resets_at"
         case scope
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        percent = try container.decode(Double.self, forKey: .percent)
+        scope = try container.decodeIfPresent(ClaudeUsageLimitScope.self, forKey: .scope)
+        // Lossy: a present-but-wrong-type `resets_at` (e.g. a number instead of
+        // an ISO string) degrades this field to nil — shown as "reset unknown" —
+        // instead of throwing and dropping the whole Fable row.
+        resetsAt = try? container.decodeIfPresent(String.self, forKey: .resetsAt)
+    }
 }
 
 private struct ClaudeUsageLimitScope: Decodable {
