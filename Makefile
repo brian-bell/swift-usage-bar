@@ -22,9 +22,9 @@ CODESIGN_IDENTITY ?= AIUsageBar Signing
 
 help: ## List available targets
 	@printf 'AIUsageBar targets:\n\n'
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -E '^[a-zA-Z_-]+:.*## .*$$' $(MAKEFILE_LIST) \
 		| sort \
-		| awk 'BEGIN {FS = ":.*?## "} {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*## "} {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 build: ## Debug build of the library + app (does NOT build the .app bundle)
 	swift build
