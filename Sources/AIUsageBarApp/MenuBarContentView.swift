@@ -58,6 +58,9 @@ private struct ProviderUsageRowView: View {
 
             UsageWindowRowView(row: row.fiveHour)
             UsageWindowRowView(row: row.weekly)
+            if let fable = row.fable {
+                UsageWindowRowView(row: fable)
+            }
         }
         .foregroundStyle(row.isStale ? .secondary : .primary)
     }

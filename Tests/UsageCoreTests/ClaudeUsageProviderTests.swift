@@ -44,6 +44,79 @@ func claudeUsageProviderBuildsUsageRequestAndReturnsFreshUsageWithoutConsultingC
 }
 
 @Test
+func claudeUsageProviderExposesFableScopedWeeklyWindowFromLimits() async throws {
+    let asOf = Date(timeIntervalSince1970: 1_783_128_465)
+    let transport = FakeHTTPTransport(response: (
+        try fixtureData("claude-usage.json"),
+        try httpResponse(statusCode: 200)
+    ))
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .fresh(validCredential())),
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
+            last: nil,
+            reason: .networkError,
+            hint: ""
+        )),
+        transport: transport,
+        now: { asOf }
+    )
+
+    let state = await provider.fetch(previous: nil)
+
+    guard case let .fresh(usage, asOf: _) = state else {
+        Issue.record("Expected fresh state, got \(state)")
+        return
+    }
+
+    let fable = try #require(usage.fable)
+    #expect(fable.percentRemaining == 56)
+    #expect(fable.resetsAt.map { Int($0.timeIntervalSince1970) } == 1_783_332_001)
+}
+
+@Test
+func claudeUsageParserKeepsPrimaryWindowsWhenALimitEntryIsMalformed() throws {
+    // A future/non-Fable limit entry missing `percent` must not fail the whole
+    // decode; the valid five_hour/seven_day windows and Fable still parse.
+    let json = """
+    {
+      "five_hour": {"utilization": 11.0, "resets_at": "2026-07-04T06:10:00.229359+00:00"},
+      "seven_day": {"utilization": 23.0, "resets_at": "2026-07-06T10:00:00.229385+00:00"},
+      "limits": [
+        {"kind": "session", "group": "session"},
+        {"kind": "weekly_scoped", "percent": 44, "resets_at": "2026-07-06T10:00:01.229732+00:00", "scope": {"model": {"display_name": "Fable"}}}
+      ]
+    }
+    """
+    let usage = try ClaudeUsageParser().parse(Data(json.utf8))
+
+    #expect(usage.fiveHour.percentRemaining == 89)
+    #expect(usage.weekly.percentRemaining == 77)
+    let fable = try #require(usage.fable)
+    #expect(fable.percentRemaining == 56)
+}
+
+@Test
+func claudeUsageParserKeepsFableRowWhenResetsAtIsWrongType() throws {
+    // A Fable limit whose `resets_at` is present but the wrong JSON type (a
+    // number, not a string) must degrade to an unknown reset on a surviving
+    // row, not drop the whole Fable entry.
+    let json = """
+    {
+      "five_hour": {"utilization": 11.0, "resets_at": "2026-07-04T06:10:00.229359+00:00"},
+      "seven_day": {"utilization": 23.0, "resets_at": "2026-07-06T10:00:00.229385+00:00"},
+      "limits": [
+        {"kind": "weekly_scoped", "percent": 44, "resets_at": 1783332001, "scope": {"model": {"display_name": "Fable"}}}
+      ]
+    }
+    """
+    let usage = try ClaudeUsageParser().parse(Data(json.utf8))
+
+    let fable = try #require(usage.fable)
+    #expect(fable.percentRemaining == 56)
+    #expect(fable.resetsAt == nil)
+}
+
+@Test
 func claudeUsageProviderSkipsRequestAndFallsBackToCacheWhenCredentialIsStale() async throws {
     let previous = sampleUsage(fiveHour: 44, weekly: 66)
     let cases: [(ClaudeCredentialReadResult, StaleReason)] = [

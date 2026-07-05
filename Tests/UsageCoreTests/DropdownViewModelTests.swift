@@ -48,6 +48,34 @@ func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
 }
 
 @Test
+func dropdownRowsExposeFableWindowOnlyWhenPresent() throws {
+    let withFable = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 62, resetsAt: referenceNow.addingTimeInterval(2 * 60 * 60)),
+        weekly: UsageWindow(percentRemaining: 81, resetsAt: referenceNow.addingTimeInterval(5 * 24 * 60 * 60)),
+        fable: UsageWindow(percentRemaining: 56, resetsAt: referenceNow.addingTimeInterval(90 * 60))
+    )
+
+    let model = DropdownViewModel(
+        states: [
+            .claude: .fresh(withFable, asOf: referenceNow),
+            .codex: .fresh(codexUsage, asOf: referenceNow),
+        ],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let claudeRow = try #require(model.rows.first { $0.provider == .claude })
+    let fable = try #require(claudeRow.fable)
+    #expect(fable.title == "Fable")
+    #expect(fable.percentLabel == "56%")
+    #expect(fable.countdownLabel == "resets in 1h 30m")
+
+    let codexRow = try #require(model.rows.first { $0.provider == .codex })
+    #expect(codexRow.fable == nil)
+}
+
+@Test
 func dropdownRowsFlagStaleProvidersWhilePreservingLastKnownValues() throws {
     let model = DropdownViewModel(
         states: [.claude: .stale(last: claudeUsage, reason: .networkError)],
