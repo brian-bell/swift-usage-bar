@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import UsageCore
 
+private final class BundleToken {}
+
 enum ProviderIconAsset {
     private static let resourceBundleName = "AIUsageBar_AIUsageBarApp.bundle"
 
@@ -31,10 +33,14 @@ enum ProviderIconAsset {
     }
 
     private static func candidateResourceBundleURLs() -> [URL] {
+        // Bundle(for:) resolves to the bundle holding this code — under
+        // `swift test` that is the xctest bundle in the build directory,
+        // where Bundle.main (the test runner) is nowhere near the resources.
         let baseURLs = [
             Bundle.main.resourceURL,
             Bundle.main.bundleURL,
             Bundle.main.executableURL?.deletingLastPathComponent(),
+            Bundle(for: BundleToken.self).bundleURL,
         ].compactMap(\.self)
 
         return baseURLs.flatMap { baseURL in

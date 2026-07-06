@@ -44,7 +44,8 @@ func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
     #expect(row.fiveHour.countdownLabel == "resets in 1h 30m")
     #expect(row.weekly.percentLabel == "-20% remaining")
     #expect(row.weekly.barFraction == 0)
-    #expect(row.weekly.countdownLabel == "resets Thu 12:00 PM")
+    // referenceNow (2026-01-01 12:00 UTC) is a Thursday; +3 days is Sunday.
+    #expect(row.weekly.countdownLabel == "resets Sun 12:00 PM")
 }
 
 @Test
@@ -100,13 +101,31 @@ func dropdownRowsUsePlaceholdersForStaleProvidersWithoutData() throws {
         locale: Locale(identifier: "en_US_POSIX")
     )
 
-    let row = try #require(model.rows.first)
+    let row = try #require(model.rows.first { $0.provider == .codex })
     #expect(row.isStale)
     #expect(row.staleMessage == "Stale: token expired")
     #expect(row.fiveHour.percentLabel == "--")
     #expect(row.fiveHour.barFraction == 0)
     #expect(row.fiveHour.countdownLabel == "reset unknown")
     #expect(row.weekly.percentLabel == "--")
+}
+
+@Test(arguments: [
+    (StaleReason.parseFailure, "Stale: parse failure"),
+    (StaleReason.networkError, "Stale: network error"),
+    (StaleReason.tokenExpired, "Stale: token expired"),
+    (StaleReason.credentialUnavailable, "Stale: credential unavailable"),
+])
+func dropdownStaleMessageMatchesStaleReason(reason: StaleReason, expectedMessage: String) throws {
+    let model = DropdownViewModel(
+        states: [.claude: .stale(last: nil, reason: reason)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .claude })
+    #expect(row.staleMessage == expectedMessage)
 }
 
 @Test
