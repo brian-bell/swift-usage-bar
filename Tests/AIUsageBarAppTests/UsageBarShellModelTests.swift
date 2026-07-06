@@ -7,26 +7,30 @@ import UsageCore
 
 @Test
 @MainActor
-func shellModelMenuBarTitleUsesCoreFormatter() {
+func shellModelMenuBarSegmentsUseCoreFormatter() {
     let appState = AppState(providerStates: [
         .codex: .fresh(codexUsage, asOf: referenceNow),
         .claude: .fresh(claudeUsage, asOf: referenceNow),
     ])
     let model = shellModel(appState: appState)
 
-    #expect(String(model.menuBarTitle.characters) == "* 62/81  # 72/90")
+    #expect(model.menuBarSegments == [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "72/90", isStale: false),
+    ])
 }
 
 @Test
 @MainActor
-func shellModelMenuBarTitleFallsBackWhenAllProvidersAreHidden() {
+func shellModelMenuBarSegmentsAreEmptyWhenAllProvidersAreHidden() {
     let appState = AppState(providerStates: [
         .claude: .hidden,
         .codex: .hidden,
     ])
     let model = shellModel(appState: appState)
 
-    #expect(String(model.menuBarTitle.characters) == "AI Usage")
+    // MenuBarLabelView renders the "AI Usage" fallback for empty segments.
+    #expect(model.menuBarSegments.isEmpty)
 }
 
 @Test

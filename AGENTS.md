@@ -4,7 +4,7 @@ Context for AI coding agents working in this repository. `CLAUDE.md` is a symlin
 
 ## What this project is
 
-**AIUsageBar** is a native macOS menu bar app (SwiftUI `MenuBarExtra`) that displays **percent remaining** for four subscription rate-limit windows: Claude (5-hour and weekly) and ChatGPT/Codex (5-hour and weekly). The menu bar title shows all visible providers at a glance (e.g. `* 62/81  # 72/90` — `*` is Claude, `#` is Codex, formatted as `fiveHour/weekly` percent remaining, `~` prefix when stale, `--/--` when no data). The dropdown shows progress bars, reset countdowns, a Refresh-now button with last-updated label, and inline settings.
+**AIUsageBar** is a native macOS menu bar app (SwiftUI `MenuBarExtra`) that displays **percent remaining** for four subscription rate-limit windows: Claude (5-hour and weekly) and ChatGPT/Codex (5-hour and weekly). The menu bar label renders visible providers as a compact two-line stack, one provider per row (e.g. `Cl 62/81` over `Cx 72/90` — `Cl` is Claude, `Cx` is Codex, formatted as `fiveHour/weekly` percent remaining, `~` prefix when stale, `--/--` when no data; a lone visible provider renders as a single compact row, and `AI Usage` is shown when all providers are hidden). The dropdown shows progress bars, reset countdowns, a Refresh-now button with last-updated label, and inline settings.
 
 Data access is strictly **read-only**: the app borrows existing CLI state and never writes to credential stores or refreshes OAuth tokens. When data can't be fetched, providers degrade to a greyed "stale" state instead of erroring.
 
