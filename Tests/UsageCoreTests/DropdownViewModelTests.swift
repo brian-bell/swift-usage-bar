@@ -39,10 +39,10 @@ func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
     )
 
     let row = try #require(model.rows.first)
-    #expect(row.fiveHour.percentLabel == "120%")
+    #expect(row.fiveHour.percentLabel == "120% remaining")
     #expect(row.fiveHour.barFraction == 1)
     #expect(row.fiveHour.countdownLabel == "resets in 1h 30m")
-    #expect(row.weekly.percentLabel == "-20%")
+    #expect(row.weekly.percentLabel == "-20% remaining")
     #expect(row.weekly.barFraction == 0)
     #expect(row.weekly.countdownLabel == "resets Thu 12:00 PM")
 }
@@ -68,7 +68,7 @@ func dropdownRowsExposeFableWindowOnlyWhenPresent() throws {
     let claudeRow = try #require(model.rows.first { $0.provider == .claude })
     let fable = try #require(claudeRow.fable)
     #expect(fable.title == "Fable")
-    #expect(fable.percentLabel == "56%")
+    #expect(fable.percentLabel == "56% remaining")
     #expect(fable.countdownLabel == "resets in 1h 30m")
 
     let codexRow = try #require(model.rows.first { $0.provider == .codex })
@@ -87,8 +87,8 @@ func dropdownRowsFlagStaleProvidersWhilePreservingLastKnownValues() throws {
     let row = try #require(model.rows.first)
     #expect(row.isStale)
     #expect(row.staleMessage == "Stale: network error")
-    #expect(row.fiveHour.percentLabel == "62%")
-    #expect(row.weekly.percentLabel == "81%")
+    #expect(row.fiveHour.percentLabel == "62% remaining")
+    #expect(row.weekly.percentLabel == "81% remaining")
 }
 
 @Test
