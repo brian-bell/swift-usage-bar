@@ -86,7 +86,6 @@ func menuBarLabelImageIsNilWhenAllProvidersAreHidden() {
 }
 
 @Test
-@MainActor
 func menuBarLabelLayoutPlacesFirstSegmentInTopRow() throws {
     let layout = try #require(MenuBarLabelImage.layout(for: [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
