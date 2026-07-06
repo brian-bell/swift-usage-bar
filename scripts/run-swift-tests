@@ -5,41 +5,18 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 swift build
-swift test --enable-swift-testing
-
-bin_path="$(swift build --show-bin-path)"
-test_binary="$bin_path/AIUsageBarPackageTests.xctest/Contents/MacOS/AIUsageBarPackageTests"
-if [ ! -f "$test_binary" ]; then
-    printf 'expected SwiftPM test bundle binary was not built\n' >&2
-    exit 1
-fi
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
+test_log="$tmpdir/swift-test.log"
 
-strings_output="$tmpdir/test-binary-strings"
-strings "$test_binary" >"$strings_output"
-if ! grep -q 'harnessWorks()' "$strings_output"; then
-    printf 'expected Swift Testing harnessWorks() test to be linked into %s\n' "$test_binary" >&2
+# On a CommandLineTools-only toolchain `swift test` compiles and links the
+# suites but exits 0 without executing them (there is no test runner).
+# Capture the output and require evidence that a test run actually happened.
+swift test --enable-swift-testing 2>&1 | tee "$test_log"
+
+if ! grep -qE 'Test run with [0-9]+ tests' "$test_log"; then
+    printf 'swift test did not execute any tests (CommandLineTools-only toolchain?).\n' >&2
+    printf 'Select full Xcode: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer\n' >&2
     exit 1
 fi
-
-cat >"$tmpdir/usage-core-smoke.swift" <<'SWIFT'
-import Foundation
-import UsageCore
-
-if UsageCore.version != "0.1.0" {
-    FileHandle.standardError.write(
-        Data("expected UsageCore.version 0.1.0, got \(UsageCore.version)\n".utf8)
-    )
-    exit(1)
-}
-SWIFT
-
-swiftc \
-    -I "$bin_path/Modules" \
-    "$bin_path/UsageCore.build/UsageCore.swift.o" \
-    "$tmpdir/usage-core-smoke.swift" \
-    -o "$tmpdir/usage-core-smoke"
-
-"$tmpdir/usage-core-smoke"
