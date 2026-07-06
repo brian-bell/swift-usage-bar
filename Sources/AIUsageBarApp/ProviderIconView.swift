@@ -5,7 +5,7 @@ import UsageCore
 enum ProviderIconAsset {
     private static let resourceBundleName = "AIUsageBar_AIUsageBarApp.bundle"
 
-    static func image(for provider: ProviderID) -> NSImage? {
+    static func image(for provider: ProviderID, pointSize: CGFloat? = nil) -> NSImage? {
         guard
             let bundle = resourceBundle(),
             let url = bundle.url(
@@ -17,6 +17,9 @@ enum ProviderIconAsset {
             return nil
         }
 
+        if let pointSize {
+            image.size = NSSize(width: pointSize, height: pointSize)
+        }
         image.isTemplate = true
         return image
     }
@@ -70,12 +73,11 @@ struct ProviderIconView: View {
     let size: CGFloat
 
     var body: some View {
-        if let image = ProviderIconAsset.image(for: provider) {
+        if let image = ProviderIconAsset.image(for: provider, pointSize: size) {
             Image(nsImage: image)
-                .resizable()
                 .renderingMode(.template)
-                .scaledToFit()
                 .frame(width: size, height: size)
+                .clipped()
         } else {
             Text(fallbackSymbol)
                 .font(.system(size: size, weight: .semibold, design: .rounded))

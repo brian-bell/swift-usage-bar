@@ -12,3 +12,13 @@ func providerIconAssetsLoadForAllProviders() throws {
         #expect(image.size.height > 0)
     }
 }
+
+@Test
+@MainActor
+func providerIconAssetsCanBeLoadedAtMenuBarPointSize() throws {
+    for provider in ProviderID.allCases {
+        let image = try #require(ProviderIconAsset.image(for: provider, pointSize: 13))
+        #expect(image.size.width == 13)
+        #expect(image.size.height == 13)
+    }
+}
