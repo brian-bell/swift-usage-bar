@@ -19,10 +19,10 @@ Access is strictly **read-only**: the app borrows state your CLIs already mainta
 
 | Provider | Source |
 |---|---|
-| Claude | Claude Code's Keychain credential (read-only) → `GET https://api.anthropic.com/api/oauth/usage`; falls back to the statusline JSON cached locally by `scripts/claude-statusline-cache` when the API is unavailable |
+| Claude | Background polls read only the statusline JSON cached locally by `scripts/claude-statusline-cache`. Clicking **Refresh now** additionally reads Claude Code's Keychain credential (read-only) and calls `GET https://api.anthropic.com/api/oauth/usage`, falling back to the cache if the API is unavailable |
 | Codex | Codex CLI's Keychain credential (read-only) → `GET https://chatgpt.com/backend-api/wham/usage` |
 
-The app never refreshes OAuth tokens, so live Claude data depends on Claude Code keeping its token fresh; on a machine with no recent Claude Code activity the row degrades to the statusline cache, then to a greyed stale display.
+The Claude OAuth API (and the Keychain read it requires) is reserved for manual refreshes so background polls never trigger a Keychain prompt or spend API calls. The app never refreshes OAuth tokens, so a manual refresh depends on Claude Code keeping its token fresh; between refreshes (or on a machine with no recent Claude Code activity) the row relies on the statusline cache, then degrades to a greyed stale display.
 
 See `docs/endpoints.md` for the discovered contracts and evidence.
 
@@ -30,7 +30,7 @@ See `docs/endpoints.md` for the discovered contracts and evidence.
 
 - macOS 14+
 - Swift 6 toolchain to build (developed with CommandLineTools-only Swift 6.3)
-- [Claude Code](https://claude.com/claude-code) logged in, for Claude numbers (the statusline cache wrapper below is an optional fallback)
+- [Claude Code](https://claude.com/claude-code) logged in, with the statusline cache wrapper below configured for automatic Claude updates (manual refreshes work without it)
 - [Codex CLI](https://github.com/openai/codex) logged in via ChatGPT, for Codex numbers
 
 ## Install
@@ -51,7 +51,7 @@ CODESIGN_IDENTITY="AIUsageBar Signing" ./scripts/bundle.sh
 
 Enable "Launch at login" from the dropdown settings if you want it to persist across restarts (macOS may ask you to approve it in System Settings › Login Items).
 
-On the first refresh macOS will ask whether AIUsageBar may read the `Claude Code-credentials` (and `Codex Auth`) Keychain items — click **Always Allow**. If you only click Allow, the prompt returns on a later poll; if you deny, the Claude row falls back to the statusline cache.
+On the first manual refresh macOS will ask whether AIUsageBar may read the `Claude Code-credentials` (and `Codex Auth`) Keychain items — click **Always Allow**. If you only click Allow, the prompt returns on a later manual refresh; if you deny, the Claude row falls back to the statusline cache. The Claude credential is only read when you click **Refresh now**, never during background polls.
 
 An ad-hoc signature pins the Keychain grant to the exact binary hash, so **every rebuild re-triggers the prompt**. To make the grant survive rebuilds, sign with a stable code-signing certificate:
 
@@ -59,9 +59,9 @@ An ad-hoc signature pins the Keychain grant to the exact binary hash, so **every
 2. Build with `CODESIGN_IDENTITY="AIUsageBar Signing" ./scripts/bundle.sh`. The signature's designated requirement is then pinned to the certificate rather than the binary hash, so it stays constant across rebuilds.
 3. Click **Always Allow** once for each item — the grant now persists until the certificate changes.
 
-### Claude statusline cache setup (optional fallback)
+### Claude statusline cache setup
 
-Claude usage is fetched live from the OAuth usage API. As a fallback for when the API can't be reached (or the token has expired), the app can also read a local cache written by your Claude Code statusline. Run the installer to wire it up:
+Between manual refreshes, Claude usage comes from a local cache written by your Claude Code statusline — without it, the Claude row only updates when you click **Refresh now** (which fetches live from the OAuth usage API, using the cache as its fallback). Run the installer to wire it up:
 
 ```sh
 scripts/setup-statusline

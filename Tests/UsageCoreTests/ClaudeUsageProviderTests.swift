@@ -21,7 +21,7 @@ func claudeUsageProviderBuildsUsageRequestAndReturnsFreshUsageWithoutConsultingC
         now: { asOf }
     )
 
-    let state = await provider.fetch(previous: nil)
+    let state = await provider.fetch(previous: nil, mode: .interactive)
     let request = try #require(transport.requests.first)
 
     guard case let .fresh(usage, asOf: freshAsOf) = state else {
@@ -61,7 +61,7 @@ func claudeUsageProviderExposesFableScopedWeeklyWindowFromLimits() async throws 
         now: { asOf }
     )
 
-    let state = await provider.fetch(previous: nil)
+    let state = await provider.fetch(previous: nil, mode: .interactive)
 
     guard case let .fresh(usage, asOf: _) = state else {
         Issue.record("Expected fresh state, got \(state)")
@@ -142,7 +142,7 @@ func claudeUsageProviderSkipsRequestAndFallsBackToCacheWhenCredentialIsStale() a
             now: { Date(timeIntervalSince1970: 1_783_128_465) }
         )
 
-        let state = await provider.fetch(previous: previous)
+        let state = await provider.fetch(previous: previous, mode: .interactive)
 
         #expect(state == .stale(last: previous, reason: expectedReason))
         #expect(transport.requests.isEmpty)
@@ -164,7 +164,7 @@ func claudeUsageProviderMapsThrowingCredentialReaderToCredentialUnavailable() as
         now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
-    let state = await provider.fetch(previous: previous)
+    let state = await provider.fetch(previous: previous, mode: .interactive)
 
     #expect(state == .stale(last: previous, reason: .credentialUnavailable))
     #expect(transport.requests.isEmpty)
@@ -195,7 +195,7 @@ func claudeUsageProviderMapsHTTPFailuresToAPIStaleReasons() async throws {
             now: { Date(timeIntervalSince1970: 1_783_128_465) }
         )
 
-        let state = await provider.fetch(previous: previous)
+        let state = await provider.fetch(previous: previous, mode: .interactive)
 
         #expect(state == .stale(last: previous, reason: expectedReason))
         #expect(transport.requests.count == 1)
@@ -215,7 +215,7 @@ func claudeUsageProviderMapsMalformedResponseBodyToParseFailure() async throws {
         now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
-    let state = await provider.fetch(previous: previous)
+    let state = await provider.fetch(previous: previous, mode: .interactive)
 
     #expect(state == .stale(last: previous, reason: .parseFailure))
 }
@@ -230,7 +230,7 @@ func claudeUsageProviderMapsTransportThrowToNetworkError() async {
         now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
-    let state = await provider.fetch(previous: previous)
+    let state = await provider.fetch(previous: previous, mode: .interactive)
 
     #expect(state == .stale(last: previous, reason: .networkError))
 }
@@ -250,7 +250,7 @@ func claudeUsageProviderReturnsFreshCacheUsageWhenAPIPathIsStale() async {
         now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
-    let state = await provider.fetch(previous: nil)
+    let state = await provider.fetch(previous: nil, mode: .interactive)
 
     #expect(state == .fresh(cached, asOf: cacheAsOf))
 }
@@ -270,7 +270,7 @@ func claudeUsageProviderPrefersStaleCacheUsageOverPreviousWithAPIStaleReason() a
         now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
-    let state = await provider.fetch(previous: previous)
+    let state = await provider.fetch(previous: previous, mode: .interactive)
 
     #expect(state == .stale(last: cached, reason: .tokenExpired))
 }
@@ -289,7 +289,7 @@ func claudeUsageProviderFallsBackToPreviousUsageWhenCacheHasNoData() async {
         now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
-    let state = await provider.fetch(previous: previous)
+    let state = await provider.fetch(previous: previous, mode: .interactive)
 
     #expect(state == .stale(last: previous, reason: .tokenExpired))
 }
@@ -304,7 +304,7 @@ func claudeUsageProviderFallsBackToPreviousUsageWhenCacheReaderThrows() async {
         now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
-    let state = await provider.fetch(previous: previous)
+    let state = await provider.fetch(previous: previous, mode: .interactive)
 
     #expect(state == .stale(last: previous, reason: .tokenExpired))
 }
@@ -328,21 +328,90 @@ func claudeUsageProviderForwardsInteractiveModeToCredentialReader() async {
 }
 
 @Test
-func claudeUsageProviderDefaultsToBackgroundMode() async {
-    let reader = FakeClaudeCredentialReader(result: .stale(reason: .tokenExpired))
-    let cacheReader = FakeClaudeStatuslineCacheReader(
-        result: .stale(last: nil, reason: .parseFailure, hint: "hint")
-    )
+func claudeUsageProviderServesFreshCacheOnBackgroundFetchWithoutTouchingCredentialOrNetwork() async throws {
+    let cacheAsOf = Date(timeIntervalSince1970: 1_783_000_000)
+    let cached = sampleUsage(fiveHour: 62, weekly: 81)
+    let reader = FakeClaudeCredentialReader(result: .fresh(validCredential()))
+    let transport = FakeHTTPTransport(response: (
+        try fixtureData("claude-usage.json"),
+        try httpResponse(statusCode: 200)
+    ))
     let provider = ClaudeUsageProvider(
         credentialReader: reader,
-        cacheReader: cacheReader,
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .fresh(
+            data: Data("{}".utf8),
+            usage: cached,
+            asOf: cacheAsOf
+        )),
+        transport: transport,
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    let state = await provider.fetch(previous: nil)
+
+    #expect(state == .fresh(cached, asOf: cacheAsOf))
+    #expect(reader.receivedModes.isEmpty)
+    #expect(transport.requests.isEmpty)
+}
+
+@Test
+func claudeUsageProviderSurfacesCacheReasonAndLastUsageOnBackgroundFetchWithStaleCache() async {
+    let cached = sampleUsage(fiveHour: 62, weekly: 81)
+    let previous = sampleUsage(fiveHour: 55, weekly: 75)
+    let reader = FakeClaudeCredentialReader(result: .fresh(validCredential()))
+    let transport = FakeHTTPTransport(error: URLError(.notConnectedToInternet))
+    let provider = ClaudeUsageProvider(
+        credentialReader: reader,
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
+            last: cached,
+            reason: .parseFailure,
+            hint: "Configure Claude Code statusline to write its cache."
+        )),
+        transport: transport,
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    let state = await provider.fetch(previous: previous)
+
+    #expect(state == .stale(last: cached, reason: .parseFailure))
+    #expect(reader.receivedModes.isEmpty)
+    #expect(transport.requests.isEmpty)
+}
+
+@Test
+func claudeUsageProviderFallsBackToPreviousUsageOnBackgroundFetchWhenCacheHasNoData() async {
+    let previous = sampleUsage(fiveHour: 55, weekly: 75)
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .fresh(validCredential())),
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
+            last: nil,
+            reason: .networkError,
+            hint: "Configure Claude Code statusline to write its cache."
+        )),
         transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
         now: { Date(timeIntervalSince1970: 1_783_128_465) }
     )
 
-    _ = await provider.fetch(previous: nil)
+    let state = await provider.fetch(previous: previous)
 
-    #expect(reader.receivedModes == [.background])
+    #expect(state == .stale(last: previous, reason: .networkError))
+}
+
+@Test
+func claudeUsageProviderMapsThrowingCacheReaderToNetworkErrorOnBackgroundFetch() async {
+    let previous = sampleUsage(fiveHour: 55, weekly: 75)
+    let reader = FakeClaudeCredentialReader(result: .fresh(validCredential()))
+    let provider = ClaudeUsageProvider(
+        credentialReader: reader,
+        cacheReader: FakeClaudeStatuslineCacheReader(error: CocoaError(.fileReadUnknown)),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    let state = await provider.fetch(previous: previous)
+
+    #expect(state == .stale(last: previous, reason: .networkError))
+    #expect(reader.receivedModes.isEmpty)
 }
 
 private final class FakeClaudeCredentialReader: ClaudeCredentialReading, @unchecked Sendable {
