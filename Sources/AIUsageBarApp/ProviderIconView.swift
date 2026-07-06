@@ -101,20 +101,92 @@ struct MenuBarLabelView: View {
     var body: some View {
         if segments.isEmpty {
             Text("AI Usage")
+        } else if let image = MenuBarLabelImage.image(for: segments) {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .frame(width: image.size.width, height: image.size.height)
         } else {
-            HStack(spacing: 7) {
-                ForEach(segments, id: \.provider) { segment in
-                    HStack(spacing: 2) {
-                        ProviderIconView(provider: segment.provider, size: 13)
-                        Text(segmentLabel(segment))
-                            .monospacedDigit()
-                    }
-                }
-            }
+            fallbackLabelText
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var fallbackLabelText: Text {
+        segments.enumerated().reduce(Text("")) { partial, element in
+            let separator = element.offset == 0 ? Text("") : Text("  ")
+            return partial + separator + Text(segmentLabel(element.element))
         }
     }
 
     private func segmentLabel(_ segment: MenuBarTitleSegment) -> String {
+        let prefix = segment.isStale ? "~" : ""
+        return "\(prefix)\(segment.value)"
+    }
+}
+
+enum MenuBarLabelImage {
+    private static let iconSize: CGFloat = 13
+    private static let iconTextSpacing: CGFloat = 3
+    private static let segmentSpacing: CGFloat = 10
+    private static let height: CGFloat = 18
+
+    @MainActor
+    static func image(for segments: [MenuBarTitleSegment]) -> NSImage? {
+        guard !segments.isEmpty else {
+            return nil
+        }
+
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .regular)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white,
+        ]
+        let measuredSegments = segments.map { segment in
+            let text = label(for: segment)
+            return (segment, text, (text as NSString).size(withAttributes: attributes))
+        }
+        let width = measuredSegments.enumerated().reduce(CGFloat(0)) { partial, element in
+            let separator = element.offset == 0 ? CGFloat(0) : segmentSpacing
+            return partial + separator + iconSize + iconTextSpacing + ceil(element.element.2.width)
+        }
+
+        let image = NSImage(size: NSSize(width: ceil(width), height: height))
+        image.lockFocus()
+        defer {
+            image.unlockFocus()
+        }
+
+        var x: CGFloat = 0
+        for (index, measuredSegment) in measuredSegments.enumerated() {
+            if index > 0 {
+                x += segmentSpacing
+            }
+
+            let iconRect = NSRect(
+                x: x,
+                y: (height - iconSize) / 2,
+                width: iconSize,
+                height: iconSize
+            )
+            ProviderIconAsset.image(for: measuredSegment.0.provider, pointSize: iconSize)?
+                .draw(in: iconRect)
+            x += iconSize + iconTextSpacing
+
+            let textY = (height - measuredSegment.2.height) / 2
+            (measuredSegment.1 as NSString).draw(
+                at: NSPoint(x: x, y: textY),
+                withAttributes: attributes
+            )
+            x += ceil(measuredSegment.2.width)
+        }
+
+        image.isTemplate = true
+        return image
+    }
+
+    private static func label(for segment: MenuBarTitleSegment) -> String {
         let prefix = segment.isStale ? "~" : ""
         return "\(prefix)\(segment.value)"
     }
