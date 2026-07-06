@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIUsageBar Compact Menu Bar Mockups</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #f5f3ef;
+      --ink: #171717;
+      --muted: #686460;
+      --line: #d8d2c9;
+      --panel: #fffdfa;
+      --bar-light: rgba(255, 255, 255, 0.72);
+      --bar-dark: rgba(31, 33, 37, 0.86);
+      --slot-light: rgba(0, 0, 0, 0.74);
+      --slot-dark: rgba(255, 255, 255, 0.88);
+      --ok: #2f7d63;
+      --warn: #a06011;
+      --risk: #b4324b;
+      --info: #315d8c;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--page);
+      color: var(--ink);
+    }
+
+    main {
+      width: min(1160px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+
+    header {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 24px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 16px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      font-size: 13px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    p {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      max-width: 860px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 18px 0 22px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel) 88%, transparent);
+    }
+
+    .segmented {
+      display: inline-grid;
+      grid-auto-flow: column;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.04);
+    }
+
+    .segmented button {
+      border: 0;
+      border-radius: 6px;
+      padding: 5px 10px;
+      color: var(--ink);
+      background: transparent;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .segmented button[aria-pressed="true"] {
+      background: var(--panel);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+
+    .caption {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .mockup-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }
+
+    .mockup {
+      display: grid;
+      gap: 12px;
+      min-height: 176px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .mockup-head {
+      display: grid;
+      gap: 4px;
+    }
+
+    .meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: rgba(49, 93, 140, 0.12);
+      color: var(--info);
+      font-weight: 600;
+    }
+
+    .badge.ok {
+      background: rgba(47, 125, 99, 0.14);
+      color: var(--ok);
+    }
+
+    .badge.warn {
+      background: rgba(160, 96, 17, 0.14);
+      color: var(--warn);
+    }
+
+    .badge.risk {
+      background: rgba(180, 50, 75, 0.13);
+      color: var(--risk);
+    }
+
+    .desktop {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .menu-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      height: 28px;
+      padding: 0 7px;
+      overflow: hidden;
+      border-radius: 7px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.48)),
+        var(--bar-light);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    }
+
+    .desktop.dark .menu-bar {
+      border-color: rgba(255, 255, 255, 0.12);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+        var(--bar-dark);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .menu-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      margin-right: auto;
+      color: rgba(0, 0, 0, 0.54);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .desktop.dark .menu-left {
+      color: rgba(255, 255, 255, 0.58);
+    }
+
+    .status-item {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 22px;
+      max-width: 100%;
+      padding: 0 3px;
+      color: var(--slot-light);
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .desktop.dark .status-item {
+      color: var(--slot-dark);
+    }
+
+    .status-item.current {
+      gap: 3px;
+    }
+
+    .glyph {
+      display: inline-grid;
+      place-items: center;
+      width: 13px;
+      height: 13px;
+      border-radius: 3px;
+      color: inherit;
+      font-size: 12px;
+      line-height: 1;
+      box-shadow: inset 0 0 0 1px currentColor;
+      opacity: 0.9;
+    }
+
+    .gap {
+      width: 10px;
+      height: 1px;
+      flex: 0 0 auto;
+    }
+
+    .provider-token {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0;
+      opacity: 0.82;
+    }
+
+    .provider-token.tight {
+      margin-right: 1px;
+    }
+
+    .stack {
+      display: inline-grid;
+      grid-auto-rows: 9px;
+      align-content: center;
+      gap: 1px;
+      height: 22px;
+      padding: 0 2px;
+      font-size: 10px;
+      line-height: 9px;
+    }
+
+    .stack-row {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: max-content;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    .stack-row .provider-token {
+      width: 10px;
+      text-align: center;
+      font-size: 8px;
+      opacity: 0.72;
+    }
+
+    .matrix {
+      display: inline-grid;
+      grid-template-columns: max-content max-content max-content;
+      grid-auto-rows: 9px;
+      align-content: center;
+      gap: 1px 4px;
+      height: 22px;
+      padding: 0 2px;
+      font-size: 10px;
+      line-height: 9px;
+    }
+
+    .matrix span {
+      min-width: 0;
+    }
+
+    .matrix .provider-token {
+      width: 9px;
+      text-align: center;
+      font-size: 8px;
+      opacity: 0.72;
+    }
+
+    .cols {
+      letter-spacing: 0;
+    }
+
+    .subtle {
+      opacity: 0.62;
+    }
+
+    .active-low {
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+
+    .sample-row {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 10px;
+      align-items: center;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .sample-row code {
+      color: var(--ink);
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .notes {
+      display: grid;
+      gap: 8px;
+      margin-top: 20px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel) 82%, transparent);
+    }
+
+    .notes ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .notes li + li {
+      margin-top: 4px;
+    }
+
+    @media (max-width: 540px) {
+      main {
+        width: min(100vw - 20px, 1160px);
+        padding-top: 18px;
+      }
+
+      .mockup-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .menu-left {
+        gap: 7px;
+        font-size: 11px;
+      }
+
+      .sample-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Compact menu bar display mockups</h1>
+      <p>
+        Same sample data as the formatter tests: Claude 62/81, Codex 72/90. Widths are browser measurements of the rendered status item, useful for comparing relative compactness before implementing a SwiftUI/NSImage version.
+      </p>
+    </header>
+
+    <section class="toolbar" aria-label="Mockup controls">
+      <div class="segmented" role="group" aria-label="Menu bar appearance">
+        <button type="button" data-theme="light" aria-pressed="true">Light</button>
+        <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+      </div>
+      <span class="caption">Menu bar height: 28px in this page, with each status item constrained to a 22px slot.</span>
+    </section>
+
+    <section class="mockup-grid">
+      <article class="mockup">
+        <div class="mockup-head">
+          <h2>Current icon + pair</h2>
+          <div class="meta">
+            <span class="badge">baseline</span>
+            <span data-width-for="current">measuring...</span>
+          </div>
+        </div>
+        <div class="desktop">
+          <div class="menu-bar">
+            <div class="menu-left"><span>Finder</span><span>File</span><span>Edit</span></div>
+            <div class="status-item current" data-measure="current">
+              <span class="glyph">*</span><span>62/81</span><span class="gap"></span><span class="glyph">#</span><span>72/90</span>
+            </div>
+          </div>
+          <div class="sample-row"><span>String shape</span><code>* 62/81  # 72/90</code></div>
+          <div class="sample-row"><span>Read</span><span>Clear, but icons plus gaps dominate the width.</span></div>
+        </div>
+      </article>
+
+      <article class="mockup">
+        <div class="mockup-head">
+          <h2>One-line iconless labels</h2>
+          <div class="meta">
+            <span class="badge ok">easy</span>
+            <span data-width-for="one-line-labels">measuring...</span>
+          </div>
+        </div>
+        <div class="desktop">
+          <div class="menu-bar">
+            <div class="menu-left"><span>Finder</span><span>File</span><span>Edit</span></div>
+            <div class="status-item" data-measure="one-line-labels">
+              <span class="provider-token tight">Cl</span><span>62/81</span><span class="gap"></span><span class="provider-token tight">Cx</span><span>72/90</span>
+            </div>
+          </div>
+          <div class="sample-row"><span>String shape</span><code>Cl62/81 Cx72/90</code></div>
+          <div class="sample-row"><span>Read</span><span>Best low-risk version if provider labels stay textual.</span></div>
+        </div>
+      </article>
+
+      <article class="mockup">
+        <div class="mockup-head">
+          <h2>One-line ordered pairs</h2>
+          <div class="meta">
+            <span class="badge warn">compact</span>
+            <span data-width-for="ordered-pairs">measuring...</span>
+          </div>
+        </div>
+        <div class="desktop">
+          <div class="menu-bar">
+            <div class="menu-left"><span>Finder</span><span>File</span><span>Edit</span></div>
+            <div class="status-item" data-measure="ordered-pairs">
+              <span>62/81</span><span class="gap"></span><span>72/90</span>
+            </div>
+          </div>
+          <div class="sample-row"><span>String shape</span><code>62/81 72/90</code></div>
+          <div class="sample-row"><span>Read</span><span>Very compact, but provider identity relies on fixed ordering.</span></div>
+        </div>
+      </article>
+
+      <article class="mockup">
+        <div class="mockup-head">
+          <h2>Two-line provider stack</h2>
+          <div class="meta">
+            <span class="badge ok">possible</span>
+            <span data-width-for="two-line-stack">measuring...</span>
+          </div>
+        </div>
+        <div class="desktop">
+          <div class="menu-bar">
+            <div class="menu-left"><span>Finder</span><span>File</span><span>Edit</span></div>
+            <div class="status-item stack" data-measure="two-line-stack">
+              <div class="stack-row"><span class="provider-token">Cl</span><span>62/81</span></div>
+              <div class="stack-row"><span class="provider-token">Cx</span><span>72/90</span></div>
+            </div>
+          </div>
+          <div class="sample-row"><span>String shape</span><code>Cl 62/81<br>Cx 72/90</code></div>
+          <div class="sample-row"><span>Read</span><span>Most compact while preserving both providers and both windows.</span></div>
+        </div>
+      </article>
+
+      <article class="mockup">
+        <div class="mockup-head">
+          <h2>Two-line matrix</h2>
+          <div class="meta">
+            <span class="badge warn">dense</span>
+            <span data-width-for="two-line-matrix">measuring...</span>
+          </div>
+        </div>
+        <div class="desktop">
+          <div class="menu-bar">
+            <div class="menu-left"><span>Finder</span><span>File</span><span>Edit</span></div>
+            <div class="status-item matrix" data-measure="two-line-matrix">
+              <span class="provider-token">Cl</span><span>62</span><span>81</span>
+              <span class="provider-token">Cx</span><span>72</span><span>90</span>
+            </div>
+          </div>
+          <div class="sample-row"><span>String shape</span><code>Cl 62 81<br>Cx 72 90</code></div>
+          <div class="sample-row"><span>Read</span><span>Shortest full-data option; slash removal makes the 5h/week mapping learned behavior.</span></div>
+        </div>
+      </article>
+
+      <article class="mockup">
+        <div class="mockup-head">
+          <h2>Two-line values only</h2>
+          <div class="meta">
+            <span class="badge risk">too cryptic</span>
+            <span data-width-for="values-only">measuring...</span>
+          </div>
+        </div>
+        <div class="desktop">
+          <div class="menu-bar">
+            <div class="menu-left"><span>Finder</span><span>File</span><span>Edit</span></div>
+            <div class="status-item stack" data-measure="values-only">
+              <div class="stack-row"><span>62/81</span></div>
+              <div class="stack-row"><span>72/90</span></div>
+            </div>
+          </div>
+          <div class="sample-row"><span>String shape</span><code>62/81<br>72/90</code></div>
+          <div class="sample-row"><span>Read</span><span>Smallest readable stack, but ambiguous without remembering provider order.</span></div>
+        </div>
+      </article>
+
+      <article class="mockup">
+        <div class="mockup-head">
+          <h2>Adaptive minimums</h2>
+          <div class="meta">
+            <span class="badge">creative</span>
+            <span data-width-for="adaptive-minimums">measuring...</span>
+          </div>
+        </div>
+        <div class="desktop">
+          <div class="menu-bar">
+            <div class="menu-left"><span>Finder</span><span>File</span><span>Edit</span></div>
+            <div class="status-item" data-measure="adaptive-minimums">
+              <span class="provider-token tight">Cl</span><span class="active-low">62</span><span class="gap"></span><span class="provider-token tight">Cx</span><span class="active-low">72</span>
+            </div>
+          </div>
+          <div class="sample-row"><span>String shape</span><code>Cl62 Cx72</code></div>
+          <div class="sample-row"><span>Read</span><span>Shows the limiting window only; dropdown still carries full 5h/week detail.</span></div>
+        </div>
+      </article>
+
+      <article class="mockup">
+        <div class="mockup-head">
+          <h2>Adaptive two-line detail</h2>
+          <div class="meta">
+            <span class="badge">hybrid</span>
+            <span data-width-for="adaptive-detail">measuring...</span>
+          </div>
+        </div>
+        <div class="desktop">
+          <div class="menu-bar">
+            <div class="menu-left"><span>Finder</span><span>File</span><span>Edit</span></div>
+            <div class="status-item stack" data-measure="adaptive-detail">
+              <div class="stack-row"><span class="provider-token">Cl</span><span class="active-low">62</span><span class="subtle">81</span></div>
+              <div class="stack-row"><span class="provider-token">Cx</span><span class="active-low">72</span><span class="subtle">90</span></div>
+            </div>
+          </div>
+          <div class="sample-row"><span>String shape</span><code>Cl 62 81<br>Cx 72 90</code></div>
+          <div class="sample-row"><span>Read</span><span>Same width as matrix, but visually emphasizes the limiting number.</span></div>
+        </div>
+      </article>
+
+      <article class="mockup">
+        <div class="mockup-head">
+          <h2>Stale and missing data</h2>
+          <div class="meta">
+            <span class="badge warn">state check</span>
+            <span data-width-for="stale-missing">measuring...</span>
+          </div>
+        </div>
+        <div class="desktop">
+          <div class="menu-bar">
+            <div class="menu-left"><span>Finder</span><span>File</span><span>Edit</span></div>
+            <div class="status-item stack" data-measure="stale-missing">
+              <div class="stack-row"><span class="provider-token">Cl</span><span>~62/81</span></div>
+              <div class="stack-row"><span class="provider-token">Cx</span><span>--/--</span></div>
+            </div>
+          </div>
+          <div class="sample-row"><span>String shape</span><code>Cl ~62/81<br>Cx --/--</code></div>
+          <div class="sample-row"><span>Read</span><span>Two-line stack handles the existing stale and placeholder grammar cleanly.</span></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="notes">
+      <h2>Implementation notes</h2>
+      <ul>
+        <li>Two lines are visually possible only if the status item is rendered as a custom image or a tightly controlled custom label view; normal text sizing is too tall.</li>
+        <li>The two-line provider stack is the best first prototype: it preserves provider identity, stale markers, and the current pair grammar while cutting horizontal width substantially.</li>
+        <li>The matrix variants are more compact, but they require users to learn that each row is provider and each column is 5h/week.</li>
+        <li>The adaptive minimum variant is the most compact, but it changes the information model because weekly values disappear from the menu bar until the user opens the dropdown.</li>
+      </ul>
+    </section>
+  </main>
+
+  <script>
+    const themeButtons = Array.from(document.querySelectorAll("[data-theme]"));
+    const desktops = Array.from(document.querySelectorAll(".desktop"));
+
+    function setTheme(theme) {
+      desktops.forEach((desktop) => {
+        desktop.classList.toggle("dark", theme === "dark");
+      });
+      themeButtons.forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.theme === theme));
+      });
+    }
+
+    function updateWidths() {
+      document.querySelectorAll("[data-measure]").forEach((item) => {
+        const key = item.dataset.measure;
+        const target = document.querySelector(`[data-width-for="${key}"]`);
+        if (!target) {
+          return;
+        }
+        const width = Math.ceil(item.getBoundingClientRect().width);
+        target.textContent = `${width}px rendered`;
+      });
+    }
+
+    themeButtons.forEach((button) => {
+      button.addEventListener("click", () => setTheme(button.dataset.theme));
+    });
+
+    window.addEventListener("resize", updateWidths);
+    updateWidths();
+  </script>
+</body>
+</html>
