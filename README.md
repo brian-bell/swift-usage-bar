@@ -2,7 +2,7 @@
 
 A native macOS menu bar app that shows how much of your **Claude** and **ChatGPT/Codex** subscription rate limits you have left — always visible, at a glance.
 
-The menu bar shows percent **remaining** (fuel-gauge semantics) for each provider's 5-hour and weekly windows, e.g. `* 62/81  # 72/90` (`*` Claude, `#` Codex, `fiveHour/weekly`). The dropdown adds progress bars, exact percentages, reset countdowns, a Refresh-now button with last-updated time, and inline settings.
+The menu bar shows percent **remaining** (fuel-gauge semantics) for each provider's 5-hour and weekly windows as a compact two-line stack, e.g. `Cl 62/81` over `Cx 72/90` (`Cl` Claude, `Cx` Codex, `fiveHour/weekly`). The dropdown adds progress bars, exact percentages, reset countdowns, a Refresh-now button with last-updated time, and inline settings.
 
 Access is strictly **read-only**: the app borrows state your CLIs already maintain. It never writes to the Keychain, never refreshes OAuth tokens, and degrades to a greyed "stale" display when data is unavailable.
 

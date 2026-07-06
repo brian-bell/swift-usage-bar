@@ -112,15 +112,6 @@ final class UsageBarShellModel {
 }
 
 extension UsageBarShellModel {
-    var menuBarTitle: AttributedString {
-        let title = MenuBarTitleFormatter.format(appState.states)
-        guard !String(title.characters).isEmpty else {
-            return AttributedString("AI Usage")
-        }
-
-        return title
-    }
-
     var menuBarSegments: [MenuBarTitleSegment] {
         MenuBarTitleFormatter.segments(appState.states)
     }

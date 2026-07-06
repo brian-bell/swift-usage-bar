@@ -82,6 +82,23 @@ func menuBarLabelImageRendersSingleProviderAsOneCompactRow() throws {
 @MainActor
 func menuBarLabelImageIsNilWhenAllProvidersAreHidden() {
     #expect(MenuBarLabelImage.image(for: []) == nil)
+    #expect(MenuBarLabelImage.layout(for: []) == nil)
+}
+
+@Test
+@MainActor
+func menuBarLabelLayoutPlacesFirstSegmentInTopRow() throws {
+    let layout = try #require(MenuBarLabelImage.layout(for: [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "72/90", isStale: false),
+    ]))
+
+    let rows = layout.rows
+    #expect(rows.map(\.text) == ["Cl 62/81", "Cx 72/90"])
+    // Non-flipped image coordinates: the first segment's row sits above the second's.
+    #expect(rows[0].textOrigin.y == rows[1].textOrigin.y + MenuBarLabelImage.rowHeight)
+    #expect(rows[1].textOrigin.y >= 0)
+    #expect(layout.size.height == MenuBarLabelImage.rowHeight * 2)
 }
 
 @MainActor

@@ -27,30 +27,54 @@ enum MenuBarLabelImage {
         ]
     }
 
-    @MainActor
-    static func image(for segments: [MenuBarTitleSegment]) -> NSImage? {
+    struct Layout {
+        struct Row {
+            let text: String
+            let textOrigin: NSPoint
+        }
+
+        let size: NSSize
+        let rows: [Row]
+    }
+
+    static func layout(for segments: [MenuBarTitleSegment]) -> Layout? {
         guard !segments.isEmpty else {
             return nil
         }
 
         let attributes = rowAttributes
-        let rows = segments.map { segment -> (text: NSString, size: NSSize) in
-            let text = rowLabel(for: segment) as NSString
-            return (text, text.size(withAttributes: attributes))
+        let measured = segments.map { segment -> (text: String, size: NSSize) in
+            let text = rowLabel(for: segment)
+            return (text, (text as NSString).size(withAttributes: attributes))
         }
-        let width = ceil(rows.map(\.size.width).max() ?? 0)
-        let height = rowHeight * CGFloat(rows.count)
+        let width = ceil(measured.map(\.size.width).max() ?? 0)
+        let height = rowHeight * CGFloat(measured.count)
+        let rows = measured.enumerated().map { index, row in
+            let rowMinY = height - rowHeight * CGFloat(index + 1)
+            return Layout.Row(
+                text: row.text,
+                textOrigin: NSPoint(x: 0, y: rowMinY + (rowHeight - row.size.height) / 2)
+            )
+        }
 
-        let image = NSImage(size: NSSize(width: width, height: height))
+        return Layout(size: NSSize(width: width, height: height), rows: rows)
+    }
+
+    @MainActor
+    static func image(for segments: [MenuBarTitleSegment]) -> NSImage? {
+        guard let layout = layout(for: segments) else {
+            return nil
+        }
+
+        let attributes = rowAttributes
+        let image = NSImage(size: layout.size)
         image.lockFocus()
         defer {
             image.unlockFocus()
         }
 
-        for (index, row) in rows.enumerated() {
-            let rowMinY = height - rowHeight * CGFloat(index + 1)
-            let textY = rowMinY + (rowHeight - row.size.height) / 2
-            row.text.draw(at: NSPoint(x: 0, y: textY), withAttributes: attributes)
+        for row in layout.rows {
+            (row.text as NSString).draw(at: row.textOrigin, withAttributes: attributes)
         }
 
         image.isTemplate = true

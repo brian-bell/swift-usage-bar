@@ -1,6 +1,6 @@
 # Implementation Plan: `mac-ai-usage-bar`
 
-> Status: **historical** — all phases (0–7) were implemented and merged to `main` via PRs #1–#8 (July 2026). This document is kept as the original design record; the code is the source of truth where they differ (e.g. `UsageCore` ended up as flat source files rather than the subdirectory layout sketched below, and the menu bar symbols shipped as `*`/`#` rather than `✳`/`⬡`).
+> Status: **historical** — all phases (0–7) were implemented and merged to `main` via PRs #1–#8 (July 2026). This document is kept as the original design record; the code is the source of truth where they differ (e.g. `UsageCore` ended up as flat source files rather than the subdirectory layout sketched below, and the menu bar label later became a two-line `Cl`/`Cx` text stack (issue #16) rather than the one-line `✳`/`⬡` symbols).
 
 ## Goal
 
