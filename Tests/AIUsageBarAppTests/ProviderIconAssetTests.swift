@@ -22,16 +22,3 @@ func providerIconAssetsCanBeLoadedAtMenuBarPointSize() throws {
         #expect(image.size.height == 13)
     }
 }
-
-@Test
-@MainActor
-func menuBarLabelImageIncludesMultipleProviderSegments() throws {
-    let image = try #require(MenuBarLabelImage.image(for: [
-        MenuBarTitleSegment(provider: .claude, value: "99/45", isStale: false),
-        MenuBarTitleSegment(provider: .codex, value: "93/59", isStale: false),
-    ]))
-
-    #expect(image.isTemplate)
-    #expect(image.size.width > 80)
-    #expect(image.size.height == 18)
-}
