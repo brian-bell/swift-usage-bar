@@ -18,13 +18,13 @@ All eight implementation phases (0–7) of `docs/PLAN.md` are complete and merge
 
 ## Build, test, run
 
-There is no Makefile or CI config; SwiftPM and shell scripts are the whole build system. Toolchain: Swift 6 (developed on 6.3.3, CommandLineTools-only), target macOS 14+.
+There is no Makefile or CI config; SwiftPM and shell scripts are the whole build system. Toolchain: Swift 6 (6.3.3 via full Xcode 26.6, selected with `xcode-select`; the project was CommandLineTools-only until July 2026), target macOS 14+.
 
 | Command | Purpose |
 |---|---|
 | `swift build` | Debug build; must be clean under Swift 6 strict concurrency |
-| `swift test --enable-swift-testing` | Build the Swift Testing suites (see caveat below) |
-| `scripts/run-swift-tests` | Full harness: build + test build + linkage check + UsageCore smoke compile |
+| `swift test --enable-swift-testing` | Build **and execute** the Swift Testing suites (needs full Xcode selected; see note below) |
+| `scripts/run-swift-tests` | Full harness: build + execute tests, failing if the toolchain compiled the suites without actually running them |
 | `scripts/bundle.sh` | Release build → assemble `AIUsageBar.app` → codesign (ad-hoc, or `CODESIGN_IDENTITY`) → verify |
 | `scripts/bundle.sh --verify [APP_PATH]` | Verify an existing bundle (plist keys, executable, signature) |
 | `Tests/Scripts/bundle-script-test.sh` | Shell tests for the bundle script |
@@ -32,9 +32,9 @@ There is no Makefile or CI config; SwiftPM and shell scripts are the whole build
 | `scripts/setup-statusline` | Idempotently wire the cache wrapper into `statusLine` in Claude Code settings, preserving any existing statusline command in a passthrough shim |
 | `Tests/Scripts/setup-statusline-test.sh` | Shell tests for the statusline setup script |
 
-Note: `Package.swift` carries `unsafeFlags` on the test targets pointing at `/Library/Developer/CommandLineTools/Library/Developer/Frameworks` because a CommandLineTools-only install exposes Swift Testing there but ships no `XCTest.framework`. Tests use Swift Testing (`@Test`/`#expect`), not XCTest.
+Note: `Package.swift` carries `unsafeFlags` on the test targets pointing at `/Library/Developer/CommandLineTools/Library/Developer/Frameworks` because a CommandLineTools-only install exposes Swift Testing there but ships no `XCTest.framework`; the flags are harmless under full Xcode. Tests use Swift Testing (`@Test`/`#expect`), not XCTest.
 
-**Test-execution caveat:** on a CommandLineTools-only machine (no full Xcode), `swift test --enable-swift-testing` compiles and links the test bundle but exits after `Build complete!` without executing tests — there is no XCTest runner to host the bundle. `scripts/run-swift-tests` compensates by verifying the built test bundle links the expected Swift Testing symbols and by smoke-compiling a program against `UsageCore`. To actually execute the suites, run `swift test` on a machine with full Xcode installed. Don't mistake a green `swift test` here for executed tests.
+**Test-execution note:** this machine has full Xcode selected (`xcode-select -p` → `/Applications/Xcode.app/Contents/Developer`), so `swift test --enable-swift-testing` genuinely executes the suites. On a CommandLineTools-only toolchain it compiles and links the test bundle but exits after `Build complete!` without executing anything (there is no runner to host the bundle) — `scripts/run-swift-tests` guards against that failure mode by requiring a `Test run with N tests` line in the output, and tells you to select full Xcode if it's missing. The first real execution of the suites (July 2026) surfaced 4 latent test failures, tracked (and fixed) via issue #17.
 
 The app bundle is `AIUsageBar.app` (identifier `dev.brianbell.AIUsageBar`, `LSUIElement=true` so no Dock icon), signed for personal local use — no notarization or distribution. `bundle.sh` signs ad-hoc by default; set `CODESIGN_IDENTITY` to a self-signed code-signing certificate's name to get a stable designated requirement (pinned to the cert, not the binary hash) so Keychain "Always Allow" grants survive rebuilds instead of re-prompting after every build. A bad identity fails the signing step (`codesign signing failed for identity: …`) and the staging directory is cleaned up on any exit. When rebuilding or relaunching the user's login app, do not silently accept the ad-hoc fallback: build with `CODESIGN_IDENTITY="AIUsageBar Signing" scripts/bundle.sh`, then verify with `codesign -dv AIUsageBar.app 2>&1` that `Signature=adhoc` is absent. `security find-identity -v -p codesigning` may not list this self-signed certificate as a valid identity; check for it with `security find-certificate -c "AIUsageBar Signing" -a -Z` if needed, and treat the post-build `codesign -dv` output as authoritative.
 
