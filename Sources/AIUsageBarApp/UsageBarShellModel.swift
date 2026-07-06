@@ -121,6 +121,10 @@ extension UsageBarShellModel {
         return title
     }
 
+    var menuBarSegments: [MenuBarTitleSegment] {
+        MenuBarTitleFormatter.segments(appState.states)
+    }
+
     var dropdownViewModel: DropdownViewModel {
         DropdownViewModel(
             states: appState.states,

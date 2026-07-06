@@ -147,6 +147,16 @@ fi
 "$bundle_script" --verify "$built_app"
 codesign -v "$built_app"
 
+if ! find "$built_app/Contents/Resources/AIUsageBar_AIUsageBarApp.bundle" -name ProviderIcon-claude.svg -print -quit | grep -q .; then
+    printf 'expected built bundle to include Claude provider icon resource\n' >&2
+    exit 1
+fi
+
+if ! find "$built_app/Contents/Resources/AIUsageBar_AIUsageBarApp.bundle" -name ProviderIcon-codex.svg -print -quit | grep -q .; then
+    printf 'expected built bundle to include Codex provider icon resource\n' >&2
+    exit 1
+fi
+
 # CODESIGN_IDENTITY selects the signing identity; a bogus identity fails at the
 # signing step with a deterministic message (the swift build is cached from above).
 bogus_identity="AIUsageBar No Such Signing Identity"

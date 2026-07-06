@@ -23,7 +23,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "AIUsageBarApp",
-            dependencies: ["UsageCore"]
+            dependencies: ["UsageCore"],
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "UsageCoreTests",

@@ -1443,23 +1443,42 @@ public enum CountdownFormatter {
     }
 }
 
+public struct MenuBarTitleSegment: Equatable, Sendable {
+    public let provider: ProviderID
+    public let value: String
+    public let isStale: Bool
+
+    public init(provider: ProviderID, value: String, isStale: Bool) {
+        self.provider = provider
+        self.value = value
+        self.isStale = isStale
+    }
+}
+
 public enum MenuBarTitleFormatter {
-    public static func format(_ states: [ProviderID: ProviderState]) -> AttributedString {
-        let segments = ProviderID.allCases.compactMap { provider -> String? in
+    public static func segments(_ states: [ProviderID: ProviderState]) -> [MenuBarTitleSegment] {
+        ProviderID.allCases.compactMap { provider -> MenuBarTitleSegment? in
             guard let state = states[provider] else {
-                return "\(provider.symbol) --/--"
+                return MenuBarTitleSegment(provider: provider, value: "--/--", isStale: false)
             }
 
             switch state {
             case let .fresh(usage, _):
-                return "\(provider.symbol) \(usage.remainingPair)"
+                return MenuBarTitleSegment(provider: provider, value: usage.remainingPair, isStale: false)
             case let .stale(last: usage?, reason: _):
-                return "\(provider.symbol) ~\(usage.remainingPair)"
+                return MenuBarTitleSegment(provider: provider, value: usage.remainingPair, isStale: true)
             case .stale(last: nil, reason: _):
-                return "\(provider.symbol) --/--"
+                return MenuBarTitleSegment(provider: provider, value: "--/--", isStale: false)
             case .hidden:
                 return nil
             }
+        }
+    }
+
+    public static func format(_ states: [ProviderID: ProviderState]) -> AttributedString {
+        let segments = segments(states).map { segment in
+            let prefix = segment.isStale ? "~" : ""
+            return "\(segment.provider.symbol) \(prefix)\(segment.value)"
         }
 
         return AttributedString(segments.joined(separator: "  "))

@@ -13,6 +13,19 @@ func menuBarTitleFormatterUsesStableProviderOrderForFreshUsage() {
 }
 
 @Test
+func menuBarTitleFormatterExposesProviderSegmentsForIconRendering() {
+    let segments = MenuBarTitleFormatter.segments([
+        .codex: .fresh(codexUsage, asOf: Date(timeIntervalSince1970: 20)),
+        .claude: .stale(last: claudeUsage, reason: .networkError),
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: true),
+        MenuBarTitleSegment(provider: .codex, value: "72/90", isStale: false),
+    ])
+}
+
+@Test
 func menuBarTitleFormatterOmitsHiddenProviders() {
     let title = MenuBarTitleFormatter.format([
         .claude: .hidden,

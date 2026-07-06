@@ -152,6 +152,7 @@ build_bundle() {
     local app_path="$1"
     local bin_path
     local built_executable
+    local resource_bundle
     local output_parent
     local staged_app
     local plist
@@ -163,13 +164,17 @@ build_bundle() {
     if [ ! -x "$built_executable" ]; then
         fail "release executable not found: $built_executable"
     fi
+    resource_bundle="$bin_path/AIUsageBar_AIUsageBarApp.bundle"
+    if [ ! -d "$resource_bundle" ]; then
+        fail "resource bundle not found: $resource_bundle"
+    fi
 
     output_parent="$(dirname "$app_path")"
     mkdir -p "$output_parent"
     staging_parent="$(mktemp -d "$output_parent/.AIUsageBar.bundle.XXXXXX")"
     staged_app="$staging_parent/AIUsageBar.app"
 
-    mkdir -p "$staged_app/Contents/MacOS"
+    mkdir -p "$staged_app/Contents/MacOS" "$staged_app/Contents/Resources"
 
     plist="$staged_app/Contents/Info.plist"
     cat >"$plist" <<PLIST
@@ -200,6 +205,7 @@ build_bundle() {
 PLIST
 
     install -m 755 "$built_executable" "$staged_app/Contents/MacOS/$product_name"
+    cp -R "$resource_bundle" "$staged_app/Contents/Resources/"
     local codesign_identity="${CODESIGN_IDENTITY:--}"
     if ! codesign --force --sign "$codesign_identity" "$staged_app"; then
         fail "codesign signing failed for identity: $codesign_identity"

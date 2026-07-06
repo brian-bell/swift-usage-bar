@@ -46,6 +46,7 @@ private struct ProviderUsageRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
+                ProviderIconView(provider: row.provider, size: 16)
                 Text(row.providerName)
                     .font(.headline)
                 Spacer()
