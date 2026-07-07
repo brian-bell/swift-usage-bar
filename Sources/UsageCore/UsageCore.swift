@@ -1382,7 +1382,13 @@ public struct ClaudeUsageParser: Sendable {
         }
     }
 
-    private func usageWindow(from window: ClaudeUsageResponseWindow) throws -> UsageWindow {
+    private func usageWindow(from window: ClaudeUsageResponseWindow?) throws -> UsageWindow {
+        guard let window else {
+            // Lapsed window: nothing used, and no reset exists until usage
+            // opens the next window.
+            return UsageWindow(percentRemaining: 100, resetsAt: nil)
+        }
+
         guard let resetsAt = claudeUsageResetDate(from: window.resetsAt) else {
             throw UsageParsingError.parseFailure
         }
@@ -1536,8 +1542,11 @@ private struct ClaudeStatuslineWindow: Decodable {
 }
 
 private struct ClaudeUsageResponse: Decodable {
-    let fiveHour: ClaudeUsageResponseWindow
-    let sevenDay: ClaudeUsageResponseWindow
+    // A window that saw no usage lapses to an explicit null (a five-hour
+    // window closes after an idle night); decode it as absent rather than
+    // failing the whole response.
+    let fiveHour: ClaudeUsageResponseWindow?
+    let sevenDay: ClaudeUsageResponseWindow?
     // Lossy: a malformed or restructured limit entry (e.g. a future non-Fable
     // limit missing `percent`) must not fail the whole decode and strand the
     // valid five_hour/seven_day windows in a parseFailure.
@@ -1547,6 +1556,24 @@ private struct ClaudeUsageResponse: Decodable {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case limits
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // A body carrying neither window key (an error payload, `{}`) is not
+        // a usage response; treating it as "all windows lapsed" would render
+        // 100% remaining from garbage. An explicit null still counts as
+        // present: the key marks the body as a genuine usage response.
+        guard container.contains(.fiveHour) || container.contains(.sevenDay) else {
+            throw DecodingError.keyNotFound(CodingKeys.fiveHour, DecodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: "response has no usage window keys"
+            ))
+        }
+
+        fiveHour = try container.decodeIfPresent(ClaudeUsageResponseWindow.self, forKey: .fiveHour)
+        sevenDay = try container.decodeIfPresent(ClaudeUsageResponseWindow.self, forKey: .sevenDay)
+        limits = try container.decodeIfPresent([FailableDecodable<ClaudeUsageLimit>].self, forKey: .limits)
     }
 }
 
