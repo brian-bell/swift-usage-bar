@@ -63,11 +63,54 @@ func claudeUsageParserClampsUtilizationToPercentRemainingBounds() throws {
 }
 
 @Test
+func claudeUsageParserTreatsNullFiveHourWindowAsLapsed() throws {
+    let body = Data("""
+    {
+      "five_hour": null,
+      "seven_day": {
+        "utilization": 23.0,
+        "resets_at": "2026-07-06T10:00:00.229385+00:00"
+      }
+    }
+    """.utf8)
+
+    let usage = try ClaudeUsageParser().parse(body)
+
+    #expect(usage.fiveHour.percentRemaining == 100)
+    #expect(usage.fiveHour.resetsAt == nil)
+    #expect(usage.weekly.percentRemaining == 77)
+    #expect(epochSeconds(usage.weekly.resetsAt) == 1_783_332_000)
+}
+
+@Test
+func claudeUsageParserTreatsMissingWindowKeyAsLapsed() throws {
+    let body = Data(#"{"five_hour": {"utilization": 11.0, "resets_at": "2026-07-04T06:10:00Z"}}"#.utf8)
+
+    let usage = try ClaudeUsageParser().parse(body)
+
+    #expect(usage.fiveHour.percentRemaining == 89)
+    #expect(usage.weekly.percentRemaining == 100)
+    #expect(usage.weekly.resetsAt == nil)
+}
+
+@Test
+func claudeUsageParserTreatsBothNullWindowsAsLapsed() throws {
+    let body = Data(#"{"five_hour": null, "seven_day": null}"#.utf8)
+
+    let usage = try ClaudeUsageParser().parse(body)
+
+    #expect(usage.fiveHour.percentRemaining == 100)
+    #expect(usage.fiveHour.resetsAt == nil)
+    #expect(usage.weekly.percentRemaining == 100)
+    #expect(usage.weekly.resetsAt == nil)
+}
+
+@Test
 func claudeUsageParserThrowsParseFailureForUnusableBodies() {
     let bodies: [Data] = [
         Data("not json".utf8),
         Data("{}".utf8),
-        Data(#"{"five_hour": {"utilization": 11.0, "resets_at": "2026-07-04T06:10:00Z"}}"#.utf8),
+        Data(#"{"error": {"type": "overloaded_error"}}"#.utf8),
         usageBody(fiveHourResetsAt: "not-a-date"),
         Data(#"{"five_hour": {"utilization": 11.0, "resets_at": 1783145400}, "seven_day": {"utilization": 23.0, "resets_at": 1783332000}}"#.utf8),
     ]
