@@ -18,11 +18,11 @@ cert_text() {
 
 # --- dry run with defaults produces a usable signing chain, no keychain writes ---
 #
-# codesign only records a TeamIdentifier (from the leaf's OU) when the chain's
-# first intermediate carries an Apple Developer CA marker extension, so the
-# script must emit a local CA bearing that marker plus a CA-signed leaf — a
-# lone self-signed cert always signs with TeamIdentifier=not set, which keeps
-# keychain partition-list grants pinned to each build's cdhash.
+# The CA + leaf chain exists for a stable cert-pinned designated requirement.
+# It must NOT try to smuggle in a TeamIdentifier: signatures claiming a team
+# identifier without an Apple-issued chain are SIGKILLed by AMFI at launch,
+# and Apple's marker extension on a local CA does nothing (codesign derives
+# team ids via isAppleDeveloperCert, not marker sniffing).
 
 out_dir="$tmpdir/default"
 "$make_cert" --dry-run --out "$out_dir" >"$tmpdir/default-stdout"
@@ -54,8 +54,9 @@ openssl verify -CAfile "$out_dir/ca-cert.pem" "$out_dir/cert.pem" >/dev/null 2>&
     || fail "leaf should verify against ca-cert.pem"
 
 ca_text="$(cert_text "$out_dir/ca-cert.pem")"
-printf '%s' "$ca_text" | grep -q "1.2.840.113635.100.6.2.1" \
-    || fail "CA cert should carry the Apple Developer CA marker extension"
+if printf '%s' "$ca_text" | grep -q "1.2.840.113635.100.6.2.1"; then
+    fail "CA cert must not imitate Apple's Developer CA marker extension"
+fi
 printf '%s' "$ca_text" | grep -q "CA:TRUE" || fail "ca-cert should be a CA"
 
 text="$(cert_text "$out_dir/cert.pem")"
