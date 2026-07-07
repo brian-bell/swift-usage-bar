@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Create a local code-signing chain — a throwaway CA plus a leaf certificate
-# whose subject carries an OU — and import the leaf into the default keychain
-# as a codesign identity.
+# Create a local code-signing chain — a throwaway CA plus a leaf certificate —
+# and import the leaf into the default keychain as a codesign identity.
 #
-# Why a chain and not one self-signed cert: keychain "Always Allow" grants are
-# enforced through two layers. The trusted-apps ACL (matched by designated
-# requirement) is stable for any cert-signed build, but the partition list
-# matches by team identifier and falls back to pinning the binary's cdhash
-# when the signature has none — re-prompting after every rebuild. codesign
-# only records a TeamIdentifier (copied from the leaf's subject OU) when the
-# chain's first intermediate carries an Apple Developer CA marker extension
-# (1.2.840.113635.100.6.2.1), so the local CA bears that marker; a lone
-# self-signed cert always signs with TeamIdentifier=not set no matter its OU.
+# What this buys: a stable cert-pinned designated requirement, so the keychain
+# trusted-apps ACL keeps matching rebuilt binaries. What it cannot buy: a
+# TeamIdentifier. Keychain partition lists match by `teamid:` and fall back to
+# pinning each build's cdhash when the signature has none, and a local
+# (non-Apple) chain can never carry a team identifier — AMFI SIGKILLs at
+# launch any binary whose signature claims one without an Apple-issued chain,
+# and codesign only derives one from Apple developer certs (marker-extension
+# imitation on the CA does nothing). Expect one keychain prompt per provider
+# after each rebuild; for fully prompt-free rebuilds, sign with a real Apple
+# Development certificate (free personal team via Xcode) instead.
 # The CA's private key is used once to issue the leaf and never persisted.
 
 default_name="AIUsageBar Signing"
@@ -24,10 +24,13 @@ usage() {
     cat <<EOF
 Usage: make-signing-cert [--name NAME] [--team-id ID] [--days N] [--dry-run] [--out DIR]
 
-Create a local code-signing chain (throwaway CA + leaf with a team
-identifier in its OU) and import the leaf into the default keychain for
-use as CODESIGN_IDENTITY. Builds signed with it carry a TeamIdentifier,
-so keychain "Always Allow" grants survive rebuilds.
+Create a local code-signing chain (throwaway CA + leaf) and import the
+leaf into the default keychain for use as CODESIGN_IDENTITY. Builds
+signed with it have a stable designated requirement; note that keychain
+partition-list entries still pin each build's cdhash (a local chain
+cannot carry a TeamIdentifier), so expect one prompt per keychain item
+after each rebuild. For prompt-free rebuilds use an Apple Development
+certificate from Xcode instead.
 
   --name NAME    Leaf common name / codesign identity name; the CA is
                  named "NAME CA" (default: "$default_name")
@@ -130,14 +133,11 @@ if [ "$dry_run" -eq 0 ]; then
     done
 fi
 
-# Local CA carrying the Apple Developer CA marker; codesign only copies the
-# leaf's OU into TeamIdentifier when chain[1] bears this extension.
 openssl req -x509 -newkey rsa:2048 -sha256 -days "$days" -nodes \
     -keyout "$out_dir/ca-key.pem" -out "$out_dir/ca-cert.pem" \
     -subj "/CN=$ca_name" \
     -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
     -addext "keyUsage=critical,keyCertSign,cRLSign" \
-    -addext "1.2.840.113635.100.6.2.1=DER:05:00" \
     2>/dev/null
 
 openssl req -newkey rsa:2048 -sha256 -nodes \
@@ -191,12 +191,13 @@ if ! security add-trusted-cert -p codeSign "$out_dir/ca-cert.pem"; then
 fi
 
 cat <<EOF
-Created and imported "$name" (TeamIdentifier $team_id).
+Created and imported "$name".
 
 Next steps:
   1. CODESIGN_IDENTITY="$name" scripts/bundle.sh
-  2. codesign -dvvv AIUsageBar.app 2>&1 | grep TeamIdentifier   # expect $team_id
+  2. codesign -dv AIUsageBar.app 2>&1   # Signature=adhoc must be absent
   3. Relaunch the app, refresh once, and click "Always Allow" on each
-     keychain prompt. Those grants now record teamid:$team_id and survive
-     future rebuilds.
+     keychain prompt. Rebuilds will still cost one prompt per provider
+     (partition lists pin each build's cdhash for non-Apple identities);
+     sign with an Apple Development cert from Xcode to eliminate them.
 EOF

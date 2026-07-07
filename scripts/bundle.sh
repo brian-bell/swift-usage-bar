@@ -86,19 +86,6 @@ expect_plist_value() {
     fi
 }
 
-# Subject OU of the signing identity's certificate, or empty when the cert
-# is missing or carries none (an OU-less identity signs without a team id,
-# exactly as before).
-signing_team_identifier() {
-    # Under pipefail a missing cert would make the pipeline (and, via set -e,
-    # the whole script) fail; an unresolvable identity must instead fall
-    # through empty so codesign can report it as a signing failure.
-    security find-certificate -c "$1" -p 2>/dev/null \
-        | openssl x509 -noout -subject 2>/dev/null \
-        | sed -n 's/.*OU[[:space:]]*=[[:space:]]*\([A-Za-z0-9]*\).*/\1/p' \
-        || true
-}
-
 verify_bundle() {
     local app_path="$1"
     local plist
@@ -220,19 +207,7 @@ PLIST
     install -m 755 "$built_executable" "$staged_app/Contents/MacOS/$product_name"
     cp -R "$resource_bundle" "$staged_app/Contents/Resources/"
     local codesign_identity="${CODESIGN_IDENTITY:--}"
-    local codesign_args=(--force --sign "$codesign_identity")
-    if [ "$codesign_identity" != "-" ]; then
-        # codesign only derives TeamIdentifier from Apple-issued chains; for
-        # the local CA-issued identity (scripts/make-signing-cert) the team id
-        # lives in the cert's subject OU and must be passed explicitly, or
-        # keychain partition-list grants stay pinned to each build's cdhash.
-        local team_identifier
-        team_identifier="$(signing_team_identifier "$codesign_identity")"
-        if [ -n "$team_identifier" ]; then
-            codesign_args+=(--team-identifier "$team_identifier")
-        fi
-    fi
-    if ! codesign "${codesign_args[@]}" "$staged_app"; then
+    if ! codesign --force --sign "$codesign_identity" "$staged_app"; then
         fail "codesign signing failed for identity: $codesign_identity"
     fi
     verify_bundle "$staged_app"
