@@ -16,13 +16,20 @@ cert_text() {
     openssl x509 -in "$1" -noout -text
 }
 
-# --- dry run with defaults produces a usable code-signing cert, no keychain writes ---
+# --- dry run with defaults produces a usable signing chain, no keychain writes ---
+#
+# codesign only records a TeamIdentifier (from the leaf's OU) when the chain's
+# first intermediate carries an Apple Developer CA marker extension, so the
+# script must emit a local CA bearing that marker plus a CA-signed leaf — a
+# lone self-signed cert always signs with TeamIdentifier=not set, which keeps
+# keychain partition-list grants pinned to each build's cdhash.
 
 out_dir="$tmpdir/default"
 "$make_cert" --dry-run --out "$out_dir" >"$tmpdir/default-stdout"
 
 [ -f "$out_dir/cert.pem" ] || fail "dry run should write cert.pem"
 [ -f "$out_dir/key.pem" ] || fail "dry run should write key.pem"
+[ -f "$out_dir/ca-cert.pem" ] || fail "dry run should write ca-cert.pem"
 
 key_mode="$(stat -f '%Lp' "$out_dir/key.pem")"
 [ "$key_mode" = "600" ] || fail "key.pem should be 0600, got $key_mode"
@@ -37,14 +44,24 @@ case "$subject" in
     *) fail "default subject should carry OU=AIUSAGEBAR (the team identifier), got: $subject" ;;
 esac
 
-issuer="$(openssl x509 -in "$out_dir/cert.pem" -noout -issuer | sed 's/^issuer=//')"
-subject_only="$(openssl x509 -in "$out_dir/cert.pem" -noout -subject | sed 's/^subject=//')"
-[ "$issuer" = "$subject_only" ] || fail "cert should be self-signed (issuer == subject)"
+issuer="$(openssl x509 -in "$out_dir/cert.pem" -noout -issuer)"
+case "$issuer" in
+    *"CN=AIUsageBar Signing CA"*) ;;
+    *) fail "leaf should be issued by the local CA, got issuer: $issuer" ;;
+esac
+
+openssl verify -CAfile "$out_dir/ca-cert.pem" "$out_dir/cert.pem" >/dev/null 2>&1 \
+    || fail "leaf should verify against ca-cert.pem"
+
+ca_text="$(cert_text "$out_dir/ca-cert.pem")"
+printf '%s' "$ca_text" | grep -q "1.2.840.113635.100.6.2.1" \
+    || fail "CA cert should carry the Apple Developer CA marker extension"
+printf '%s' "$ca_text" | grep -q "CA:TRUE" || fail "ca-cert should be a CA"
 
 text="$(cert_text "$out_dir/cert.pem")"
-printf '%s' "$text" | grep -q "Code Signing" || fail "cert should carry the codeSigning EKU"
-printf '%s' "$text" | grep -q "Digital Signature" || fail "cert should carry digitalSignature key usage"
-printf '%s' "$text" | grep -q "CA:FALSE" || fail "cert should not be a CA"
+printf '%s' "$text" | grep -q "Code Signing" || fail "leaf should carry the codeSigning EKU"
+printf '%s' "$text" | grep -q "Digital Signature" || fail "leaf should carry digitalSignature key usage"
+printf '%s' "$text" | grep -q "CA:FALSE" || fail "leaf should not be a CA"
 
 cert_pub="$(openssl x509 -in "$out_dir/cert.pem" -noout -pubkey)"
 key_pub="$(openssl pkey -in "$out_dir/key.pem" -pubout)"
