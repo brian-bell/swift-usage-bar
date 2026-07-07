@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Create a self-signed code-signing certificate whose subject carries an OU
+# and import it into the default keychain as a codesign identity.
+#
+# Why the OU matters: codesign derives TeamIdentifier from the leaf
+# certificate's OU. Keychain "Always Allow" grants are enforced through two
+# layers — the trusted-apps ACL (matched by designated requirement, already
+# stable for any cert-signed build) and the partition list, which matches by
+# team identifier and falls back to pinning the binary's cdhash when the
+# signature has none. A cert without an OU therefore re-prompts after every
+# rebuild; a cert made by this script earns a stable `teamid:` entry instead.
+
+default_name="AIUsageBar Signing"
+default_team_id="AIUSAGEBAR"
+default_days=3650
+
+usage() {
+    cat <<EOF
+Usage: make-signing-cert [--name NAME] [--team-id ID] [--days N] [--dry-run] [--out DIR]
+
+Create a self-signed code-signing certificate with a team identifier (OU)
+and import it into the default keychain for use as CODESIGN_IDENTITY.
+
+  --name NAME    Certificate common name / codesign identity name
+                 (default: "$default_name")
+  --team-id ID   Team identifier stored in the subject OU; 3-20 uppercase
+                 letters or digits (default: $default_team_id)
+  --days N       Validity period in days (default: $default_days)
+  --dry-run      Generate cert.pem and key.pem into --out and stop without
+                 touching the keychain
+  --out DIR      Where --dry-run writes its artifacts (default: a temp dir)
+EOF
+}
+
+name="$default_name"
+team_id="$default_team_id"
+days="$default_days"
+dry_run=0
+out_dir=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --name)
+            name="${2:?--name requires a value}"
+            shift 2
+            ;;
+        --team-id)
+            team_id="${2?--team-id requires a value}"
+            shift 2
+            ;;
+        --days)
+            days="${2:?--days requires a value}"
+            shift 2
+            ;;
+        --dry-run)
+            dry_run=1
+            shift
+            ;;
+        --out)
+            out_dir="${2:?--out requires a value}"
+            shift 2
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *)
+            printf 'make-signing-cert: unknown argument: %s\n' "$1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+case "$name" in
+    */*)
+        printf 'make-signing-cert: --name must not contain "/" (it is embedded in an X.509 subject): %s\n' "$name" >&2
+        exit 2
+        ;;
+    "")
+        printf 'make-signing-cert: --name must not be empty\n' >&2
+        exit 2
+        ;;
+esac
+
+if ! printf '%s' "$team_id" | grep -Eq '^[A-Z0-9]{3,20}$'; then
+    printf 'make-signing-cert: --team-id must be 3-20 uppercase letters or digits (codesign reads it as the TeamIdentifier): %s\n' "${team_id:-<empty>}" >&2
+    exit 2
+fi
+
+if ! printf '%s' "$days" | grep -Eq '^[1-9][0-9]*$'; then
+    printf 'make-signing-cert: --days must be a positive integer: %s\n' "$days" >&2
+    exit 2
+fi
+
+umask 077
+
+tmpdir=""
+cleanup() {
+    if [ -n "$tmpdir" ]; then
+        rm -rf "$tmpdir"
+    fi
+}
+trap cleanup EXIT
+
+if [ -n "$out_dir" ]; then
+    mkdir -p "$out_dir"
+else
+    tmpdir="$(mktemp -d)"
+    out_dir="$tmpdir"
+fi
+
+if [ "$dry_run" -eq 0 ] && security find-certificate -c "$name" >/dev/null 2>&1; then
+    printf 'make-signing-cert: a certificate named "%s" already exists in the keychain.\n' "$name" >&2
+    printf 'Delete it (and its private key) in Keychain Access first, or pass a different --name.\n' >&2
+    exit 1
+fi
+
+openssl req -x509 -newkey rsa:2048 -sha256 -days "$days" -nodes \
+    -keyout "$out_dir/key.pem" -out "$out_dir/cert.pem" \
+    -subj "/CN=$name/OU=$team_id" \
+    -addext "keyUsage=critical,digitalSignature" \
+    -addext "extendedKeyUsage=critical,codeSigning" \
+    -addext "basicConstraints=critical,CA:FALSE" \
+    2>/dev/null
+chmod 600 "$out_dir/key.pem" "$out_dir/cert.pem"
+
+if [ "$dry_run" -eq 1 ]; then
+    printf 'Dry run: wrote %s and %s; keychain untouched.\n' "$out_dir/cert.pem" "$out_dir/key.pem"
+    exit 0
+fi
+
+# Bundle the pair for `security import`; the password only protects this
+# transient file and never leaves the process environment.
+p12_pass="$(openssl rand -hex 16)"
+openssl pkcs12 -export -out "$out_dir/cert.p12" \
+    -inkey "$out_dir/key.pem" -in "$out_dir/cert.pem" \
+    -passout "pass:$p12_pass"
+
+security import "$out_dir/cert.p12" -f pkcs12 -P "$p12_pass" -T /usr/bin/codesign
+
+# Let codesign use the imported key without a per-build password prompt.
+# This asks for the login keychain password; declining just means one extra
+# prompt on the first signing.
+if ! security set-key-partition-list -S "apple-tool:,apple:" -s -l "$name" >/dev/null; then
+    printf 'warning: could not set the key partition list; the first codesign run may prompt once.\n' >&2
+fi
+
+# Trust the cert for code signing (user trust domain; macOS asks to confirm).
+if ! security add-trusted-cert -p codeSign "$out_dir/cert.pem"; then
+    printf 'warning: could not add trust settings; mark the cert "Always Trust" for Code Signing in Keychain Access.\n' >&2
+fi
+
+cat <<EOF
+Created and imported "$name" (TeamIdentifier $team_id).
+
+Next steps:
+  1. CODESIGN_IDENTITY="$name" scripts/bundle.sh
+  2. codesign -dvvv AIUsageBar.app 2>&1 | grep TeamIdentifier   # expect $team_id
+  3. Relaunch the app, refresh once, and click "Always Allow" on each
+     keychain prompt. Those grants now record teamid:$team_id and survive
+     future rebuilds.
+EOF
