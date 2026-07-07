@@ -23,10 +23,13 @@ Usage:
 Builds and signs AIUsageBar.app, or verifies an existing bundle.
 
 Environment:
-  CODESIGN_IDENTITY  Signing identity passed to `codesign --sign`. Defaults to
-                     "-" (ad-hoc). Set it to a self-signed code-signing
-                     certificate's name to get a stable signature across
-                     rebuilds, so Keychain "Always Allow" grants survive.
+  CODESIGN_IDENTITY  Signing identity passed to `codesign --sign`. When unset,
+                     the first valid "Apple Development" identity is used if
+                     one is installed (its genuine TeamIdentifier keeps
+                     Keychain "Always Allow" grants stable across rebuilds),
+                     falling back to "-" (ad-hoc). Set it explicitly to force
+                     a specific identity, e.g. a local one made by
+                     scripts/make-signing-cert.
 USAGE
 }
 
@@ -84,6 +87,19 @@ expect_plist_value() {
     if [ "$actual" != "$expected" ]; then
         fail "Info.plist $key expected $expected, got ${actual:-<missing>}"
     fi
+}
+
+# When CODESIGN_IDENTITY is unset, prefer an installed Apple Development
+# identity over ad-hoc: its signature carries a genuine TeamIdentifier, so
+# keychain "Always Allow" grants record a stable teamid: partition entry and
+# rebuilds stop prompting (a local identity can never provide one — see
+# scripts/make-signing-cert). No identity installed falls back to ad-hoc.
+default_signing_identity() {
+    local identity
+    identity="$(security find-identity -v -p codesigning 2>/dev/null \
+        | sed -n 's/.*"\(Apple Development: [^"]*\)".*/\1/p' \
+        | head -n 1 || true)"
+    printf '%s' "${identity:--}"
 }
 
 verify_bundle() {
@@ -206,7 +222,10 @@ PLIST
 
     install -m 755 "$built_executable" "$staged_app/Contents/MacOS/$product_name"
     cp -R "$resource_bundle" "$staged_app/Contents/Resources/"
-    local codesign_identity="${CODESIGN_IDENTITY:--}"
+    local codesign_identity="${CODESIGN_IDENTITY:-}"
+    if [ -z "$codesign_identity" ]; then
+        codesign_identity="$(default_signing_identity)"
+    fi
     if ! codesign --force --sign "$codesign_identity" "$staged_app"; then
         fail "codesign signing failed for identity: $codesign_identity"
     fi

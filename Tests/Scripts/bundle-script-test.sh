@@ -172,3 +172,61 @@ fi
 # The default (unset CODESIGN_IDENTITY) signs ad-hoc and still verifies.
 (cd "$tmpdir" && "$bundle_script" --output "$built_app")
 "$bundle_script" --verify "$built_app"
+
+# With CODESIGN_IDENTITY unset, bundle.sh prefers an installed Apple
+# Development identity — its signature carries a genuine TeamIdentifier, so
+# keychain partition-list grants record a stable teamid: entry and rebuilds
+# stop prompting — and falls back to ad-hoc when none exists. Stub codesign
+# to capture argv and security to control the identity list; the swift build
+# is cached from the runs above.
+stub_bin="$tmpdir/stub-bin"
+mkdir -p "$stub_bin"
+apple_identity="Apple Development: Test User (TEAM123ABC)"
+
+cat >"$stub_bin/security" <<STUB
+#!/usr/bin/env bash
+if [ "\$1" = "find-identity" ]; then
+    if [ -f "$tmpdir/no-identities" ]; then
+        printf '     0 valid identities found\n'
+    else
+        printf '  1) 0123456789ABCDEF "$apple_identity"\n'
+        printf '     1 valid identities found\n'
+    fi
+    exit 0
+fi
+exec /usr/bin/security "\$@"
+STUB
+cat >"$stub_bin/codesign" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$tmpdir/codesign-args.log"
+exit 0
+STUB
+chmod 755 "$stub_bin/security" "$stub_bin/codesign"
+
+rm -f "$tmpdir/codesign-args.log" "$tmpdir/no-identities"
+(cd "$tmpdir" && PATH="$stub_bin:$PATH" "$bundle_script" --output "$built_app")
+if ! grep -q -- "--force --sign $apple_identity " "$tmpdir/codesign-args.log"; then
+    printf 'expected default signing to pick the Apple Development identity, got:\n%s\n' \
+        "$(cat "$tmpdir/codesign-args.log")" >&2
+    exit 1
+fi
+
+# No valid identities installed: ad-hoc, exactly as before.
+rm -f "$tmpdir/codesign-args.log"
+touch "$tmpdir/no-identities"
+(cd "$tmpdir" && PATH="$stub_bin:$PATH" "$bundle_script" --output "$built_app")
+if ! grep -q -- "--force --sign - " "$tmpdir/codesign-args.log"; then
+    printf 'expected ad-hoc fallback with no identities, got:\n%s\n' \
+        "$(cat "$tmpdir/codesign-args.log")" >&2
+    exit 1
+fi
+
+# An explicit CODESIGN_IDENTITY always wins over auto-detection.
+rm -f "$tmpdir/codesign-args.log" "$tmpdir/no-identities"
+(cd "$tmpdir" && PATH="$stub_bin:$PATH" CODESIGN_IDENTITY="AIUsageBar Signing" \
+    "$bundle_script" --output "$built_app")
+if ! grep -q -- "--force --sign AIUsageBar Signing " "$tmpdir/codesign-args.log"; then
+    printf 'expected explicit CODESIGN_IDENTITY to override auto-detection, got:\n%s\n' \
+        "$(cat "$tmpdir/codesign-args.log")" >&2
+    exit 1
+fi
