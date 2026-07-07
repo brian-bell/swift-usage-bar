@@ -172,3 +172,48 @@ fi
 # The default (unset CODESIGN_IDENTITY) signs ad-hoc and still verifies.
 (cd "$tmpdir" && "$bundle_script" --output "$built_app")
 "$bundle_script" --verify "$built_app"
+
+# codesign never derives a TeamIdentifier from a non-Apple chain, so when
+# signing with an identity bundle.sh must pass --team-identifier taken from
+# the identity certificate's subject OU (see scripts/make-signing-cert).
+# Stub codesign to capture its argv and security to serve a cert with an OU;
+# the swift build is cached from the runs above.
+stub_bin="$tmpdir/stub-bin"
+mkdir -p "$stub_bin"
+stub_cert="$tmpdir/stub-cert.pem"
+openssl req -x509 -newkey rsa:2048 -sha256 -days 2 -nodes \
+    -keyout "$tmpdir/stub-key.pem" -out "$stub_cert" \
+    -subj "/CN=Stub Signing/OU=STUBTEAM01" 2>/dev/null
+
+cat >"$stub_bin/security" <<STUB
+#!/usr/bin/env bash
+if [ "\$1" = "find-certificate" ]; then
+    cat "$stub_cert"
+    exit 0
+fi
+exec /usr/bin/security "\$@"
+STUB
+cat >"$stub_bin/codesign" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$tmpdir/codesign-args.log"
+exit 0
+STUB
+chmod 755 "$stub_bin/security" "$stub_bin/codesign"
+
+rm -f "$tmpdir/codesign-args.log"
+(cd "$tmpdir" && PATH="$stub_bin:$PATH" CODESIGN_IDENTITY="Stub Signing" \
+    "$bundle_script" --output "$built_app")
+if ! grep -q -- "--team-identifier STUBTEAM01" "$tmpdir/codesign-args.log"; then
+    printf 'expected codesign to receive --team-identifier STUBTEAM01, got:\n%s\n' \
+        "$(cat "$tmpdir/codesign-args.log")" >&2
+    exit 1
+fi
+
+# Ad-hoc signing must not grow a --team-identifier flag.
+rm -f "$tmpdir/codesign-args.log"
+(cd "$tmpdir" && PATH="$stub_bin:$PATH" "$bundle_script" --output "$built_app")
+if grep -q -- "--team-identifier" "$tmpdir/codesign-args.log"; then
+    printf 'ad-hoc signing should not pass --team-identifier, got:\n%s\n' \
+        "$(cat "$tmpdir/codesign-args.log")" >&2
+    exit 1
+fi
