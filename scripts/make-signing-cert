@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Create a self-signed code-signing certificate whose subject carries an OU
-# and import it into the default keychain as a codesign identity.
+# Create a local code-signing chain — a throwaway CA plus a leaf certificate
+# whose subject carries an OU — and import the leaf into the default keychain
+# as a codesign identity.
 #
-# Why the OU matters: codesign derives TeamIdentifier from the leaf
-# certificate's OU. Keychain "Always Allow" grants are enforced through two
-# layers — the trusted-apps ACL (matched by designated requirement, already
-# stable for any cert-signed build) and the partition list, which matches by
-# team identifier and falls back to pinning the binary's cdhash when the
-# signature has none. A cert without an OU therefore re-prompts after every
-# rebuild; a cert made by this script earns a stable `teamid:` entry instead.
+# Why a chain and not one self-signed cert: keychain "Always Allow" grants are
+# enforced through two layers. The trusted-apps ACL (matched by designated
+# requirement) is stable for any cert-signed build, but the partition list
+# matches by team identifier and falls back to pinning the binary's cdhash
+# when the signature has none — re-prompting after every rebuild. codesign
+# only records a TeamIdentifier (copied from the leaf's subject OU) when the
+# chain's first intermediate carries an Apple Developer CA marker extension
+# (1.2.840.113635.100.6.2.1), so the local CA bears that marker; a lone
+# self-signed cert always signs with TeamIdentifier=not set no matter its OU.
+# The CA's private key is used once to issue the leaf and never persisted.
 
 default_name="AIUsageBar Signing"
 default_team_id="AIUSAGEBAR"
@@ -20,16 +24,18 @@ usage() {
     cat <<EOF
 Usage: make-signing-cert [--name NAME] [--team-id ID] [--days N] [--dry-run] [--out DIR]
 
-Create a self-signed code-signing certificate with a team identifier (OU)
-and import it into the default keychain for use as CODESIGN_IDENTITY.
+Create a local code-signing chain (throwaway CA + leaf with a team
+identifier in its OU) and import the leaf into the default keychain for
+use as CODESIGN_IDENTITY. Builds signed with it carry a TeamIdentifier,
+so keychain "Always Allow" grants survive rebuilds.
 
-  --name NAME    Certificate common name / codesign identity name
-                 (default: "$default_name")
-  --team-id ID   Team identifier stored in the subject OU; 3-20 uppercase
-                 letters or digits (default: $default_team_id)
+  --name NAME    Leaf common name / codesign identity name; the CA is
+                 named "NAME CA" (default: "$default_name")
+  --team-id ID   Team identifier stored in the leaf's subject OU; 3-20
+                 uppercase letters or digits (default: $default_team_id)
   --days N       Validity period in days (default: $default_days)
-  --dry-run      Generate cert.pem and key.pem into --out and stop without
-                 touching the keychain
+  --dry-run      Generate cert.pem, key.pem, and ca-cert.pem into --out and
+                 stop without touching the keychain
   --out DIR      Where --dry-run writes its artifacts (default: a temp dir)
 EOF
 }
@@ -112,31 +118,61 @@ else
     out_dir="$tmpdir"
 fi
 
-if [ "$dry_run" -eq 0 ] && security find-certificate -c "$name" >/dev/null 2>&1; then
-    printf 'make-signing-cert: a certificate named "%s" already exists in the keychain.\n' "$name" >&2
-    printf 'Delete it (and its private key) in Keychain Access first, or pass a different --name.\n' >&2
-    exit 1
+ca_name="$name CA"
+
+if [ "$dry_run" -eq 0 ]; then
+    for existing in "$name" "$ca_name"; do
+        if security find-certificate -c "$existing" >/dev/null 2>&1; then
+            printf 'make-signing-cert: a certificate named "%s" already exists in the keychain.\n' "$existing" >&2
+            printf 'Delete it (and any private key) in Keychain Access first, or pass a different --name.\n' >&2
+            exit 1
+        fi
+    done
 fi
 
+# Local CA carrying the Apple Developer CA marker; codesign only copies the
+# leaf's OU into TeamIdentifier when chain[1] bears this extension.
 openssl req -x509 -newkey rsa:2048 -sha256 -days "$days" -nodes \
-    -keyout "$out_dir/key.pem" -out "$out_dir/cert.pem" \
-    -subj "/CN=$name/OU=$team_id" \
-    -addext "keyUsage=critical,digitalSignature" \
-    -addext "extendedKeyUsage=critical,codeSigning" \
-    -addext "basicConstraints=critical,CA:FALSE" \
+    -keyout "$out_dir/ca-key.pem" -out "$out_dir/ca-cert.pem" \
+    -subj "/CN=$ca_name" \
+    -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign" \
+    -addext "1.2.840.113635.100.6.2.1=DER:05:00" \
     2>/dev/null
-chmod 600 "$out_dir/key.pem" "$out_dir/cert.pem"
+
+openssl req -newkey rsa:2048 -sha256 -nodes \
+    -keyout "$out_dir/key.pem" -out "$out_dir/leaf.csr" \
+    -subj "/CN=$name/OU=$team_id" \
+    2>/dev/null
+
+leaf_ext="$out_dir/leaf.ext"
+cat >"$leaf_ext" <<'EXT'
+keyUsage = critical, digitalSignature
+extendedKeyUsage = critical, codeSigning
+basicConstraints = critical, CA:FALSE
+EXT
+
+openssl x509 -req -in "$out_dir/leaf.csr" \
+    -CA "$out_dir/ca-cert.pem" -CAkey "$out_dir/ca-key.pem" -CAcreateserial \
+    -days "$days" -sha256 -extfile "$leaf_ext" \
+    -out "$out_dir/cert.pem" \
+    2>/dev/null
+
+# The CA key signs exactly one leaf and must not linger.
+rm -f "$out_dir/ca-key.pem" "$out_dir/leaf.csr" "$leaf_ext" "$out_dir/ca-cert.srl"
+chmod 600 "$out_dir/key.pem" "$out_dir/cert.pem" "$out_dir/ca-cert.pem"
 
 if [ "$dry_run" -eq 1 ]; then
-    printf 'Dry run: wrote %s and %s; keychain untouched.\n' "$out_dir/cert.pem" "$out_dir/key.pem"
+    printf 'Dry run: wrote cert.pem, key.pem, and ca-cert.pem under %s; keychain untouched.\n' "$out_dir"
     exit 0
 fi
 
-# Bundle the pair for `security import`; the password only protects this
-# transient file and never leaves the process environment.
+# Bundle leaf + key + CA for `security import`; the password only protects
+# this transient file and never leaves the process environment.
 p12_pass="$(openssl rand -hex 16)"
 openssl pkcs12 -export -out "$out_dir/cert.p12" \
     -inkey "$out_dir/key.pem" -in "$out_dir/cert.pem" \
+    -certfile "$out_dir/ca-cert.pem" \
     -passout "pass:$p12_pass"
 
 security import "$out_dir/cert.p12" -f pkcs12 -P "$p12_pass" -T /usr/bin/codesign
@@ -148,9 +184,10 @@ if ! security set-key-partition-list -S "apple-tool:,apple:" -s -l "$name" >/dev
     printf 'warning: could not set the key partition list; the first codesign run may prompt once.\n' >&2
 fi
 
-# Trust the cert for code signing (user trust domain; macOS asks to confirm).
-if ! security add-trusted-cert -p codeSign "$out_dir/cert.pem"; then
-    printf 'warning: could not add trust settings; mark the cert "Always Trust" for Code Signing in Keychain Access.\n' >&2
+# Trust the CA root for code signing (user trust domain; macOS asks to
+# confirm), which validates the whole chain including the leaf identity.
+if ! security add-trusted-cert -p codeSign "$out_dir/ca-cert.pem"; then
+    printf 'warning: could not add trust settings; mark "%s" as "Always Trust" for Code Signing in Keychain Access.\n' "$ca_name" >&2
 fi
 
 cat <<EOF
