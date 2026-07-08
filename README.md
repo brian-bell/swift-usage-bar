@@ -19,7 +19,7 @@ Access is strictly **read-only**: the app borrows state your CLIs already mainta
 
 | Provider | Source |
 |---|---|
-| Claude | Reads Claude Code's Keychain credential (read-only) and calls `GET https://api.anthropic.com/api/oauth/usage`, falling back to the statusline JSON cached locally by `scripts/claude-statusline-cache` when the API path is unavailable |
+| Claude | Reads Claude Code's Keychain credential (read-only, falling back to `~/.claude/.credentials.json` on Claude Code versions that store the credential there) and calls `GET https://api.anthropic.com/api/oauth/usage`, falling back to the statusline JSON cached locally by `scripts/claude-statusline-cache` when the API path is unavailable |
 | Codex | Codex CLI's Keychain credential (read-only) → `GET https://chatgpt.com/backend-api/wham/usage` |
 
 Background polls read the Keychain in a prompt-proof mode: if macOS would need to ask for permission, the read fails silently and the poll falls back to the statusline cache, so a Keychain dialog can only ever appear from a manual **Refresh now**. The app never refreshes OAuth tokens, so the API path depends on Claude Code keeping its token fresh (tokens live under 24 h); on a machine with no recent Claude Code activity the row relies on the statusline cache, then degrades to a greyed stale display.
