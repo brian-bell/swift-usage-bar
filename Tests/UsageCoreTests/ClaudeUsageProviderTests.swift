@@ -328,10 +328,48 @@ func claudeUsageProviderForwardsInteractiveModeToCredentialReader() async {
 }
 
 @Test
-func claudeUsageProviderServesFreshCacheOnBackgroundFetchWithoutTouchingCredentialOrNetwork() async throws {
+func claudeUsageProviderFetchesFromAPIOnBackgroundFetchWithBackgroundCredentialRead() async throws {
+    let asOf = Date(timeIntervalSince1970: 1_783_128_465)
+    let cacheReader = FakeClaudeStatuslineCacheReader(result: .fresh(
+        data: Data("{}".utf8),
+        usage: sampleUsage(fiveHour: 1, weekly: 1),
+        asOf: Date(timeIntervalSince1970: 1_783_000_000)
+    ))
+    let reader = FakeClaudeCredentialReader(result: .fresh(validCredential()))
+    let transport = FakeHTTPTransport(response: (
+        try fixtureData("claude-usage.json"),
+        try httpResponse(statusCode: 200)
+    ))
+    let provider = ClaudeUsageProvider(
+        credentialReader: reader,
+        cacheReader: cacheReader,
+        transport: transport,
+        now: { asOf }
+    )
+
+    let state = await provider.fetch(previous: nil)
+
+    guard case let .fresh(usage, asOf: freshAsOf) = state else {
+        Issue.record("Expected fresh state, got \(state)")
+        return
+    }
+
+    #expect(usage.fiveHour.percentRemaining == 89)
+    #expect(usage.weekly.percentRemaining == 77)
+    #expect(freshAsOf == asOf)
+    #expect(reader.receivedModes == [.background])
+    #expect(transport.requests.count == 1)
+    #expect(cacheReader.readCount == 0)
+}
+
+@Test
+func claudeUsageProviderServesFreshCacheOnBackgroundFetchWhenCredentialReadIsDeniedSilently() async throws {
+    // A background keychain read whose ACL would prompt fails silently
+    // (errSecInteractionNotAllowed -> credentialUnavailable); the provider
+    // must degrade to the statusline cache without touching the network.
     let cacheAsOf = Date(timeIntervalSince1970: 1_783_000_000)
     let cached = sampleUsage(fiveHour: 62, weekly: 81)
-    let reader = FakeClaudeCredentialReader(result: .fresh(validCredential()))
+    let reader = FakeClaudeCredentialReader(result: .stale(reason: .credentialUnavailable))
     let transport = FakeHTTPTransport(response: (
         try fixtureData("claude-usage.json"),
         try httpResponse(statusCode: 200)
@@ -350,12 +388,12 @@ func claudeUsageProviderServesFreshCacheOnBackgroundFetchWithoutTouchingCredenti
     let state = await provider.fetch(previous: nil)
 
     #expect(state == .fresh(cached, asOf: cacheAsOf))
-    #expect(reader.receivedModes.isEmpty)
+    #expect(reader.receivedModes == [.background])
     #expect(transport.requests.isEmpty)
 }
 
 @Test
-func claudeUsageProviderSurfacesCacheReasonAndLastUsageOnBackgroundFetchWithStaleCache() async {
+func claudeUsageProviderSurfacesAPIReasonAndCacheLastUsageOnBackgroundFetchWhenBothPathsFail() async {
     let cached = sampleUsage(fiveHour: 62, weekly: 81)
     let previous = sampleUsage(fiveHour: 55, weekly: 75)
     let reader = FakeClaudeCredentialReader(result: .fresh(validCredential()))
@@ -373,9 +411,8 @@ func claudeUsageProviderSurfacesCacheReasonAndLastUsageOnBackgroundFetchWithStal
 
     let state = await provider.fetch(previous: previous)
 
-    #expect(state == .stale(last: cached, reason: .parseFailure))
-    #expect(reader.receivedModes.isEmpty)
-    #expect(transport.requests.isEmpty)
+    #expect(state == .stale(last: cached, reason: .networkError))
+    #expect(reader.receivedModes == [.background])
 }
 
 @Test
@@ -411,7 +448,7 @@ func claudeUsageProviderMapsThrowingCacheReaderToNetworkErrorOnBackgroundFetch()
     let state = await provider.fetch(previous: previous)
 
     #expect(state == .stale(last: previous, reason: .networkError))
-    #expect(reader.receivedModes.isEmpty)
+    #expect(reader.receivedModes == [.background])
 }
 
 private final class FakeClaudeCredentialReader: ClaudeCredentialReading, @unchecked Sendable {
