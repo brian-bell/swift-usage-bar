@@ -19,10 +19,10 @@ Access is strictly **read-only**: the app borrows state your CLIs already mainta
 
 | Provider | Source |
 |---|---|
-| Claude | Background polls read only the statusline JSON cached locally by `scripts/claude-statusline-cache`. Clicking **Refresh now** additionally reads Claude Code's Keychain credential (read-only) and calls `GET https://api.anthropic.com/api/oauth/usage`, falling back to the cache if the API is unavailable |
+| Claude | Reads Claude Code's Keychain credential (read-only) and calls `GET https://api.anthropic.com/api/oauth/usage`, falling back to the statusline JSON cached locally by `scripts/claude-statusline-cache` when the API path is unavailable |
 | Codex | Codex CLI's Keychain credential (read-only) → `GET https://chatgpt.com/backend-api/wham/usage` |
 
-The Claude OAuth API (and the Keychain read it requires) is reserved for manual refreshes so background polls never trigger a Keychain prompt or spend API calls. The app never refreshes OAuth tokens, so a manual refresh depends on Claude Code keeping its token fresh; between refreshes (or on a machine with no recent Claude Code activity) the row relies on the statusline cache, then degrades to a greyed stale display.
+Background polls read the Keychain in a prompt-proof mode: if macOS would need to ask for permission, the read fails silently and the poll falls back to the statusline cache, so a Keychain dialog can only ever appear from a manual **Refresh now**. The app never refreshes OAuth tokens, so the API path depends on Claude Code keeping its token fresh (tokens live under 24 h); on a machine with no recent Claude Code activity the row relies on the statusline cache, then degrades to a greyed stale display.
 
 See `docs/endpoints.md` for the discovered contracts and evidence.
 
@@ -51,7 +51,7 @@ CODESIGN_IDENTITY="AIUsageBar Signing" ./scripts/bundle.sh
 
 Enable "Launch at login" from the dropdown settings if you want it to persist across restarts (macOS may ask you to approve it in System Settings › Login Items).
 
-On the first manual refresh macOS will ask whether AIUsageBar may read the `Claude Code-credentials` (and `Codex Auth`) Keychain items — click **Always Allow**. If you only click Allow, the prompt returns on a later manual refresh; if you deny, the Claude row falls back to the statusline cache. The Claude credential is only read when you click **Refresh now**, never during background polls.
+On the first manual refresh macOS will ask whether AIUsageBar may read the `Claude Code-credentials` (and `Codex Auth`) Keychain items — click **Always Allow**. If you only click Allow, the prompt returns on a later manual refresh; if you deny, the Claude row falls back to the statusline cache. Background polls read the Keychain only in a mode that fails silently instead of prompting, so until you grant **Always Allow** they use the statusline cache alone; once granted, background polls keep Claude fresh via the API even when no Claude Code session is running (e.g. while you use the Claude desktop app).
 
 An ad-hoc signature pins the Keychain grant to the exact binary hash, so **every rebuild re-triggers the prompt**. To make the grant survive rebuilds, sign with a stable code-signing certificate:
 

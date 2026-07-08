@@ -873,14 +873,11 @@ public struct ClaudeUsageProvider: UsageProvider {
         self.now = now
     }
 
-    // The OAuth usage API (and the keychain read it requires) is reserved for
-    // user-initiated refreshes; background polls read only the statusline
-    // cache so they can never trigger a Keychain prompt or spend API calls.
+    // Both modes take the API-then-cache path; the difference lives in the
+    // keychain layer, where a `.background` read fails silently instead of
+    // presenting a prompt (kSecUseAuthenticationUIFail), degrading to the
+    // statusline-cache fallback.
     public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
-        guard mode == .interactive else {
-            return cacheOnlyState(previous: previous)
-        }
-
         switch await fetchFromAPI(mode: mode) {
         case let .fresh(usage, asOf):
             return .fresh(usage, asOf: asOf)
@@ -918,19 +915,6 @@ public struct ClaudeUsageProvider: UsageProvider {
             return .stale(.parseFailure)
         } catch {
             return .stale(.networkError)
-        }
-    }
-
-    private func cacheOnlyState(previous: ProviderUsage?) -> ProviderState {
-        guard let cacheResult = try? cacheReader.read(now: now()) else {
-            return .stale(last: previous, reason: .networkError)
-        }
-
-        switch cacheResult {
-        case let .fresh(data: _, usage: usage, asOf: asOf):
-            return .fresh(usage, asOf: asOf)
-        case let .stale(last: last, reason: reason, hint: _):
-            return .stale(last: last ?? previous, reason: reason)
         }
     }
 
