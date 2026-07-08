@@ -1046,15 +1046,18 @@ public extension ClaudeCredentialReading {
 
 public struct ClaudeCredentialReader: Sendable {
     private let store: any CredentialStore
+    private let fallbackStore: (any CredentialStore)?
     private let parser: ClaudeCredentialParser
     private let now: @Sendable () -> Date
 
     public init(
         store: any CredentialStore,
+        fallbackStore: (any CredentialStore)? = nil,
         parser: ClaudeCredentialParser = ClaudeCredentialParser(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.store = store
+        self.fallbackStore = fallbackStore
         self.parser = parser
         self.now = now
     }
@@ -1064,19 +1067,41 @@ public struct ClaudeCredentialReader: Sendable {
         do {
             data = try store.read(.claude, mode: mode)
         } catch {
-            return .stale(reason: .credentialUnavailable)
+            return fallingBack(from: .stale(reason: .credentialUnavailable), mode: mode)
         }
 
+        let primary = evaluate(data)
+        if case .fresh = primary {
+            return primary
+        }
+
+        return fallingBack(from: primary, mode: mode)
+    }
+
+    // A present credentials file is the stronger evidence of CLI state (the
+    // Keychain item may hold only mcpOAuth entries on Claude Code 2.1.x), so a
+    // readable file's verdict wins over the Keychain's. An absent or unreadable
+    // file proves nothing and keeps the Keychain's reason.
+    private func fallingBack(from primary: ClaudeCredentialReadResult, mode: CredentialAccessMode) -> ClaudeCredentialReadResult {
+        guard
+            let fallbackStore,
+            let data = try? fallbackStore.read(.claude, mode: mode)
+        else {
+            return primary
+        }
+
+        return evaluate(data)
+    }
+
+    private func evaluate(_ data: Data?) -> ClaudeCredentialReadResult {
         guard let data else {
             // Mirrors the Codex mapping: "no credential" and "expired
             // credential" have the same user remedy — run the CLI.
             return .stale(reason: .tokenExpired)
         }
 
-        let credential: ClaudeCredential
-        do {
-            credential = try parser.parse(data)
-        } catch UsageParsingError.parseFailure {
+        // The parser maps every failure to UsageParsingError.parseFailure.
+        guard let credential = try? parser.parse(data) else {
             return .stale(reason: .parseFailure)
         }
 
@@ -1309,6 +1334,45 @@ public struct KeychainCredentialStore: CredentialStore {
             return nil
         case .codex:
             return codexKeychainAccount(codexHomePath: defaultCodexHomePath())
+        }
+    }
+}
+
+/// Read-only access to Claude Code's on-disk credentials file
+/// (`${CLAUDE_CONFIG_DIR:-~/.claude}/.credentials.json`), the fallback source
+/// when the Keychain item can't produce a usable credential (e.g. Claude Code
+/// versions that keep only `mcpOAuth` state in the Keychain).
+public struct ClaudeCredentialsFileStore: CredentialStore {
+    private let fileURL: URL
+
+    public init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+
+    /// Resolves Claude Code's config directory the way the CLI does:
+    /// `$CLAUDE_CONFIG_DIR` when set, else `~/.claude`.
+    public init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) {
+        let configDirectory: URL
+        if let path = environment["CLAUDE_CONFIG_DIR"], !path.isEmpty {
+            configDirectory = URL(fileURLWithPath: path)
+        } else {
+            configDirectory = homeDirectory.appendingPathComponent(".claude")
+        }
+        self.init(fileURL: configDirectory.appendingPathComponent(".credentials.json"))
+    }
+
+    public func read(_ credential: CredentialIdentifier, mode: CredentialAccessMode) throws -> Data? {
+        do {
+            return try Data(contentsOf: fileURL)
+        } catch CocoaError.fileReadNoSuchFile {
+            // Mirrors the Keychain store's errSecItemNotFound mapping: an absent
+            // credential is "no data", not an access failure.
+            return nil
+        } catch {
+            throw CredentialStoreReadError.unavailable
         }
     }
 }
