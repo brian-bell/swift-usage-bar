@@ -657,6 +657,108 @@ set -e
 assert_no_temp_files "$term_cache_file"
 cmp -s "$input_file" "$term_cache_file"
 
+# --- an aged cache never vetoes a live payload (freshness-guard deadlock) ---
+# Weekly used_percentage is NOT monotonic within a reset cycle (observed live:
+# 46% -> 26% with the same weekly resets_at), so the tuple compare alone can
+# pin the cache at a cycle's high-water mark forever. A cache older than the
+# app's staleness bound (3x poll interval) is data the app already refuses to
+# use; any usable live payload must replace it, "older"-looking or not.
+
+aged_cache_payload="$tmpdir/aged-cache-payload.json"
+make_variant "$aged_cache_payload" seven_day used_percentage 46
+
+aged_cache_file="$tmpdir/aged-cache/claude-status.json"
+mkdir -p "$(dirname "$aged_cache_file")"
+cp "$aged_cache_payload" "$aged_cache_file"
+touch -t 202601010000 "$aged_cache_file"
+
+run_wrapper "$tmpdir/aged-stdout" "$tmpdir/aged-stderr" "$tmpdir/aged-args" "$aged_cache_file" env
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on an aged-cache write\n' "$status" >&2
+    cat "$tmpdir/aged-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$input_file" "$aged_cache_file"; then
+    printf 'expected live payload (weekly used 19) to replace an aged cache (weekly used 46)\n' >&2
+    exit 1
+fi
+
+# --- AI_USAGE_BAR_CACHE_MAX_AGE_SECONDS widens the guard's authority ---
+# With a max age covering the cache's real age, the tuple compare stays in
+# force and the older-looking payload is still rejected.
+
+override_cache_file="$tmpdir/override-cache/claude-status.json"
+mkdir -p "$(dirname "$override_cache_file")"
+cp "$aged_cache_payload" "$override_cache_file"
+touch -t 202601010000 "$override_cache_file"
+
+run_wrapper "$tmpdir/override-stdout" "$tmpdir/override-stderr" "$tmpdir/override-args" "$override_cache_file" \
+    env AI_USAGE_BAR_CACHE_MAX_AGE_SECONDS=99999999
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s with a max-age override\n' "$status" >&2
+    cat "$tmpdir/override-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$aged_cache_payload" "$override_cache_file"; then
+    printf 'expected a max-age override to keep the freshness guard vetoing older payloads\n' >&2
+    exit 1
+fi
+
+# --- an aged cache still never yields to an unusable payload ---
+# The age escape hatch only overrides the tuple compare. Usable-over-unusable
+# is unconditional: last-known usage data from days ago still beats a payload
+# the app cannot parse at all.
+
+aged_no_limits_cache="$tmpdir/aged-no-limits/claude-status.json"
+mkdir -p "$(dirname "$aged_no_limits_cache")"
+cp "$input_file" "$aged_no_limits_cache"
+touch -t 202601010000 "$aged_no_limits_cache"
+
+set +e
+PATH="$fake_bin:$PATH" \
+    AI_USAGE_BAR_CLAUDE_STATUS_JSON="$aged_no_limits_cache" \
+    FAKE_STATUSLINE_ARGS_FILE="$tmpdir/aged-no-limits-args" \
+    "$wrapper" --theme compact <"$no_limits_payload" >"$tmpdir/aged-no-limits-stdout" 2>"$tmpdir/aged-no-limits-stderr"
+status=$?
+set -e
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s on a rate-limit-free payload against an aged cache\n' "$status" >&2
+    cat "$tmpdir/aged-no-limits-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$input_file" "$aged_no_limits_cache"; then
+    printf 'expected an aged cache with usage data to survive a payload without rate limits\n' >&2
+    exit 1
+fi
+
+# --- a malformed max-age override falls back to the default, not fail-open ---
+# If the env value crashed the guard, the shell would fall open to
+# always-write and a stale idle writer could clobber a fresher cache.
+
+garbage_env_cache="$tmpdir/garbage-env/claude-status.json"
+mkdir -p "$(dirname "$garbage_env_cache")"
+cp "$fresher_payload" "$garbage_env_cache"
+
+run_wrapper "$tmpdir/garbage-env-stdout" "$tmpdir/garbage-env-stderr" "$tmpdir/garbage-env-args" "$garbage_env_cache" \
+    env AI_USAGE_BAR_CACHE_MAX_AGE_SECONDS=bananas
+
+if [ "$status" -ne 0 ]; then
+    printf 'wrapper exited %s with a malformed max-age override\n' "$status" >&2
+    cat "$tmpdir/garbage-env-stderr" >&2
+    exit 1
+fi
+
+if ! cmp -s "$fresher_payload" "$garbage_env_cache"; then
+    printf 'expected a malformed max-age override to keep the default guard, not fall open\n' >&2
+    exit 1
+fi
+
 actual_stdout="$tmpdir/failure-stdout"
 actual_stderr="$tmpdir/failure-stderr"
 args_file="$tmpdir/failure-args"
