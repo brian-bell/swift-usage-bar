@@ -1259,22 +1259,34 @@ public struct KeychainCredentialStore: CredentialStore {
         UnsafeMutablePointer<CFTypeRef?>?
     ) -> OSStatus
 
+    /// Toggles process-wide legacy-Keychain user interaction. Injectable so tests
+    /// can observe the call without touching the real security subsystem.
+    public typealias SetUserInteractionAllowed = @Sendable (Bool) -> OSStatus
+
     private let accountResolver: @Sendable (CredentialIdentifier) -> String?
     private let copyMatching: CopyMatching
+    // `nil` means "use the real SecKeychain toggle"; tests inject a spy.
+    private let setUserInteractionAllowedOverride: SetUserInteractionAllowed?
 
     public init() {
         self.accountResolver = Self.defaultAccount(for:)
         self.copyMatching = SecItemCopyMatching
+        self.setUserInteractionAllowedOverride = nil
     }
 
-    public init(copyMatching: @escaping CopyMatching) {
+    public init(
+        copyMatching: @escaping CopyMatching,
+        setUserInteractionAllowed: SetUserInteractionAllowed? = nil
+    ) {
         self.accountResolver = Self.defaultAccount(for:)
         self.copyMatching = copyMatching
+        self.setUserInteractionAllowedOverride = setUserInteractionAllowed
     }
 
     init(codexHomePath: String, copyMatching: @escaping CopyMatching) {
         self.accountResolver = { _ in codexKeychainAccount(codexHomePath: codexHomePath) }
         self.copyMatching = copyMatching
+        self.setUserInteractionAllowedOverride = nil
     }
 
     public init(
@@ -1283,6 +1295,7 @@ public struct KeychainCredentialStore: CredentialStore {
     ) {
         self.accountResolver = accountResolver
         self.copyMatching = copyMatching
+        self.setUserInteractionAllowedOverride = nil
     }
 
     public func read(_ credential: CredentialIdentifier, mode: CredentialAccessMode) throws -> Data? {
@@ -1297,18 +1310,30 @@ public struct KeychainCredentialStore: CredentialStore {
             query[kSecAttrAccount as String] = account
         }
 
-        // Background polls must never present a Keychain prompt. When the item's
-        // ACL would require user confirmation (e.g. after Claude Code rewrote the
-        // item on token refresh and reset its ACL), `kSecUseAuthenticationUIFail`
-        // makes the read return errSecInteractionNotAllowed instead of popping a
-        // dialog, so the provider degrades to its fallback silently. Interactive
-        // reads (manual refresh) omit the key so the user can grant access.
+        // Background polls must never present a Keychain prompt. This item can
+        // raise two DIFFERENT legacy prompts, each needing its own guard:
         //
-        // `kSecUseAuthenticationUI` is soft-deprecated in favor of
-        // `kSecUseAuthenticationContext`/`LAContext.interactionNotAllowed`, but
-        // that replacement governs the SecAccessControl/biometric flow; the
-        // legacy trusted-application ACL prompt this app hits is suppressed
-        // reliably only by `kSecUseAuthenticationUIFail`, so its use is deliberate.
+        //  1. Trusted-application ACL prompt — suppressed by
+        //     `kSecUseAuthenticationUIFail` on the query below.
+        //  2. Partition-id password prompt — appears when the app's Team ID is
+        //     absent from the item's partition list. Claude Code refreshes its
+        //     OAuth token by shelling out to `/usr/bin/security`, whose write
+        //     resets the partition list to `apple-tool:`, dropping the
+        //     `teamid:<app>` entry that a prior "Always Allow" had added. On the
+        //     next poll the partition check fails and macOS asks for the login
+        //     password. `kSecUseAuthenticationUIFail` does NOT suppress this
+        //     prompt (verified empirically: a UIFail read of a partition-mismatched
+        //     item still pops the dialog). The only reliable suppressor is
+        //     disabling legacy-Keychain UI process-wide, which makes the blocked
+        //     read fail fast (errSecAuthFailed) so the provider degrades to its
+        //     statusline-cache/file fallback silently.
+        //
+        // Interactive reads (manual refresh) re-enable UI so the user can act.
+        // The toggle is process-global, but the poller runs one cycle at a time
+        // and every provider in a cycle shares the same mode, so concurrent reads
+        // never disagree on the value.
+        _ = setUserInteractionAllowed(mode == .interactive)
+
         if mode == .background {
             query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
         }
@@ -1324,6 +1349,19 @@ public struct KeychainCredentialStore: CredentialStore {
         }
 
         return item as? Data
+    }
+
+    /// Resolves to the injected spy in tests, else the real SecKeychain toggle.
+    private var setUserInteractionAllowed: SetUserInteractionAllowed {
+        setUserInteractionAllowedOverride ?? Self.systemSetUserInteractionAllowed
+    }
+
+    // Single chokepoint for the deprecated (macOS 10.10) SecKeychain toggle. The
+    // whole SecKeychain family is deprecated, but it is the only API that governs
+    // the legacy partition-id prompt this app must avoid; confining the reference
+    // here keeps the deprecation to one line.
+    private static let systemSetUserInteractionAllowed: SetUserInteractionAllowed = { allowed in
+        SecKeychainSetUserInteractionAllowed(allowed)
     }
 
     private static func defaultAccount(for credential: CredentialIdentifier) -> String? {

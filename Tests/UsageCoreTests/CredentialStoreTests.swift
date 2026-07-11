@@ -225,6 +225,66 @@ func keychainCredentialStoreDefaultReadIsBackgroundNoUI() throws {
 }
 
 @Test
+func keychainCredentialStoreBackgroundReadDisablesLegacyKeychainInteractionBeforeCopy() throws {
+    let events = InteractionEventRecorder()
+    let store = KeychainCredentialStore(
+        copyMatching: { _, _ in
+            events.append("copy")
+            return errSecItemNotFound
+        },
+        setUserInteractionAllowed: { allowed in
+            events.append("interaction=\(allowed)")
+            return errSecSuccess
+        }
+    )
+
+    _ = try store.read(.claude, mode: .background)
+
+    // Disabling legacy keychain UI must happen *before* the copy, otherwise the
+    // partition-id prompt (which kSecUseAuthenticationUIFail does NOT suppress)
+    // can appear on a background poll.
+    #expect(events.events == ["interaction=false", "copy"])
+}
+
+@Test
+func keychainCredentialStoreInteractiveReadEnablesLegacyKeychainInteractionBeforeCopy() throws {
+    let events = InteractionEventRecorder()
+    let store = KeychainCredentialStore(
+        copyMatching: { _, _ in
+            events.append("copy")
+            return errSecItemNotFound
+        },
+        setUserInteractionAllowed: { allowed in
+            events.append("interaction=\(allowed)")
+            return errSecSuccess
+        }
+    )
+
+    _ = try store.read(.claude, mode: .interactive)
+
+    #expect(events.events == ["interaction=true", "copy"])
+}
+
+@Test
+func keychainCredentialStoreDefaultReadDisablesLegacyKeychainInteraction() throws {
+    let events = InteractionEventRecorder()
+    let store = KeychainCredentialStore(
+        copyMatching: { _, _ in
+            events.append("copy")
+            return errSecItemNotFound
+        },
+        setUserInteractionAllowed: { allowed in
+            events.append("interaction=\(allowed)")
+            return errSecSuccess
+        }
+    )
+
+    _ = try store.read(.claude)
+
+    #expect(events.events == ["interaction=false", "copy"])
+}
+
+@Test
 func claudeCredentialReaderForwardsAccessModeToStore() throws {
     let store = InMemoryCredentialStore(dataByCredential: [:])
     let reader = ClaudeCredentialReader(store: store)
@@ -294,6 +354,23 @@ private final class KeychainQueryRecorder: @unchecked Sendable {
 
     func record(_ query: CFDictionary) {
         self.query = query as NSDictionary as? [String: Any]
+    }
+}
+
+private final class InteractionEventRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    var events: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func append(_ event: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.append(event)
     }
 }
 
