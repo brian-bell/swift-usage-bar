@@ -46,8 +46,31 @@ import json
 import math
 import os
 import sys
+import time
 
 input_path, cache_path = sys.argv[1], sys.argv[2]
+
+# Weekly used_percentage is not monotonic within a reset cycle (the vendor can
+# recompute it downward), so the tuple compare alone can pin the cache at a
+# cycle's high-water mark indefinitely. The compare only exists to arbitrate
+# between near-simultaneous writers: once the cache is older than the app's
+# staleness bound (3x the default poll interval), the app refuses to use it
+# anyway, so any usable live payload must win.
+DEFAULT_MAX_AGE_SECONDS = 360.0
+
+
+def max_age_seconds():
+    raw = os.environ.get("AI_USAGE_BAR_CACHE_MAX_AGE_SECONDS")
+    if raw is None:
+        return DEFAULT_MAX_AGE_SECONDS
+    try:
+        return float(raw)
+    except ValueError:
+        return DEFAULT_MAX_AGE_SECONDS
+
+
+def cache_is_current(path):
+    return time.time() - os.stat(path).st_mtime <= max_age_seconds()
 
 
 def number(value):
@@ -94,8 +117,14 @@ with open(cache_path + ".lock", "w") as lock:
     except Exception:
         incoming = None  # never replace usable data with unusable data
 
-    if cached is not None and (incoming is None or incoming < cached):
-        sys.exit(0)
+    if cached is not None:
+        if incoming is None:
+            sys.exit(0)
+        # The tuple compare's veto is scoped to a current cache: it exists to
+        # arbitrate near-simultaneous writers, not to let an old high-water
+        # mark outrank live data.
+        if incoming < cached and cache_is_current(cache_path):
+            sys.exit(0)
 
     tmp_path = "%s.tmp.%d" % (cache_path, os.getpid())
     fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
