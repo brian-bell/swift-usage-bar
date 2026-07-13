@@ -73,6 +73,28 @@ func codexUsageProviderReturnsFreshPrimaryUsageWhenWeeklyLimitIsNull() async thr
 }
 
 @Test
+func codexUsageProviderKeepsPreviousUsageWhenBothWindowsAreNull() async throws {
+    let previous = sampleUsage(fiveHour: 69, weekly: 77)
+    let response = Data("""
+    {
+      "rate_limit": {
+        "primary_window": null,
+        "secondary_window": null
+      }
+    }
+    """.utf8)
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(result: .fresh(validCredential())),
+        transport: FakeHTTPTransport(response: (response, try httpResponse(statusCode: 200))),
+        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+    )
+
+    let state = await provider.fetch(previous: previous)
+
+    #expect(state == .stale(last: previous, reason: .parseFailure))
+}
+
+@Test
 func codexUsageProviderOmitsAccountHeaderWhenCredentialHasNoAccountID() async throws {
     let transport = FakeHTTPTransport(response: (
         try fixtureData("codex-usage.json"),

@@ -1515,6 +1515,10 @@ public struct CodexUsageParser: Sendable {
     public func parse(_ data: Data) throws -> ProviderUsage {
         do {
             let response = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
+            guard response.rateLimit.primaryWindow != nil
+                    || response.rateLimit.secondaryWindow != nil else {
+                throw UsageParsingError.parseFailure
+            }
 
             return ProviderUsage(
                 fiveHour: usageWindow(
