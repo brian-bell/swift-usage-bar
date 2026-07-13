@@ -8,17 +8,17 @@
 APP        := AIUsageBar.app
 EXECUTABLE := $(APP)/Contents/MacOS/AIUsageBarApp
 
-# Signing identity for the bundle/run targets. A stable self-signed cert (vs.
-# ad-hoc) pins the designated requirement to the cert, so Keychain "Always
-# Allow" grants survive rebuilds instead of re-prompting. Passed only to the
-# targets that sign, so it never leaks into test targets (which exercise
-# bundle.sh's own ad-hoc default). Override on the CLI, e.g.
-# `make bundle CODESIGN_IDENTITY=-` for an ad-hoc signature.
-CODESIGN_IDENTITY ?= AIUsageBar Signing
+# Signing identity for the bundle/run targets. Left empty so bundle.sh
+# auto-picks the first Apple Development identity in the keychain — its
+# signature carries a genuine TeamIdentifier, so Keychain "Always Allow"
+# grants record a stable teamid: partition entry and rebuilds stop
+# prompting. Override on the CLI, e.g. `make bundle CODESIGN_IDENTITY=-`
+# for an ad-hoc signature.
+CODESIGN_IDENTITY ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build test script-tests bundle verify run stop clean setup-statusline
+.PHONY: help build test script-tests bundle verify verify-signature run stop clean setup-statusline
 
 help: ## List available targets
 	@printf 'AIUsageBar targets:\n\n'
@@ -39,9 +39,27 @@ script-tests: ## Run the shell test suites for scripts/
 
 bundle: ## Release build → assemble AIUsageBar.app → codesign → verify
 	CODESIGN_IDENTITY="$(CODESIGN_IDENTITY)" scripts/bundle.sh
+	@$(MAKE) --no-print-directory verify-signature
 
 verify: ## Verify the existing AIUsageBar.app bundle
 	scripts/bundle.sh --verify
+	@$(MAKE) --no-print-directory verify-signature
+
+verify-signature: ## Check the bundle carries a stable (non-ad-hoc) signature
+	@# Ad-hoc signatures get a fresh cdhash every build, so Keychain "Always
+	@# Allow" grants die on rebuild. Treat codesign -dvvv as authoritative.
+	@codesign --verify --strict --verbose=2 $(APP)
+	@info="$$(codesign -dvvv $(APP) 2>&1)"; \
+	printf '%s\n' "$$info" | grep -E '^(Identifier=|Signature|Authority=|TeamIdentifier=)'; \
+	if printf '%s\n' "$$info" | grep -q '^Signature=adhoc'; then \
+		printf 'FAIL: %s is ad-hoc signed — Keychain grants will not survive rebuilds\n' '$(APP)'; \
+		exit 1; \
+	fi; \
+	if printf '%s\n' "$$info" | grep -q '^TeamIdentifier=not set'; then \
+		printf 'note: signed, but no TeamIdentifier (local cert) — Keychain grants pin each build\n'; \
+	else \
+		printf 'OK: stable signing identity with TeamIdentifier\n'; \
+	fi
 
 run: bundle stop ## Rebuild the bundle, stop any running copy, and launch the fresh one
 	open $(APP)
