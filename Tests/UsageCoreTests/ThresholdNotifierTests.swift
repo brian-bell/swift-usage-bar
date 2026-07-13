@@ -200,6 +200,38 @@ func thresholdNotifierSendsForNewResetCycleAlreadyBelowThreshold() async {
 }
 
 @Test
+func thresholdNotifierSendsWhenUnavailableWindowReappearsBelowThreshold() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_783_008_000)
+    let previous = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: nil)
+    )
+    let current = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 17, resetsAt: reset),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: nil)
+    )
+
+    await notifier.evaluate(
+        previous: previous,
+        current: current,
+        provider: .codex,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .codex,
+            window: .fiveHour,
+            percentRemaining: 17,
+            threshold: 20,
+            resetsAt: reset
+        ),
+    ])
+}
+
+@Test
 func thresholdNotifierTreatsNilAndChangedKnownResetCyclesAsDistinct() async {
     let sender = RecordingNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)

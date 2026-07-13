@@ -149,14 +149,13 @@ public actor ThresholdNotifier {
         }
 
         for window in current.windows(comparedWith: previous) {
-            guard let previousPercentRemaining = window.previous.percentRemaining,
-                  let currentPercentRemaining = window.current.percentRemaining else {
+            guard let currentPercentRemaining = window.current.percentRemaining else {
                 continue
             }
 
             let previousResetCycle = ResetCycle(resetsAt: window.previous.resetsAt)
             let currentResetCycle = ResetCycle(resetsAt: window.current.resetsAt)
-            let crossedThreshold = previousPercentRemaining >= threshold
+            let crossedThreshold = (window.previous.percentRemaining.map { $0 >= threshold } ?? false)
                 && currentPercentRemaining < threshold
             let newResetCycleAlreadyBelowThreshold = previousResetCycle != currentResetCycle
                 && currentPercentRemaining < threshold
