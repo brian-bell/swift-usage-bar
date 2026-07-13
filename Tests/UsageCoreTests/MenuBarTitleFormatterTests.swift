@@ -13,6 +13,23 @@ func menuBarTitleFormatterUsesStableProviderOrderForFreshUsage() {
 }
 
 @Test
+func menuBarTitleFormatterShowsUnavailableFreshWindowAsPlaceholder() {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 76, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil)
+    )
+
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .fresh(usage, asOf: Date(timeIntervalSince1970: 20)),
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .codex, value: "76/--", isStale: false),
+    ])
+}
+
+@Test
 func menuBarTitleFormatterExposesProviderSegmentsForIconRendering() {
     let segments = MenuBarTitleFormatter.segments([
         .codex: .fresh(codexUsage, asOf: Date(timeIntervalSince1970: 20)),

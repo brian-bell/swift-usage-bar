@@ -42,6 +42,37 @@ func codexUsageProviderBuildsUsageRequestAndReturnsFreshUsage() async throws {
 }
 
 @Test
+func codexUsageProviderReturnsFreshPrimaryUsageWhenWeeklyLimitIsNull() async throws {
+    let asOf = Date(timeIntervalSince1970: 1_783_000_120)
+    let response = Data("""
+    {
+      "rate_limit": {
+        "primary_window": {
+          "reset_at": 1783006145,
+          "used_percent": 24
+        },
+        "secondary_window": null
+      }
+    }
+    """.utf8)
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(result: .fresh(validCredential())),
+        transport: FakeHTTPTransport(response: (response, try httpResponse(statusCode: 200))),
+        now: { asOf }
+    )
+
+    let state = await provider.fetch(previous: sampleUsage(fiveHour: 69, weekly: 77))
+
+    #expect(state == .fresh(ProviderUsage(
+        fiveHour: UsageWindow(
+            percentRemaining: 76,
+            resetsAt: Date(timeIntervalSince1970: 1_783_006_145)
+        ),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil)
+    ), asOf: asOf))
+}
+
+@Test
 func codexUsageProviderOmitsAccountHeaderWhenCredentialHasNoAccountID() async throws {
     let transport = FakeHTTPTransport(response: (
         try fixtureData("codex-usage.json"),

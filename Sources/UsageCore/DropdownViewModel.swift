@@ -161,8 +161,13 @@ public struct DropdownUsageWindowRow: Equatable, Sendable {
         locale: Locale
     ) {
         self.title = title
-        self.percentLabel = "\(usageWindow.percentRemaining)% remaining"
-        self.barFraction = Double(min(100, max(0, usageWindow.percentRemaining))) / 100
+        if let percentRemaining = usageWindow.percentRemaining {
+            self.percentLabel = "\(percentRemaining)% remaining"
+            self.barFraction = Double(min(100, max(0, percentRemaining))) / 100
+        } else {
+            self.percentLabel = "--"
+            self.barFraction = 0
+        }
         if let resetsAt = usageWindow.resetsAt {
             self.countdownLabel = CountdownFormatter.format(
                 resetAt: resetsAt,
