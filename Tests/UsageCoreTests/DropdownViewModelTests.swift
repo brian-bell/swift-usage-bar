@@ -49,6 +49,27 @@ func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
 }
 
 @Test
+func dropdownRowsShowUnavailableFreshWindowWithoutMarkingProviderStale() throws {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 76, resetsAt: referenceNow.addingTimeInterval(60 * 60)),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil)
+    )
+    let model = DropdownViewModel(
+        states: [.codex: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .codex })
+    #expect(!row.isStale)
+    #expect(row.fiveHour.percentLabel == "76% remaining")
+    #expect(row.weekly.percentLabel == "--")
+    #expect(row.weekly.barFraction == 0)
+    #expect(row.weekly.countdownLabel == "reset unknown")
+}
+
+@Test
 func dropdownRowsExposeFableWindowOnlyWhenPresent() throws {
     let withFable = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: 62, resetsAt: referenceNow.addingTimeInterval(2 * 60 * 60)),

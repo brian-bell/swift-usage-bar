@@ -8,10 +8,11 @@ public enum UsageCore {
 }
 
 public struct UsageWindow: Equatable, Sendable {
-    public let percentRemaining: Int
+    /// `nil` when the provider reports that this rate-limit window is unavailable.
+    public let percentRemaining: Int?
     public let resetsAt: Date?
 
-    public init(percentRemaining: Int, resetsAt: Date?) {
+    public init(percentRemaining: Int?, resetsAt: Date?) {
         self.percentRemaining = percentRemaining
         self.resetsAt = resetsAt
     }
@@ -148,12 +149,16 @@ public actor ThresholdNotifier {
         }
 
         for window in current.windows(comparedWith: previous) {
+            guard let currentPercentRemaining = window.current.percentRemaining else {
+                continue
+            }
+
             let previousResetCycle = ResetCycle(resetsAt: window.previous.resetsAt)
             let currentResetCycle = ResetCycle(resetsAt: window.current.resetsAt)
-            let crossedThreshold = window.previous.percentRemaining >= threshold
-                && window.current.percentRemaining < threshold
+            let crossedThreshold = (window.previous.percentRemaining.map { $0 >= threshold } ?? false)
+                && currentPercentRemaining < threshold
             let newResetCycleAlreadyBelowThreshold = previousResetCycle != currentResetCycle
-                && window.current.percentRemaining < threshold
+                && currentPercentRemaining < threshold
 
             let key = ThresholdNotificationKey(
                 provider: provider,
@@ -162,7 +167,7 @@ public actor ThresholdNotifier {
                 resetCycle: currentResetCycle
             )
             let retryingFailedDelivery = failedCycles.contains(key)
-                && window.current.percentRemaining < threshold
+                && currentPercentRemaining < threshold
 
             guard crossedThreshold || newResetCycleAlreadyBelowThreshold || retryingFailedDelivery else {
                 continue
@@ -176,7 +181,7 @@ public actor ThresholdNotifier {
                 try await sender.send(UsageThresholdNotification(
                     provider: provider,
                     window: window.kind,
-                    percentRemaining: window.current.percentRemaining,
+                    percentRemaining: currentPercentRemaining,
                     threshold: threshold,
                     resetsAt: window.current.resetsAt
                 ))
@@ -1416,7 +1421,9 @@ public struct ClaudeCredentialsFileStore: CredentialStore {
 }
 
 public func tone(for usage: ProviderUsage, warningThreshold: Int = 20) -> UsageStatusTone {
-    let remaining = min(usage.fiveHour.percentRemaining, usage.weekly.percentRemaining)
+    let remaining = [usage.fiveHour.percentRemaining, usage.weekly.percentRemaining]
+        .compactMap { $0 }
+        .min() ?? 100
     if remaining < 5 {
         return .critical
     }
@@ -1508,15 +1515,17 @@ public struct CodexUsageParser: Sendable {
     public func parse(_ data: Data) throws -> ProviderUsage {
         do {
             let response = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
+            guard response.rateLimit.primaryWindow != nil
+                    || response.rateLimit.secondaryWindow != nil else {
+                throw UsageParsingError.parseFailure
+            }
 
             return ProviderUsage(
                 fiveHour: usageWindow(
-                    usedPercentage: Double(response.rateLimit.primaryWindow.usedPercent),
-                    resetAt: response.rateLimit.primaryWindow.resetAt
+                    codexWindow: response.rateLimit.primaryWindow
                 ),
                 weekly: usageWindow(
-                    usedPercentage: Double(response.rateLimit.secondaryWindow.usedPercent),
-                    resetAt: response.rateLimit.secondaryWindow.resetAt
+                    codexWindow: response.rateLimit.secondaryWindow
                 )
             )
         } catch {
@@ -1826,8 +1835,8 @@ private struct CodexStoredCredential: Decodable {
 }
 
 private struct CodexRateLimit: Decodable {
-    let primaryWindow: CodexRateLimitWindow
-    let secondaryWindow: CodexRateLimitWindow
+    let primaryWindow: CodexRateLimitWindow?
+    let secondaryWindow: CodexRateLimitWindow?
 
     enum CodingKeys: String, CodingKey {
         case primaryWindow = "primary_window"
@@ -1875,6 +1884,17 @@ private func usageWindow(usedPercentage: Double, resetAt: TimeInterval) -> Usage
     )
 }
 
+private func usageWindow(codexWindow: CodexRateLimitWindow?) -> UsageWindow {
+    guard let codexWindow else {
+        return UsageWindow(percentRemaining: nil, resetsAt: nil)
+    }
+
+    return usageWindow(
+        usedPercentage: Double(codexWindow.usedPercent),
+        resetAt: codexWindow.resetAt
+    )
+}
+
 // Clamp before converting to Int: extreme doubles (1e300) would trap in Int().
 private func percentRemaining(fromUsedPercentage usedPercentage: Double) -> Int {
     if usedPercentage <= 0 {
@@ -1898,7 +1918,7 @@ private func staleReason(forHTTPStatusCode statusCode: Int) -> StaleReason {
 
 private extension ProviderUsage {
     var remainingPair: String {
-        "\(fiveHour.percentRemaining)/\(weekly.percentRemaining)"
+        "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
     }
 }
 

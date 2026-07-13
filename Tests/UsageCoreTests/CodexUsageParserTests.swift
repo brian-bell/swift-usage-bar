@@ -13,21 +13,47 @@ func codexParserMapsFixture() throws {
 }
 
 @Test
-func codexParserThrowsParseFailureWhenWeeklyLimitIsMissing() throws {
+func codexParserKeepsPrimaryUsageWhenWeeklyLimitIsNull() throws {
     let data = Data("""
     {
       "rate_limit": {
         "primary_window": {
           "reset_at": 1783006145,
           "used_percent": 12
+        },
+        "secondary_window": null
+      }
+    }
+    """.utf8)
+
+    let usage = try CodexUsageParser().parse(data)
+
+    #expect(usage.fiveHour.percentRemaining == 88)
+    #expect(usage.fiveHour.resetsAt == Date(timeIntervalSince1970: 1_783_006_145))
+    #expect(usage.weekly.percentRemaining == nil)
+    #expect(usage.weekly.resetsAt == nil)
+}
+
+@Test
+func codexParserKeepsWeeklyUsageWhenPrimaryLimitIsNull() throws {
+    let data = Data("""
+    {
+      "rate_limit": {
+        "primary_window": null,
+        "secondary_window": {
+          "reset_at": 1783388608,
+          "used_percent": 44
         }
       }
     }
     """.utf8)
 
-    try expectParseFailure {
-        _ = try CodexUsageParser().parse(data)
-    }
+    let usage = try CodexUsageParser().parse(data)
+
+    #expect(usage.fiveHour.percentRemaining == nil)
+    #expect(usage.fiveHour.resetsAt == nil)
+    #expect(usage.weekly.percentRemaining == 56)
+    #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))
 }
 
 @Test
