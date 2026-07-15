@@ -66,6 +66,42 @@ func shellModelProviderVisibilityUpdatesSettingsAndAppStateOnlyForThatProvider()
 
 @Test
 @MainActor
+func shellModelProviderVisibilityReflectsStoredSettingsAtInit() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        settingsStore.setProvider(.codex, visible: false)
+
+        let model = shellModel(settingsStore: settingsStore)
+
+        #expect(!model.isProviderVisible(.codex))
+        #expect(model.isProviderVisible(.claude))
+    }
+}
+
+@Test
+@MainActor
+func shellModelProviderVisibilityBindingPublishesObservationChange() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let model = shellModel(settingsStore: settingsStore)
+        let observedChanges = ObservationChangeRecorder()
+
+        withObservationTracking {
+            _ = model.isProviderVisible(.codex)
+        } onChange: {
+            observedChanges.record()
+        }
+
+        model.setProvider(.codex, visible: false)
+
+        #expect(observedChanges.count == 1)
+        #expect(!model.isProviderVisible(.codex))
+        #expect(!settingsStore.isProviderVisible(.codex))
+    }
+}
+
+@Test
+@MainActor
 func shellModelPollIntervalBindingPublishesObservationChange() {
     withIsolatedDefaults { defaults in
         let settingsStore = SettingsStore(defaults: defaults)

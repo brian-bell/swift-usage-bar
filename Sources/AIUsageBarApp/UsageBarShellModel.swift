@@ -21,6 +21,7 @@ final class UsageBarShellModel {
     private(set) var pollInterval: TimeInterval
     private(set) var thresholdPercent: Int
     private(set) var launchAtLoginEnabled: Bool
+    private var providerVisibility: [ProviderID: Bool]
     var launchAtLoginError: String?
 
     init(
@@ -38,6 +39,9 @@ final class UsageBarShellModel {
         self.pollInterval = settingsStore.pollInterval
         self.thresholdPercent = settingsStore.thresholdPercent
         self.launchAtLoginEnabled = launchAtLoginManager.status.isRegistered
+        self.providerVisibility = Dictionary(uniqueKeysWithValues: ProviderID.allCases.map { provider in
+            (provider, settingsStore.isProviderVisible(provider))
+        })
         applyStoredProviderVisibility()
         applyLaunchAtLoginStatus()
     }
@@ -63,10 +67,11 @@ final class UsageBarShellModel {
     }
 
     func isProviderVisible(_ provider: ProviderID) -> Bool {
-        settingsStore.isProviderVisible(provider)
+        providerVisibility[provider] ?? true
     }
 
     func setProvider(_ provider: ProviderID, visible: Bool) {
+        providerVisibility[provider] = visible
         settingsStore.setProvider(provider, visible: visible)
         appState.setProvider(provider, visible: visible)
     }
@@ -95,7 +100,7 @@ final class UsageBarShellModel {
     }
 
     private func applyStoredProviderVisibility() {
-        for provider in ProviderID.allCases where !settingsStore.isProviderVisible(provider) {
+        for (provider, visible) in providerVisibility where !visible {
             appState.setProvider(provider, visible: false)
         }
     }
