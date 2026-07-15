@@ -68,7 +68,7 @@ func codexUsageProviderReturnsFreshPrimaryUsageWhenWeeklyLimitIsNull() async thr
             percentRemaining: 76,
             resetsAt: Date(timeIntervalSince1970: 1_783_006_145)
         ),
-        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil)
+        weekly: UsageWindow(percentRemaining: 100, resetsAt: nil)
     ), asOf: asOf))
 }
 

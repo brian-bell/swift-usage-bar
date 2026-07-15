@@ -13,7 +13,7 @@ func codexParserMapsFixture() throws {
 }
 
 @Test
-func codexParserKeepsPrimaryUsageWhenWeeklyLimitIsNull() throws {
+func codexParserPinsWeeklyTo100PercentWhenWeeklyLimitIsNull() throws {
     let data = Data("""
     {
       "rate_limit": {
@@ -30,12 +30,32 @@ func codexParserKeepsPrimaryUsageWhenWeeklyLimitIsNull() throws {
 
     #expect(usage.fiveHour.percentRemaining == 88)
     #expect(usage.fiveHour.resetsAt == Date(timeIntervalSince1970: 1_783_006_145))
-    #expect(usage.weekly.percentRemaining == nil)
+    #expect(usage.weekly.percentRemaining == 100)
     #expect(usage.weekly.resetsAt == nil)
 }
 
 @Test
-func codexParserKeepsWeeklyUsageWhenPrimaryLimitIsNull() throws {
+func codexParserPinsWeeklyTo100PercentWhenWeeklyWindowKeyIsOmitted() throws {
+    let data = Data("""
+    {
+      "rate_limit": {
+        "primary_window": {
+          "reset_at": 1783006145,
+          "used_percent": 12
+        }
+      }
+    }
+    """.utf8)
+
+    let usage = try CodexUsageParser().parse(data)
+
+    #expect(usage.fiveHour.percentRemaining == 88)
+    #expect(usage.weekly.percentRemaining == 100)
+    #expect(usage.weekly.resetsAt == nil)
+}
+
+@Test
+func codexParserPinsFiveHourTo100PercentWhenPrimaryLimitIsNull() throws {
     let data = Data("""
     {
       "rate_limit": {
@@ -50,7 +70,7 @@ func codexParserKeepsWeeklyUsageWhenPrimaryLimitIsNull() throws {
 
     let usage = try CodexUsageParser().parse(data)
 
-    #expect(usage.fiveHour.percentRemaining == nil)
+    #expect(usage.fiveHour.percentRemaining == 100)
     #expect(usage.fiveHour.resetsAt == nil)
     #expect(usage.weekly.percentRemaining == 56)
     #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))

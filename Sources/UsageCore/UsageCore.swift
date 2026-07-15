@@ -1885,8 +1885,13 @@ private func usageWindow(usedPercentage: Double, resetAt: TimeInterval) -> Usage
 }
 
 private func usageWindow(codexWindow: CodexRateLimitWindow?) -> UsageWindow {
+    // A null or omitted window means the provider isn't enforcing this limit
+    // right now (e.g. weekly quota disabled): pin to 100% remaining with an
+    // unknown reset, matching the Claude parser's lapsed-window semantics.
+    // Conflating null with an absent key is deliberate — the parse() guard
+    // still rejects bodies where neither window decodes.
     guard let codexWindow else {
-        return UsageWindow(percentRemaining: nil, resetsAt: nil)
+        return UsageWindow(percentRemaining: 100, resetsAt: nil)
     }
 
     return usageWindow(
