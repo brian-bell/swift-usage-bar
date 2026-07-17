@@ -16,7 +16,7 @@ func shellModelMenuBarSegmentsUseCoreFormatter() {
 
     #expect(model.menuBarSegments == [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
-        MenuBarTitleSegment(provider: .codex, value: "72/90", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
     ])
 }
 
@@ -272,7 +272,7 @@ private let claudeUsage = ProviderUsage(
 )
 
 private let codexUsage = ProviderUsage(
-    fiveHour: UsageWindow(percentRemaining: 72, resetsAt: referenceNow.addingTimeInterval(3 * 60 * 60)),
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 90, resetsAt: referenceNow.addingTimeInterval(6 * 24 * 60 * 60))
 )
 

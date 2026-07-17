@@ -42,7 +42,8 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
     public let isStale: Bool
     public let staleMessage: String?
     public let updatedLabel: String?
-    public let fiveHour: DropdownUsageWindowRow
+    /// `nil` when the provider does not expose a 5-hour window (Codex is weekly-only).
+    public let fiveHour: DropdownUsageWindowRow?
     public let weekly: DropdownUsageWindowRow
     public let fable: DropdownUsageWindowRow?
     public let statusTone: UsageStatusTone?
@@ -63,9 +64,8 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
         case let .fresh(usage, asOf: _):
             self.isStale = false
             self.staleMessage = nil
-            self.fiveHour = DropdownUsageWindowRow(
-                title: "5h",
-                usageWindow: usage.fiveHour,
+            self.fiveHour = DropdownUsageWindowRow.fiveHour(
+                for: usage.fiveHour,
                 now: now,
                 calendar: calendar,
                 locale: locale
@@ -90,9 +90,8 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
         case let .stale(last: usage?, reason: reason):
             self.isStale = true
             self.staleMessage = "Stale: \(reason.dropdownMessage)"
-            self.fiveHour = DropdownUsageWindowRow(
-                title: "5h",
-                usageWindow: usage.fiveHour,
+            self.fiveHour = DropdownUsageWindowRow.fiveHour(
+                for: usage.fiveHour,
                 now: now,
                 calendar: calendar,
                 locale: locale
@@ -117,14 +116,18 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
         case let .stale(last: nil, reason: reason):
             self.isStale = true
             self.staleMessage = "Stale: \(reason.dropdownMessage)"
-            self.fiveHour = DropdownUsageWindowRow.placeholder(title: "5h")
+            self.fiveHour = provider.showsFiveHourWindow
+                ? DropdownUsageWindowRow.placeholder(title: "5h")
+                : nil
             self.weekly = DropdownUsageWindowRow.placeholder(title: "Weekly")
             self.fable = nil
             self.statusTone = nil
         case .hidden:
             self.isStale = false
             self.staleMessage = nil
-            self.fiveHour = DropdownUsageWindowRow.placeholder(title: "5h")
+            self.fiveHour = provider.showsFiveHourWindow
+                ? DropdownUsageWindowRow.placeholder(title: "5h")
+                : nil
             self.weekly = DropdownUsageWindowRow.placeholder(title: "Weekly")
             self.fable = nil
             self.statusTone = nil
@@ -189,6 +192,26 @@ public struct DropdownUsageWindowRow: Equatable, Sendable {
         )
     }
 
+    /// Omit the 5h row when the window is unavailable (Codex weekly-only).
+    fileprivate static func fiveHour(
+        for usageWindow: UsageWindow,
+        now: Date,
+        calendar: Calendar,
+        locale: Locale
+    ) -> DropdownUsageWindowRow? {
+        guard usageWindow.percentRemaining != nil else {
+            return nil
+        }
+
+        return DropdownUsageWindowRow(
+            title: "5h",
+            usageWindow: usageWindow,
+            now: now,
+            calendar: calendar,
+            locale: locale
+        )
+    }
+
     private init(
         title: String,
         percentLabel: String,
@@ -209,6 +232,15 @@ private extension ProviderID {
             return "Claude"
         case .codex:
             return "Codex"
+        }
+    }
+
+    var showsFiveHourWindow: Bool {
+        switch self {
+        case .claude:
+            return true
+        case .codex:
+            return false
         }
     }
 }

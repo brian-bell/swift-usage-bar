@@ -2,13 +2,13 @@
 
 A native macOS menu bar app that shows how much of your **Claude** and **ChatGPT/Codex** subscription rate limits you have left — always visible, at a glance.
 
-The menu bar shows percent **remaining** (fuel-gauge semantics) for each provider's 5-hour and weekly windows as a compact two-line stack, e.g. `Cl 62/81` over `Cx 72/90` (`Cl` Claude, `Cx` Codex, `fiveHour/weekly`). The dropdown adds progress bars, exact percentages, reset countdowns, a Refresh-now button with last-updated time, and inline settings.
+The menu bar shows percent **remaining** (fuel-gauge semantics) as a compact two-line stack, e.g. `Cl 62/81` over `Cx 90` (`Cl` Claude 5-hour/weekly, `Cx` Codex weekly — the former Codex 5-hour limit is deprecated). The dropdown adds progress bars, exact percentages, reset countdowns, a Refresh-now button with last-updated time, and inline settings.
 
 Access is strictly **read-only**: the app borrows state your CLIs already maintain. It never writes to the Keychain, never refreshes OAuth tokens, and degrades to a greyed "stale" display when data is unavailable.
 
 ## Features
 
-- All four rate-limit windows visible in the menu bar at all times; stale values marked with `~`, missing data as `--/--`
+- Claude 5-hour + weekly and Codex weekly visible in the menu bar at all times; stale values marked with `~`, missing data as `--/--` (Claude) or `--` (Codex)
 - Dropdown with per-window progress bars and reset countdowns ("resets in 2h 14m", or weekday + time when more than a day out)
 - Polls every 2 minutes (configurable: 1/2/5/10 min), plus on Mac wake and on manual refresh
 - Notification when a window drops below a threshold (default 20%, configurable) — fired once per window per reset cycle

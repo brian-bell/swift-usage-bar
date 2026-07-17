@@ -24,10 +24,7 @@ func codexUsageProviderBuildsUsageRequestAndReturnsFreshUsage() async throws {
     let request = try #require(transport.requests.first)
 
     #expect(state == .fresh(ProviderUsage(
-        fiveHour: UsageWindow(
-            percentRemaining: 88,
-            resetsAt: Date(timeIntervalSince1970: 1_783_006_145)
-        ),
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
         weekly: UsageWindow(
             percentRemaining: 56,
             resetsAt: Date(timeIntervalSince1970: 1_783_388_608)
@@ -42,12 +39,13 @@ func codexUsageProviderBuildsUsageRequestAndReturnsFreshUsage() async throws {
 }
 
 @Test
-func codexUsageProviderReturnsFreshPrimaryUsageWhenWeeklyLimitIsNull() async throws {
+func codexUsageProviderUsesPrimaryAsWeeklyWhenSecondaryIsNull() async throws {
     let asOf = Date(timeIntervalSince1970: 1_783_000_120)
     let response = Data("""
     {
       "rate_limit": {
         "primary_window": {
+          "limit_window_seconds": 604800,
           "reset_at": 1783006145,
           "used_percent": 24
         },
@@ -64,11 +62,11 @@ func codexUsageProviderReturnsFreshPrimaryUsageWhenWeeklyLimitIsNull() async thr
     let state = await provider.fetch(previous: sampleUsage(fiveHour: 69, weekly: 77))
 
     #expect(state == .fresh(ProviderUsage(
-        fiveHour: UsageWindow(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(
             percentRemaining: 76,
             resetsAt: Date(timeIntervalSince1970: 1_783_006_145)
-        ),
-        weekly: UsageWindow(percentRemaining: 100, resetsAt: nil)
+        )
     ), asOf: asOf))
 }
 

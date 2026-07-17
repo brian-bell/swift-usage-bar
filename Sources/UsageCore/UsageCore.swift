@@ -1515,18 +1515,18 @@ public struct CodexUsageParser: Sendable {
     public func parse(_ data: Data) throws -> ProviderUsage {
         do {
             let response = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
-            guard response.rateLimit.primaryWindow != nil
-                    || response.rateLimit.secondaryWindow != nil else {
+            // Codex is weekly-only in the UI (the former 5-hour limit is gone).
+            // Prefer secondary when present (legacy: primary=5h, secondary=weekly).
+            // Else use primary only when it is weekly-shaped (live as of Jul 2026:
+            // primary has limit_window_seconds 604800 and secondary is null). A
+            // 5h-only primary must not be misreported as weekly.
+            guard let weeklyWindow = response.rateLimit.weeklyWindow else {
                 throw UsageParsingError.parseFailure
             }
 
             return ProviderUsage(
-                fiveHour: usageWindow(
-                    codexWindow: response.rateLimit.primaryWindow
-                ),
-                weekly: usageWindow(
-                    codexWindow: response.rateLimit.secondaryWindow
-                )
+                fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+                weekly: usageWindow(codexWindow: weeklyWindow)
             )
         } catch {
             throw UsageParsingError.parseFailure
@@ -1580,16 +1580,32 @@ public enum MenuBarTitleFormatter {
     public static func segments(_ states: [ProviderID: ProviderState]) -> [MenuBarTitleSegment] {
         ProviderID.allCases.compactMap { provider -> MenuBarTitleSegment? in
             guard let state = states[provider] else {
-                return MenuBarTitleSegment(provider: provider, value: "--/--", isStale: false)
+                return MenuBarTitleSegment(
+                    provider: provider,
+                    value: remainingPlaceholder(for: provider),
+                    isStale: false
+                )
             }
 
             switch state {
             case let .fresh(usage, _):
-                return MenuBarTitleSegment(provider: provider, value: usage.remainingPair, isStale: false)
+                return MenuBarTitleSegment(
+                    provider: provider,
+                    value: usage.remainingDisplay(for: provider),
+                    isStale: false
+                )
             case let .stale(last: usage?, reason: _):
-                return MenuBarTitleSegment(provider: provider, value: usage.remainingPair, isStale: true)
+                return MenuBarTitleSegment(
+                    provider: provider,
+                    value: usage.remainingDisplay(for: provider),
+                    isStale: true
+                )
             case .stale(last: nil, reason: _):
-                return MenuBarTitleSegment(provider: provider, value: "--/--", isStale: false)
+                return MenuBarTitleSegment(
+                    provider: provider,
+                    value: remainingPlaceholder(for: provider),
+                    isStale: false
+                )
             case .hidden:
                 return nil
             }
@@ -1842,6 +1858,19 @@ private struct CodexRateLimit: Decodable {
         case primaryWindow = "primary_window"
         case secondaryWindow = "secondary_window"
     }
+
+    /// Weekly quota for the menu bar / dropdown. Secondary is always treated as
+    /// weekly when present (legacy shape). Primary is only accepted as weekly
+    /// when `limit_window_seconds` is 7 days — a bare 5h primary must fail.
+    var weeklyWindow: CodexRateLimitWindow? {
+        if let secondaryWindow {
+            return secondaryWindow
+        }
+        guard let primaryWindow, primaryWindow.isWeeklyWindow else {
+            return nil
+        }
+        return primaryWindow
+    }
 }
 
 private struct JWTPayload: Decodable {
@@ -1870,10 +1899,17 @@ private func expiryDate(fromJWT token: String) throws -> Date {
 private struct CodexRateLimitWindow: Decodable {
     let resetAt: TimeInterval
     let usedPercent: Int
+    let limitWindowSeconds: Int?
 
     enum CodingKeys: String, CodingKey {
         case resetAt = "reset_at"
         case usedPercent = "used_percent"
+        case limitWindowSeconds = "limit_window_seconds"
+    }
+
+    /// Live primary-as-weekly responses report a 7-day window (604800 s).
+    var isWeeklyWindow: Bool {
+        limitWindowSeconds == 604_800
     }
 }
 
@@ -1884,17 +1920,8 @@ private func usageWindow(usedPercentage: Double, resetAt: TimeInterval) -> Usage
     )
 }
 
-private func usageWindow(codexWindow: CodexRateLimitWindow?) -> UsageWindow {
-    // A null or omitted window means the provider isn't enforcing this limit
-    // right now (e.g. weekly quota disabled): pin to 100% remaining with an
-    // unknown reset, matching the Claude parser's lapsed-window semantics.
-    // Conflating null with an absent key is deliberate — the parse() guard
-    // still rejects bodies where neither window decodes.
-    guard let codexWindow else {
-        return UsageWindow(percentRemaining: 100, resetsAt: nil)
-    }
-
-    return usageWindow(
+private func usageWindow(codexWindow: CodexRateLimitWindow) -> UsageWindow {
+    usageWindow(
         usedPercentage: Double(codexWindow.usedPercent),
         resetAt: codexWindow.resetAt
     )
@@ -1922,8 +1949,22 @@ private func staleReason(forHTTPStatusCode statusCode: Int) -> StaleReason {
 }
 
 private extension ProviderUsage {
-    var remainingPair: String {
-        "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
+    func remainingDisplay(for provider: ProviderID) -> String {
+        switch provider {
+        case .claude:
+            return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
+        case .codex:
+            return weekly.percentRemaining.map(String.init) ?? "--"
+        }
+    }
+}
+
+private func remainingPlaceholder(for provider: ProviderID) -> String {
+    switch provider {
+    case .claude:
+        return "--/--"
+    case .codex:
+        return "--"
     }
 }
 

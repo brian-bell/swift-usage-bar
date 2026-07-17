@@ -57,7 +57,9 @@ private struct ProviderUsageRowView: View {
                 }
             }
 
-            UsageWindowRowView(row: row.fiveHour)
+            if let fiveHour = row.fiveHour {
+                UsageWindowRowView(row: fiveHour)
+            }
             UsageWindowRowView(row: row.weekly)
             if let fable = row.fable {
                 UsageWindowRowView(row: fable)
