@@ -13,8 +13,8 @@ func rowLabelPrefixesProviderAbbreviation() {
     )
     #expect(
         MenuBarLabelImage.rowLabel(
-            for: MenuBarTitleSegment(provider: .codex, value: "72/90", isStale: false)
-        ) == "Cx 72/90"
+            for: MenuBarTitleSegment(provider: .codex, value: "90", isStale: false)
+        ) == "Cx 90"
     )
 }
 
@@ -31,8 +31,8 @@ func rowLabelMarksStaleValuesWithTilde() {
 func rowLabelRendersMissingDataPlaceholder() {
     #expect(
         MenuBarLabelImage.rowLabel(
-            for: MenuBarTitleSegment(provider: .codex, value: "--/--", isStale: false)
-        ) == "Cx --/--"
+            for: MenuBarTitleSegment(provider: .codex, value: "--", isStale: false)
+        ) == "Cx --"
     )
 }
 
@@ -41,7 +41,7 @@ func rowLabelRendersMissingDataPlaceholder() {
 func menuBarLabelImageStacksTwoProvidersVertically() throws {
     let segments = [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
-        MenuBarTitleSegment(provider: .codex, value: "72/90", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
     ]
     let image = try #require(MenuBarLabelImage.image(for: segments))
 
@@ -56,7 +56,7 @@ func menuBarLabelImageStacksTwoProvidersVertically() throws {
 func menuBarLabelImageSizesStaleAndMissingRowsFromTheirLabels() throws {
     let segments = [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: true),
-        MenuBarTitleSegment(provider: .codex, value: "--/--", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "--", isStale: false),
     ]
     let image = try #require(MenuBarLabelImage.image(for: segments))
 
@@ -69,7 +69,7 @@ func menuBarLabelImageSizesStaleAndMissingRowsFromTheirLabels() throws {
 @MainActor
 func menuBarLabelImageRendersSingleProviderAsOneCompactRow() throws {
     let segments = [
-        MenuBarTitleSegment(provider: .codex, value: "72/90", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
     ]
     let image = try #require(MenuBarLabelImage.image(for: segments))
 
@@ -89,11 +89,11 @@ func menuBarLabelImageIsNilWhenAllProvidersAreHidden() {
 func menuBarLabelLayoutPlacesFirstSegmentInTopRow() throws {
     let layout = try #require(MenuBarLabelImage.layout(for: [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
-        MenuBarTitleSegment(provider: .codex, value: "72/90", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
     ]))
 
     let rows = layout.rows
-    #expect(rows.map(\.text) == ["Cl 62/81", "Cx 72/90"])
+    #expect(rows.map(\.text) == ["Cl 62/81", "Cx 90"])
     // Non-flipped image coordinates: the first segment's row sits above the second's.
     #expect(rows[0].textOrigin.y == rows[1].textOrigin.y + MenuBarLabelImage.rowHeight)
     #expect(rows[1].textOrigin.y >= 0)

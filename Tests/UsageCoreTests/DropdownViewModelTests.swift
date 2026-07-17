@@ -39,9 +39,10 @@ func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
     )
 
     let row = try #require(model.rows.first)
-    #expect(row.fiveHour.percentLabel == "120% remaining")
-    #expect(row.fiveHour.barFraction == 1)
-    #expect(row.fiveHour.countdownLabel == "resets in 1h 30m")
+    let fiveHour = try #require(row.fiveHour)
+    #expect(fiveHour.percentLabel == "120% remaining")
+    #expect(fiveHour.barFraction == 1)
+    #expect(fiveHour.countdownLabel == "resets in 1h 30m")
     #expect(row.weekly.percentLabel == "-20% remaining")
     #expect(row.weekly.barFraction == 0)
     // referenceNow (2026-01-01 12:00 UTC) is a Thursday; +3 days is Sunday.
@@ -49,10 +50,10 @@ func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
 }
 
 @Test
-func dropdownRowsShowUnavailableFreshWindowWithoutMarkingProviderStale() throws {
+func dropdownRowsOmitUnavailableFiveHourWindow() throws {
     let usage = ProviderUsage(
-        fiveHour: UsageWindow(percentRemaining: 76, resetsAt: referenceNow.addingTimeInterval(60 * 60)),
-        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil)
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 90, resetsAt: referenceNow.addingTimeInterval(6 * 24 * 60 * 60))
     )
     let model = DropdownViewModel(
         states: [.codex: .fresh(usage, asOf: referenceNow)],
@@ -63,7 +64,29 @@ func dropdownRowsShowUnavailableFreshWindowWithoutMarkingProviderStale() throws 
 
     let row = try #require(model.rows.first { $0.provider == .codex })
     #expect(!row.isStale)
-    #expect(row.fiveHour.percentLabel == "76% remaining")
+    #expect(row.fiveHour == nil)
+    #expect(row.weekly.percentLabel == "90% remaining")
+    // referenceNow (2026-01-01 12:00 UTC) is a Thursday; +6 days is Wednesday.
+    #expect(row.weekly.countdownLabel == "resets Wed 12:00 PM")
+}
+
+@Test
+func dropdownRowsShowUnavailableClaudeWeeklyWithoutMarkingProviderStale() throws {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 76, resetsAt: referenceNow.addingTimeInterval(60 * 60)),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil)
+    )
+    let model = DropdownViewModel(
+        states: [.claude: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .claude })
+    #expect(!row.isStale)
+    let fiveHour = try #require(row.fiveHour)
+    #expect(fiveHour.percentLabel == "76% remaining")
     #expect(row.weekly.percentLabel == "--")
     #expect(row.weekly.barFraction == 0)
     #expect(row.weekly.countdownLabel == "reset unknown")
@@ -109,12 +132,32 @@ func dropdownRowsFlagStaleProvidersWhilePreservingLastKnownValues() throws {
     let row = try #require(model.rows.first)
     #expect(row.isStale)
     #expect(row.staleMessage == "Stale: network error")
-    #expect(row.fiveHour.percentLabel == "62% remaining")
+    let fiveHour = try #require(row.fiveHour)
+    #expect(fiveHour.percentLabel == "62% remaining")
     #expect(row.weekly.percentLabel == "81% remaining")
 }
 
 @Test
 func dropdownRowsUsePlaceholdersForStaleProvidersWithoutData() throws {
+    let model = DropdownViewModel(
+        states: [.claude: .stale(last: nil, reason: .tokenExpired)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .claude })
+    #expect(row.isStale)
+    #expect(row.staleMessage == "Stale: token expired")
+    let fiveHour = try #require(row.fiveHour)
+    #expect(fiveHour.percentLabel == "--")
+    #expect(fiveHour.barFraction == 0)
+    #expect(fiveHour.countdownLabel == "reset unknown")
+    #expect(row.weekly.percentLabel == "--")
+}
+
+@Test
+func dropdownRowsOmitFiveHourPlaceholderForStaleCodexWithoutData() throws {
     let model = DropdownViewModel(
         states: [.codex: .stale(last: nil, reason: .tokenExpired)],
         now: referenceNow,
@@ -125,9 +168,7 @@ func dropdownRowsUsePlaceholdersForStaleProvidersWithoutData() throws {
     let row = try #require(model.rows.first { $0.provider == .codex })
     #expect(row.isStale)
     #expect(row.staleMessage == "Stale: token expired")
-    #expect(row.fiveHour.percentLabel == "--")
-    #expect(row.fiveHour.barFraction == 0)
-    #expect(row.fiveHour.countdownLabel == "reset unknown")
+    #expect(row.fiveHour == nil)
     #expect(row.weekly.percentLabel == "--")
 }
 
@@ -229,7 +270,7 @@ private let claudeUsage = ProviderUsage(
 )
 
 private let codexUsage = ProviderUsage(
-    fiveHour: UsageWindow(percentRemaining: 72, resetsAt: referenceNow.addingTimeInterval(3 * 60 * 60)),
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 90, resetsAt: referenceNow.addingTimeInterval(6 * 24 * 60 * 60))
 )
 

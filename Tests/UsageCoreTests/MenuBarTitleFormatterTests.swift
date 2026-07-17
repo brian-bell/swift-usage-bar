@@ -9,13 +9,42 @@ func menuBarTitleFormatterUsesStableProviderOrderForFreshUsage() {
         .claude: .fresh(claudeUsage, asOf: Date(timeIntervalSince1970: 10)),
     ])
 
-    #expect(plainText(title) == "* 62/81  # 72/90")
+    #expect(plainText(title) == "* 62/81  # 90")
 }
 
 @Test
-func menuBarTitleFormatterShowsUnavailableFreshWindowAsPlaceholder() {
+func menuBarTitleFormatterShowsCodexWeeklyOnly() {
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .fresh(codexUsage, asOf: Date(timeIntervalSince1970: 20)),
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterShowsUnavailableClaudeWindowAsPlaceholder() {
     let usage = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: 76, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil)
+    )
+
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .fresh(usage, asOf: Date(timeIntervalSince1970: 10)),
+        .codex: .hidden,
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .claude, value: "76/--", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterShowsUnavailableCodexWeeklyAsPlaceholder() {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
         weekly: UsageWindow(percentRemaining: nil, resetsAt: nil)
     )
 
@@ -25,7 +54,7 @@ func menuBarTitleFormatterShowsUnavailableFreshWindowAsPlaceholder() {
     ])
 
     #expect(segments == [
-        MenuBarTitleSegment(provider: .codex, value: "76/--", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "--", isStale: false),
     ])
 }
 
@@ -38,7 +67,7 @@ func menuBarTitleFormatterExposesProviderSegmentsForIconRendering() {
 
     #expect(segments == [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: true),
-        MenuBarTitleSegment(provider: .codex, value: "72/90", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
     ])
 }
 
@@ -49,7 +78,7 @@ func menuBarTitleFormatterOmitsHiddenProviders() {
         .codex: .fresh(codexUsage, asOf: Date(timeIntervalSince1970: 20)),
     ])
 
-    #expect(plainText(title) == "# 72/90")
+    #expect(plainText(title) == "# 90")
 }
 
 @Test
@@ -73,6 +102,16 @@ func menuBarTitleFormatterShowsPlaceholderForStaleProviderWithoutLastUsage() {
 }
 
 @Test
+func menuBarTitleFormatterShowsCodexPlaceholderForStaleProviderWithoutLastUsage() {
+    let title = MenuBarTitleFormatter.format([
+        .claude: .hidden,
+        .codex: .stale(last: nil, reason: .parseFailure),
+    ])
+
+    #expect(plainText(title) == "# --")
+}
+
+@Test
 func menuBarTitleFormatterReturnsEmptyStringWhenAllProvidersAreHidden() {
     let title = MenuBarTitleFormatter.format([
         .claude: .hidden,
@@ -86,7 +125,7 @@ func menuBarTitleFormatterReturnsEmptyStringWhenAllProvidersAreHidden() {
 func menuBarTitleFormatterShowsPlaceholdersWhenProvidersHaveNoDataYet() {
     let title = MenuBarTitleFormatter.format([:])
 
-    #expect(plainText(title) == "* --/--  # --/--")
+    #expect(plainText(title) == "* --/--  # --")
 }
 
 private let claudeUsage = ProviderUsage(
@@ -95,7 +134,7 @@ private let claudeUsage = ProviderUsage(
 )
 
 private let codexUsage = ProviderUsage(
-    fiveHour: UsageWindow(percentRemaining: 72, resetsAt: nil),
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 90, resetsAt: nil)
 )
 
