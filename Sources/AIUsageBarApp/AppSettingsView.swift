@@ -24,11 +24,12 @@ struct AppSettingsView: View {
                         .labelsHidden()
                         .fixedSize()
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(4)
                 }
 
                 GroupBox("Providers") {
-                    VStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(ProviderID.allCases, id: \.self) { provider in
                             LabeledContent(provider.settingsDisplayName) {
                                 Toggle(
@@ -40,8 +41,10 @@ struct AppSettingsView: View {
                                 )
                                 .labelsHidden()
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(4)
                 }
 
@@ -55,6 +58,7 @@ struct AppSettingsView: View {
                         )
                         .labelsHidden()
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(4)
                 }
 
@@ -64,6 +68,7 @@ struct AppSettingsView: View {
                             Toggle("Launch at login", isOn: $draft.launchAtLoginEnabled)
                                 .labelsHidden()
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                         if let launchAtLoginError = model.launchAtLoginError {
                             Text(launchAtLoginError)
