@@ -1258,6 +1258,35 @@ public struct CodexUsageProvider: UsageProvider {
     }
 }
 
+// Both Keychain prompt-suppressors `KeychainCredentialStore` relies on are
+// deprecated — `SecKeychainSetUserInteractionAllowed` (macOS 10.10) and
+// `kSecUseAuthenticationUIFail` (macOS 11.0) — yet they remain the only APIs that
+// suppress the legacy ACL and partition-id prompts a background poll must avoid; the
+// suggested replacement (`LAContext.interactionNotAllowed`) does not cover the
+// partition-id prompt (see `read(_:mode:)`). We keep using them deliberately and
+// confine the deprecation to this one type: the witnesses below are marked
+// deprecated, which silences the references to the legacy symbols, and callers reach
+// them through the protocol so protocol dispatch keeps the deprecation from
+// resurfacing at each call site.
+private protocol LegacyKeychainInteraction: Sendable {
+    func setUserInteractionAllowed(_ allowed: Bool) -> OSStatus
+    var suppressAuthenticationUIValue: CFString { get }
+}
+
+private struct SystemLegacyKeychainInteraction: LegacyKeychainInteraction {
+    @available(macOS, deprecated: 10.10)
+    func setUserInteractionAllowed(_ allowed: Bool) -> OSStatus {
+        SecKeychainSetUserInteractionAllowed(allowed)
+    }
+
+    @available(macOS, deprecated: 11.0)
+    var suppressAuthenticationUIValue: CFString {
+        kSecUseAuthenticationUIFail
+    }
+}
+
+private let legacyKeychainInteraction: any LegacyKeychainInteraction = SystemLegacyKeychainInteraction()
+
 public struct KeychainCredentialStore: CredentialStore {
     public typealias CopyMatching = @Sendable (
         CFDictionary,
@@ -1340,7 +1369,7 @@ public struct KeychainCredentialStore: CredentialStore {
         _ = setUserInteractionAllowed(mode == .interactive)
 
         if mode == .background {
-            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+            query[kSecUseAuthenticationUI as String] = legacyKeychainInteraction.suppressAuthenticationUIValue
         }
 
         var item: CFTypeRef?
@@ -1361,12 +1390,10 @@ public struct KeychainCredentialStore: CredentialStore {
         setUserInteractionAllowedOverride ?? Self.systemSetUserInteractionAllowed
     }
 
-    // Single chokepoint for the deprecated (macOS 10.10) SecKeychain toggle. The
-    // whole SecKeychain family is deprecated, but it is the only API that governs
-    // the legacy partition-id prompt this app must avoid; confining the reference
-    // here keeps the deprecation to one line.
+    // Default for the injectable toggle: the real SecKeychain call, reached through
+    // `LegacyKeychainInteraction` so its deprecation stays confined to that type.
     private static let systemSetUserInteractionAllowed: SetUserInteractionAllowed = { allowed in
-        SecKeychainSetUserInteractionAllowed(allowed)
+        legacyKeychainInteraction.setUserInteractionAllowed(allowed)
     }
 
     private static func defaultAccount(for credential: CredentialIdentifier) -> String? {
