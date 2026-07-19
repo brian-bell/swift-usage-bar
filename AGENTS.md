@@ -4,7 +4,7 @@ Context for AI coding agents working in this repository. `CLAUDE.md` is a symlin
 
 ## What this project is
 
-**AIUsageBar** is a native macOS menu bar app (SwiftUI `MenuBarExtra`) that displays **percent remaining** for Claude (5-hour and weekly) and ChatGPT/Codex (weekly only — the former 5-hour limit is deprecated). The menu bar label renders visible providers as a compact two-line stack, one provider per row (e.g. `Cl 62/81` over `Cx 90` — `Cl` is Claude as `fiveHour/weekly`, `Cx` is Codex weekly percent remaining, `~` prefix when stale, `--/--` / `--` when no data; a lone visible provider renders as a single compact row, and `AI Usage` is shown when all providers are hidden). The dropdown shows progress bars, reset countdowns, a Refresh-now button with last-updated label, and inline settings.
+**AIUsageBar** is a native macOS menu bar app (SwiftUI `MenuBarExtra`) that displays **percent remaining** for Claude (5-hour and weekly) and ChatGPT/Codex (weekly only — the former 5-hour limit is deprecated). The menu bar label renders visible providers as a compact two-line stack, one provider per row (e.g. `Cl 62/81` over `Cx 90` — `Cl` is Claude as `fiveHour/weekly`, `Cx` is Codex weekly percent remaining, `~` prefix when stale, `--/--` / `--` when no data; a lone visible provider renders as a single compact row, and `AI Usage` is shown when all providers are hidden). The dropdown shows progress bars, reset countdowns, a Refresh-now button with last-updated label, and a footer with **Settings…** and **Quit** buttons. Settings live in a standard macOS Settings window (`Settings` scene, ⌘,), not inline in the dropdown — poll interval, per-provider visibility, alert threshold, and launch-at-login.
 
 Data access is strictly **read-only**: the app borrows existing CLI state and never writes to credential stores or refreshes OAuth tokens. When data can't be fetched, providers degrade to a greyed "stale" state instead of erroring.
 
@@ -52,7 +52,8 @@ Package: AIUsageBar
 ├── Sources/AIUsageBarApp/        thin executable target — SwiftUI shell + system adapters
 │   ├── AIUsageBarApp.swift       @main MenuBarExtra scene
 │   ├── UsageBarShellModel.swift  @Observable shell model + live DI wiring (`.live()`)
-│   ├── MenuBarContentView.swift  dropdown UI (rows, refresh, settings, quit)
+│   ├── MenuBarContentView.swift  dropdown UI (rows, refresh, Settings…/Quit footer)
+│   ├── AppSettingsView.swift     Settings-window (⌘,) form for the app settings
 │   ├── NotificationSupport.swift UNUserNotificationCenter adapter + wake-event stream
 │   └── LaunchAtLoginService.swift SMAppService.mainApp adapter
 ├── Tests/UsageCoreTests/         Swift Testing suites for all core logic

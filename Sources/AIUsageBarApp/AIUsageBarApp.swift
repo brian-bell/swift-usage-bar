@@ -19,5 +19,9 @@ struct AIUsageBarApp: App {
             MenuBarLabelView(segments: model.menuBarSegments)
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            AppSettingsView(model: model)
+        }
     }
 }

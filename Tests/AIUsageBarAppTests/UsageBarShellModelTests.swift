@@ -46,6 +46,27 @@ func shellModelRefreshIntentCallsUsageController() async {
 
 @Test
 @MainActor
+func shellModelPresentSettingsInvokesInstalledOpener() {
+    let model = shellModel()
+    var openCount = 0
+    model.setSettingsOpener { openCount += 1 }
+
+    model.presentSettings()
+
+    #expect(openCount == 1)
+}
+
+@Test
+@MainActor
+func shellModelPresentSettingsIsNoOpWithoutOpener() {
+    let model = shellModel()
+
+    // Should not trap when no opener has been installed yet.
+    model.presentSettings()
+}
+
+@Test
+@MainActor
 func shellModelProviderVisibilityUpdatesSettingsAndAppStateOnlyForThatProvider() {
     withIsolatedDefaults { defaults in
         let appState = AppState(providerStates: [

@@ -4,6 +4,7 @@ import UsageCore
 
 struct MenuBarContentView: View {
     @Bindable var model: UsageBarShellModel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -29,10 +30,28 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            SettingsView(model: model)
+            HStack {
+                Button("Settings…") {
+                    model.presentSettings()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+
+                Spacer()
+
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
+            }
         }
         .padding(14)
         .frame(width: 320)
+        .onAppear {
+            model.setSettingsOpener {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                openSettings()
+            }
+        }
     }
 
     private var lastUpdatedText: String {
@@ -91,72 +110,3 @@ private struct UsageWindowRowView: View {
     }
 }
 
-struct SettingsView: View {
-    @Bindable var model: UsageBarShellModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Picker(
-                "Interval",
-                selection: Binding(
-                    get: { model.pollInterval },
-                    set: { model.setPollInterval($0) }
-                )
-            ) {
-                Text("1 min").tag(TimeInterval(60))
-                Text("2 min").tag(TimeInterval(120))
-                Text("5 min").tag(TimeInterval(300))
-                Text("10 min").tag(TimeInterval(600))
-            }
-
-            ForEach(ProviderID.allCases, id: \.self) { provider in
-                Toggle(
-                    provider.settingsDisplayName,
-                    isOn: Binding(
-                        get: { model.isProviderVisible(provider) },
-                        set: { model.setProvider(provider, visible: $0) }
-                    )
-                )
-            }
-
-            Stepper(
-                "Threshold: \(model.thresholdPercent)%",
-                value: Binding(
-                    get: { model.thresholdPercent },
-                    set: { model.setThresholdPercent($0) }
-                ),
-                in: 1...100,
-                step: 1
-            )
-
-            Toggle(
-                "Launch at login",
-                isOn: Binding(
-                    get: { model.launchAtLoginEnabled },
-                    set: { model.setLaunchAtLoginEnabled($0) }
-                )
-            )
-
-            if let launchAtLoginError = model.launchAtLoginError {
-                Text(launchAtLoginError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
-        }
-    }
-}
-
-private extension ProviderID {
-    var settingsDisplayName: String {
-        switch self {
-        case .claude:
-            return "Claude"
-        case .codex:
-            return "Codex"
-        }
-    }
-}
