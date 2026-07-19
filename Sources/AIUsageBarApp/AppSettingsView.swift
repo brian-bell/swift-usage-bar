@@ -8,51 +8,74 @@ struct AppSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft = AppSettingsDraft.placeholder
 
+    // A GroupBox-based layout (rather than a grouped `Form`) so there is no scroll view,
+    // and therefore no scroll indicator — the window sizes to fit its content.
     var body: some View {
         VStack(spacing: 0) {
-            Form {
-                Section("Refresh") {
-                    Picker("Interval", selection: $draft.pollInterval) {
-                        Text("1 min").tag(TimeInterval(60))
-                        Text("2 min").tag(TimeInterval(120))
-                        Text("5 min").tag(TimeInterval(300))
-                        Text("10 min").tag(TimeInterval(600))
+            VStack(spacing: 14) {
+                GroupBox("Refresh") {
+                    LabeledContent("Interval") {
+                        Picker("Interval", selection: $draft.pollInterval) {
+                            Text("1 min").tag(TimeInterval(60))
+                            Text("2 min").tag(TimeInterval(120))
+                            Text("5 min").tag(TimeInterval(300))
+                            Text("10 min").tag(TimeInterval(600))
+                        }
+                        .labelsHidden()
+                        .fixedSize()
                     }
+                    .padding(4)
                 }
 
-                Section("Providers") {
-                    ForEach(ProviderID.allCases, id: \.self) { provider in
-                        Toggle(
-                            provider.settingsDisplayName,
-                            isOn: Binding(
-                                get: { draft.visibility(for: provider) },
-                                set: { draft.providerVisibility[provider] = $0 }
-                            )
+                GroupBox("Providers") {
+                    VStack(spacing: 8) {
+                        ForEach(ProviderID.allCases, id: \.self) { provider in
+                            LabeledContent(provider.settingsDisplayName) {
+                                Toggle(
+                                    provider.settingsDisplayName,
+                                    isOn: Binding(
+                                        get: { draft.visibility(for: provider) },
+                                        set: { draft.providerVisibility[provider] = $0 }
+                                    )
+                                )
+                                .labelsHidden()
+                            }
+                        }
+                    }
+                    .padding(4)
+                }
+
+                GroupBox("Notifications") {
+                    LabeledContent("Alert below \(draft.thresholdPercent)% remaining") {
+                        Stepper(
+                            "Alert threshold",
+                            value: $draft.thresholdPercent,
+                            in: 1...100,
+                            step: 1
                         )
+                        .labelsHidden()
                     }
+                    .padding(4)
                 }
 
-                Section("Notifications") {
-                    Stepper(
-                        "Alert below \(draft.thresholdPercent)% remaining",
-                        value: $draft.thresholdPercent,
-                        in: 1...100,
-                        step: 1
-                    )
-                }
+                GroupBox("General") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        LabeledContent("Launch at login") {
+                            Toggle("Launch at login", isOn: $draft.launchAtLoginEnabled)
+                                .labelsHidden()
+                        }
 
-                Section("General") {
-                    Toggle("Launch at login", isOn: $draft.launchAtLoginEnabled)
-
-                    if let launchAtLoginError = model.launchAtLoginError {
-                        Text(launchAtLoginError)
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                        if let launchAtLoginError = model.launchAtLoginError {
+                            Text(launchAtLoginError)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
+                    .padding(4)
                 }
             }
-            .formStyle(.grouped)
-            .scrollIndicators(.hidden)
+            .padding(16)
 
             Divider()
 
