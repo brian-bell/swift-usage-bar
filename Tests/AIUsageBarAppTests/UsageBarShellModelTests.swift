@@ -285,6 +285,111 @@ func shellModelLaunchAtLoginIntentReportsFailureWithoutPersistingPreference() {
     }
 }
 
+@Test
+@MainActor
+func settingsDraftCapturesCurrentModelValues() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        settingsStore.pollInterval = 300
+        settingsStore.thresholdPercent = 35
+        settingsStore.setProvider(.codex, visible: false)
+        let launchManager = RecordingLaunchAtLoginManager(status: .enabled)
+        let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
+
+        let draft = AppSettingsDraft.capture(from: model)
+
+        #expect(draft.pollInterval == 300)
+        #expect(draft.thresholdPercent == 35)
+        #expect(draft.visibility(for: .claude))
+        #expect(!draft.visibility(for: .codex))
+        #expect(draft.launchAtLoginEnabled)
+    }
+}
+
+@Test
+@MainActor
+func settingsDraftApplyPersistsChangedValues() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let appState = AppState(providerStates: [
+            .claude: .fresh(claudeUsage, asOf: referenceNow),
+            .codex: .fresh(codexUsage, asOf: referenceNow),
+        ])
+        let model = shellModel(appState: appState, settingsStore: settingsStore)
+
+        var draft = AppSettingsDraft.capture(from: model)
+        draft.pollInterval = 600
+        draft.thresholdPercent = 10
+        draft.providerVisibility[.codex] = false
+        draft.apply(to: model)
+
+        #expect(model.pollInterval == 600)
+        #expect(settingsStore.pollInterval == 600)
+        #expect(model.thresholdPercent == 10)
+        #expect(settingsStore.thresholdPercent == 10)
+        #expect(!model.isProviderVisible(.codex))
+        #expect(appState.providerState(for: .codex) == .hidden)
+        #expect(model.isProviderVisible(.claude))
+    }
+}
+
+@Test
+@MainActor
+func settingsDraftApplyDoesNotTouchUnchangedLaunchAtLogin() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let launchManager = RecordingLaunchAtLoginManager()
+        let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
+
+        var draft = AppSettingsDraft.capture(from: model)
+        draft.thresholdPercent += 5
+        let attemptedLaunchChange = draft.apply(to: model)
+
+        #expect(launchManager.requests.isEmpty)
+        #expect(!attemptedLaunchChange)
+    }
+}
+
+@Test
+@MainActor
+func settingsDraftApplyTogglesLaunchAtLoginWhenChanged() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let launchManager = RecordingLaunchAtLoginManager()
+        let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
+
+        var draft = AppSettingsDraft.capture(from: model)
+        draft.launchAtLoginEnabled = true
+        let attemptedLaunchChange = draft.apply(to: model)
+
+        #expect(attemptedLaunchChange)
+        #expect(launchManager.requests == [true])
+        #expect(model.launchAtLoginEnabled)
+        #expect(settingsStore.launchAtLoginEnabled)
+    }
+}
+
+@Test
+@MainActor
+func settingsDraftDiscardLeavesModelUnchanged() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let appState = AppState(providerStates: [
+            .claude: .fresh(claudeUsage, asOf: referenceNow),
+        ])
+        let model = shellModel(appState: appState, settingsStore: settingsStore)
+
+        var draft = AppSettingsDraft.capture(from: model)
+        draft.pollInterval = 600
+        draft.providerVisibility[.claude] = false
+        // No apply(): Cancel discards the edits.
+
+        #expect(model.pollInterval != 600)
+        #expect(model.isProviderVisible(.claude))
+        #expect(appState.providerState(for: .claude) == .fresh(claudeUsage, asOf: referenceNow))
+    }
+}
+
 private let referenceNow = Date(timeIntervalSince1970: 1_767_268_800)
 
 private let claudeUsage = ProviderUsage(

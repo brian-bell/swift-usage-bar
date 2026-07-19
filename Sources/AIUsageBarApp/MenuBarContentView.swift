@@ -31,9 +31,14 @@ struct MenuBarContentView: View {
             Divider()
 
             HStack {
-                Button("Settings…") {
+                Button {
                     model.presentSettings()
+                } label: {
+                    Image(systemName: "gearshape")
                 }
+                .buttonStyle(.borderless)
+                .help("Settings")
+                .accessibilityLabel("Settings")
                 .keyboardShortcut(",", modifiers: .command)
 
                 Spacer()
