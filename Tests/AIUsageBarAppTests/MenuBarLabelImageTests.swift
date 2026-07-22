@@ -67,15 +67,33 @@ func menuBarLabelImageSizesStaleAndMissingRowsFromTheirLabels() throws {
 
 @Test
 @MainActor
-func menuBarLabelImageRendersSingleProviderAsOneCompactRow() throws {
+func menuBarLabelImageRendersSingleProviderAtReadableMenuBarHeight() throws {
     let segments = [
         MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
     ]
     let image = try #require(MenuBarLabelImage.image(for: segments))
 
     #expect(image.isTemplate)
-    #expect(image.size.height == MenuBarLabelImage.rowHeight)
-    #expect(image.size.width == expectedWidth(for: segments))
+    #expect(image.size.height == 18)
+}
+
+@Test(arguments: ProviderID.allCases)
+@MainActor
+func menuBarLabelImageUsesReadableFontForSingleProvider(provider: ProviderID) throws {
+    let value = provider == .claude ? "62/81" : "90"
+    let segment = MenuBarTitleSegment(provider: provider, value: value, isStale: false)
+    let image = try #require(MenuBarLabelImage.image(for: [segment]))
+    let readableAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium),
+        .foregroundColor: NSColor.white,
+    ]
+    let expectedWidth = ceil(
+        (MenuBarLabelImage.rowLabel(for: segment) as NSString)
+            .size(withAttributes: readableAttributes)
+            .width
+    )
+
+    #expect(image.size.width == expectedWidth)
 }
 
 @Test

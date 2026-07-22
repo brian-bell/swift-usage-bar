@@ -19,10 +19,18 @@ struct MenuBarLabelView: View {
 enum MenuBarLabelImage {
     /// Two rows at this height total 22 pt, fitting the 24 pt menu bar slot.
     static let rowHeight: CGFloat = 11
+    private static let singleRowHeight: CGFloat = 18
 
     static var rowAttributes: [NSAttributedString.Key: Any] {
         [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+    }
+
+    private static var singleRowAttributes: [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium),
             .foregroundColor: NSColor.white,
         ]
     }
@@ -42,18 +50,19 @@ enum MenuBarLabelImage {
             return nil
         }
 
-        let attributes = rowAttributes
+        let attributes = attributes(for: segments.count)
         let measured = segments.map { segment -> (text: String, size: NSSize) in
             let text = rowLabel(for: segment)
             return (text, (text as NSString).size(withAttributes: attributes))
         }
         let width = ceil(measured.map(\.size.width).max() ?? 0)
-        let height = rowHeight * CGFloat(measured.count)
+        let resolvedRowHeight = segments.count == 1 ? singleRowHeight : rowHeight
+        let height = resolvedRowHeight * CGFloat(measured.count)
         let rows = measured.enumerated().map { index, row in
-            let rowMinY = height - rowHeight * CGFloat(index + 1)
+            let rowMinY = height - resolvedRowHeight * CGFloat(index + 1)
             return Layout.Row(
                 text: row.text,
-                textOrigin: NSPoint(x: 0, y: rowMinY + (rowHeight - row.size.height) / 2)
+                textOrigin: NSPoint(x: 0, y: rowMinY + (resolvedRowHeight - row.size.height) / 2)
             )
         }
 
@@ -66,7 +75,7 @@ enum MenuBarLabelImage {
             return nil
         }
 
-        let attributes = rowAttributes
+        let attributes = attributes(for: segments.count)
         let image = NSImage(size: layout.size)
         image.lockFocus()
         defer {
@@ -84,6 +93,10 @@ enum MenuBarLabelImage {
     static func rowLabel(for segment: MenuBarTitleSegment) -> String {
         let prefix = segment.isStale ? "~" : ""
         return "\(abbreviation(for: segment.provider)) \(prefix)\(segment.value)"
+    }
+
+    private static func attributes(for segmentCount: Int) -> [NSAttributedString.Key: Any] {
+        segmentCount == 1 ? singleRowAttributes : rowAttributes
     }
 
     private static func abbreviation(for provider: ProviderID) -> String {
