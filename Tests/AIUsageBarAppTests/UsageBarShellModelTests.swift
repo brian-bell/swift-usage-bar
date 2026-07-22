@@ -390,6 +390,25 @@ func settingsDraftDiscardLeavesModelUnchanged() {
     }
 }
 
+@Test
+@MainActor
+func openCodeGoWorkspaceEditIsStagedAndNormalizesOnlyOnApply() {
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let model = shellModel(settingsStore: settingsStore)
+        let id = "wrk_01KEXAMPLE123"
+
+        var discardedDraft = AppSettingsDraft.capture(from: model)
+        discardedDraft.openCodeGoWorkspace = "https://opencode.ai/workspace/\(id)/go"
+        #expect(model.openCodeGoWorkspaceID == nil)
+        #expect(settingsStore.openCodeGoWorkspaceID == nil)
+
+        discardedDraft.apply(to: model)
+        #expect(model.openCodeGoWorkspaceID == id)
+        #expect(settingsStore.openCodeGoWorkspaceID == id)
+    }
+}
+
 private let referenceNow = Date(timeIntervalSince1970: 1_767_268_800)
 
 private let claudeUsage = ProviderUsage(

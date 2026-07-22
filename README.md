@@ -1,18 +1,18 @@
 # AIUsageBar
 
-A native macOS menu bar app that shows how much of your **Claude** and **ChatGPT/Codex** subscription rate limits you have left — always visible, at a glance.
+A native macOS menu bar app that shows how much of your **Claude**, **ChatGPT/Codex**, and **OpenCode Go** subscription rate limits you have left — always visible, at a glance.
 
-The menu bar shows percent **remaining** (fuel-gauge semantics) as a compact two-line stack, e.g. `Cl 62/81` over `Cx 90` (`Cl` Claude 5-hour/weekly, `Cx` Codex weekly — the former Codex 5-hour limit is deprecated). The dropdown adds progress bars, exact percentages, reset countdowns, a Refresh-now button with last-updated time, and inline settings.
+The menu bar shows percent **remaining** (fuel-gauge semantics) in at most two rows, e.g. `Cl 62/81  Cx 90` over `Go 88/74/92`. OpenCode Go uses 5-hour/weekly/monthly order and `--` for an unavailable optional window. The dropdown adds progress bars, exact percentages, reset countdowns, and a Refresh-now button with last-updated time. Settings live in the standard macOS Settings window (⌘,).
 
 Access is strictly **read-only**: the app borrows state your CLIs already maintain. It never writes to the Keychain, never refreshes OAuth tokens, and degrades to a greyed "stale" display when data is unavailable.
 
 ## Features
 
-- Claude 5-hour + weekly and Codex weekly visible in the menu bar at all times; stale values marked with `~`, missing data as `--/--` (Claude) or `--` (Codex)
+- Claude 5-hour + weekly, Codex weekly, and optional OpenCode Go 5-hour + weekly + monthly usage; stale values are marked with `~` and missing windows with `--`
 - Dropdown with per-window progress bars and reset countdowns ("resets in 2h 14m", or weekday + time when more than a day out)
 - Polls every 2 minutes (configurable: 1/2/5/10 min), plus on Mac wake and on manual refresh
 - Notification when a window drops below a threshold (default 20%, configurable) — fired once per window per reset cycle
-- Per-provider show/hide toggles, launch-at-login, all settings inline in the dropdown
+- Per-provider show/hide toggles, launch-at-login, and staged OK/Cancel edits in Settings; OpenCode Go is off by default
 - Menu-bar-only app (`LSUIElement`): no Dock icon
 
 ## How it gets the data
@@ -21,8 +21,9 @@ Access is strictly **read-only**: the app borrows state your CLIs already mainta
 |---|---|
 | Claude | Reads Claude Code's Keychain credential (read-only, falling back to `~/.claude/.credentials.json` on Claude Code versions that store the credential there) and calls `GET https://api.anthropic.com/api/oauth/usage`, falling back to the statusline JSON cached locally by `scripts/claude-statusline-cache` when the API path is unavailable |
 | Codex | Codex CLI's Keychain credential (read-only) → `GET https://chatgpt.com/backend-api/wham/usage` |
+| OpenCode Go | Reads only Chrome's `auth` or `__Host-auth` cookie for `opencode.ai`, discovers the qualifying workspace (or uses the optional Settings override), then reads `https://opencode.ai/workspace/<workspace-id>/go` |
 
-Background polls read the Keychain in a prompt-proof mode: if macOS would need to ask for permission, the read fails silently and the poll falls back to the statusline cache, so a Keychain dialog can only ever appear from a manual **Refresh now**. The app never refreshes OAuth tokens, so the API path depends on Claude Code keeping its token fresh (tokens live under 24 h); on a machine with no recent Claude Code activity the row relies on the statusline cache, then degrades to a greyed stale display.
+Background polls read the Keychain in a prompt-proof mode: if macOS would need to ask for permission, the read fails silently, so a Keychain dialog can only appear from a manual **Refresh now**. The app never refreshes OAuth tokens or imported browser cookies. Claude can fall back to its statusline cache; other unavailable providers degrade to a greyed stale display while preserving their last-known usage.
 
 See `docs/endpoints.md` for the discovered contracts and evidence.
 
@@ -32,6 +33,7 @@ See `docs/endpoints.md` for the discovered contracts and evidence.
 - Swift 6 toolchain to build (developed with CommandLineTools-only Swift 6.3)
 - [Claude Code](https://claude.com/claude-code) logged in, with the statusline cache wrapper below configured for automatic Claude updates (manual refreshes work without it)
 - [Codex CLI](https://github.com/openai/codex) logged in via ChatGPT, for Codex numbers
+- Google Chrome signed in to `opencode.ai`, for optional OpenCode Go numbers
 
 ## Install
 
@@ -51,7 +53,7 @@ CODESIGN_IDENTITY="AIUsageBar Signing" ./scripts/bundle.sh
 
 Enable "Launch at login" from the dropdown settings if you want it to persist across restarts (macOS may ask you to approve it in System Settings › Login Items).
 
-On the first manual refresh macOS will ask whether AIUsageBar may read the `Claude Code-credentials` (and `Codex Auth`) Keychain items — click **Always Allow**. If you only click Allow, the prompt returns on a later manual refresh; if you deny, the Claude row falls back to the statusline cache. Background polls read the Keychain only in a mode that fails silently instead of prompting, so until you grant **Always Allow** they use the statusline cache alone; once granted, background polls keep Claude fresh via the API even when no Claude Code session is running (e.g. while you use the Claude desktop app).
+On the first manual refresh macOS may ask whether AIUsageBar can read the `Claude Code-credentials`, `Codex Auth`, and (when OpenCode Go is enabled) `Chrome Safe Storage` Keychain items — click **Always Allow**. If you only click Allow, the prompt can return on a later manual refresh; if you deny, the Claude row falls back to the statusline cache and the other affected provider becomes stale. Background polls fail silently instead of prompting.
 
 An ad-hoc signature pins the Keychain grant to the exact binary hash, so **every rebuild re-triggers the prompt**. To make the grant survive rebuilds, sign with a stable code-signing certificate:
 

@@ -51,8 +51,23 @@ enum MenuBarLabelImage {
         }
 
         let attributes = attributes(for: segments.count)
-        let measured = segments.map { segment -> (text: String, size: NSSize) in
-            let text = rowLabel(for: segment)
+        let rowTexts: [String]
+        if segments.count <= 2 {
+            rowTexts = segments.map(rowLabel(for:))
+        } else {
+            let labels = segments.map(rowLabel(for:))
+            rowTexts = (1..<labels.count).map { split -> [String] in
+                [
+                    labels[..<split].joined(separator: "  "),
+                    labels[split...].joined(separator: "  "),
+                ]
+            }.min { lhs, rhs in
+                let lhsWidth = lhs.map { ($0 as NSString).size(withAttributes: attributes).width }.max() ?? 0
+                let rhsWidth = rhs.map { ($0 as NSString).size(withAttributes: attributes).width }.max() ?? 0
+                return lhsWidth < rhsWidth
+            } ?? labels
+        }
+        let measured = rowTexts.map { text -> (text: String, size: NSSize) in
             return (text, (text as NSString).size(withAttributes: attributes))
         }
         let width = ceil(measured.map(\.size.width).max() ?? 0)
@@ -105,6 +120,8 @@ enum MenuBarLabelImage {
             return "Cl"
         case .codex:
             return "Cx"
+        case .openCodeGo:
+            return "Go"
         }
     }
 }

@@ -121,6 +121,25 @@ func dropdownRowsExposeFableWindowOnlyWhenPresent() throws {
 }
 
 @Test
+func dropdownRowsExposeOpenCodeGoMonthlyWindow() throws {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 74, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 92, resetsAt: nil)
+    )
+    let model = DropdownViewModel(
+        states: [.openCodeGo: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
+    #expect(row.providerName == "OpenCode Go")
+    #expect(row.monthly?.title == "Monthly")
+    #expect(row.monthly?.percentLabel == "92% remaining")
+    #expect(row.fable == nil)
+}
+
+@Test
 func dropdownRowsFlagStaleProvidersWhilePreservingLastKnownValues() throws {
     let model = DropdownViewModel(
         states: [.claude: .stale(last: claudeUsage, reason: .networkError)],
@@ -177,6 +196,8 @@ func dropdownRowsOmitFiveHourPlaceholderForStaleCodexWithoutData() throws {
     (StaleReason.networkError, "Stale: network error"),
     (StaleReason.tokenExpired, "Stale: token expired"),
     (StaleReason.credentialUnavailable, "Stale: credential unavailable"),
+    (StaleReason.workspaceSelectionRequired, "Stale: select an OpenCode Go workspace in Settings"),
+    (StaleReason.sessionExpired, "Stale: OpenCode session expired; sign in again in Chrome"),
 ])
 func dropdownStaleMessageMatchesStaleReason(reason: StaleReason, expectedMessage: String) throws {
     let model = DropdownViewModel(

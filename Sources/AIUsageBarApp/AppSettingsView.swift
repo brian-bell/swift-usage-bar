@@ -43,6 +43,15 @@ struct AppSettingsView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
+
+                        if draft.visibility(for: .openCodeGo) {
+                            LabeledContent("OpenCode Go workspace") {
+                                TextField("Optional wrk_\u{2026} ID or URL", text: $draft.openCodeGoWorkspace)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 190)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(4)
@@ -119,6 +128,8 @@ extension ProviderID {
             return "Claude"
         case .codex:
             return "Codex"
+        case .openCodeGo:
+            return "OpenCode Go"
         }
     }
 }

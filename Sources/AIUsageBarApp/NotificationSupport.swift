@@ -167,6 +167,8 @@ private extension ProviderID {
             return "claude"
         case .codex:
             return "codex"
+        case .openCodeGo:
+            return "opencode-go"
         }
     }
 }
@@ -178,6 +180,8 @@ private extension UsageWindowKind {
             return "five-hour"
         case .weekly:
             return "weekly"
+        case .monthly:
+            return "monthly"
         }
     }
 }
