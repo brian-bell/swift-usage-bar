@@ -22,6 +22,7 @@ final class UsageBarShellModel {
     private(set) var thresholdPercent: Int
     private(set) var launchAtLoginEnabled: Bool
     private var providerVisibility: [ProviderID: Bool]
+    private var settingsOpener: (@MainActor () -> Void)?
     var launchAtLoginError: String?
 
     init(
@@ -56,6 +57,17 @@ final class UsageBarShellModel {
 
     func refreshNow() async {
         await usageController.refreshNow()
+    }
+
+    /// Installs the action that opens the Settings window. The view layer wires this to
+    /// the SwiftUI `openSettings` environment action once the scene is available.
+    func setSettingsOpener(_ opener: @escaping @MainActor () -> Void) {
+        settingsOpener = opener
+    }
+
+    /// User intent: bring up the Settings dialog. No-op until an opener is installed.
+    func presentSettings() {
+        settingsOpener?()
     }
 
     func setPollInterval(_ interval: TimeInterval) {
