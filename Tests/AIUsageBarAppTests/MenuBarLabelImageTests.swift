@@ -100,6 +100,18 @@ func menuBarLabelLayoutPlacesFirstSegmentInTopRow() throws {
     #expect(layout.size.height == MenuBarLabelImage.rowHeight * 2)
 }
 
+@Test
+func menuBarLabelLayoutPartitionsThreeProvidersAcrossTwoRows() throws {
+    let layout = try #require(MenuBarLabelImage.layout(for: [
+        MenuBarTitleSegment(provider: .claude, value: "100/100", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "100", isStale: true),
+        MenuBarTitleSegment(provider: .openCodeGo, value: "100/--/100", isStale: false),
+    ]))
+
+    #expect(layout.rows.map(\.text) == ["Cl 100/100  Cx ~100", "Go 100/--/100"])
+    #expect(layout.size.height == 22)
+}
+
 @MainActor
 private func expectedWidth(for segments: [MenuBarTitleSegment]) -> CGFloat {
     let widest = segments

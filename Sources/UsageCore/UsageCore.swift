@@ -21,22 +21,37 @@ public struct UsageWindow: Equatable, Sendable {
 public struct ProviderUsage: Equatable, Sendable {
     public let fiveHour: UsageWindow
     public let weekly: UsageWindow
+    public let monthly: UsageWindow?
     // Model-scoped weekly window (Claude's "Fable" limit), when the API reports one.
     public let fable: UsageWindow?
 
-    public init(fiveHour: UsageWindow, weekly: UsageWindow, fable: UsageWindow? = nil) {
+    public init(
+        fiveHour: UsageWindow,
+        weekly: UsageWindow,
+        monthly: UsageWindow? = nil,
+        fable: UsageWindow? = nil
+    ) {
         self.fiveHour = fiveHour
         self.weekly = weekly
+        self.monthly = monthly
         self.fable = fable
     }
 }
 
 private extension ProviderUsage {
     func windows(comparedWith previous: ProviderUsage) -> [UsageWindowComparison] {
-        [
+        var comparisons = [
             UsageWindowComparison(kind: .fiveHour, previous: previous.fiveHour, current: fiveHour),
             UsageWindowComparison(kind: .weekly, previous: previous.weekly, current: weekly),
         ]
+        if let monthly {
+            comparisons.append(UsageWindowComparison(
+                kind: .monthly,
+                previous: previous.monthly ?? UsageWindow(percentRemaining: nil, resetsAt: nil),
+                current: monthly
+            ))
+        }
+        return comparisons
     }
 }
 
@@ -53,6 +68,7 @@ public enum UsageParsingError: Error, Equatable, Sendable {
 public enum ProviderID: CaseIterable, Hashable, Sendable {
     case claude
     case codex
+    case openCodeGo
 }
 
 public enum StaleReason: Equatable, Sendable {
@@ -60,6 +76,8 @@ public enum StaleReason: Equatable, Sendable {
     case networkError
     case tokenExpired
     case credentialUnavailable
+    case workspaceSelectionRequired
+    case sessionExpired
 }
 
 public enum ProviderState: Equatable, Sendable {
@@ -71,6 +89,7 @@ public enum ProviderState: Equatable, Sendable {
 public enum UsageWindowKind: Equatable, Hashable, Sendable {
     case fiveHour
     case weekly
+    case monthly
 }
 
 public struct UsageThresholdNotification: Equatable, Sendable {
@@ -110,6 +129,8 @@ private extension ProviderID {
             return "Claude"
         case .codex:
             return "Codex"
+        case .openCodeGo:
+            return "OpenCode Go"
         }
     }
 }
@@ -121,6 +142,8 @@ private extension UsageWindowKind {
             return "five-hour"
         case .weekly:
             return "weekly"
+        case .monthly:
+            return "monthly"
         }
     }
 }
@@ -1448,7 +1471,11 @@ public struct ClaudeCredentialsFileStore: CredentialStore {
 }
 
 public func tone(for usage: ProviderUsage, warningThreshold: Int = 20) -> UsageStatusTone {
-    let remaining = [usage.fiveHour.percentRemaining, usage.weekly.percentRemaining]
+    let remaining = [
+        usage.fiveHour.percentRemaining,
+        usage.weekly.percentRemaining,
+        usage.monthly?.percentRemaining,
+    ]
         .compactMap { $0 }
         .min() ?? 100
     if remaining < 5 {
@@ -1460,6 +1487,68 @@ public func tone(for usage: ProviderUsage, warningThreshold: Int = 20) -> UsageS
     }
 
     return .normal
+}
+
+public struct OpenCodeGoUsageParser: Sendable {
+    public init() {}
+
+    public func parse(_ data: Data, now: Date) throws -> ProviderUsage {
+        guard let text = String(data: data, encoding: .utf8), !Self.looksSignedOut(text) else {
+            throw UsageParsingError.parseFailure
+        }
+
+        let rolling = try Self.window(named: "rollingUsage", in: text, now: now, required: true)
+        let weekly = try Self.window(named: "weeklyUsage", in: text, now: now, required: false)
+        let monthly = try Self.window(named: "monthlyUsage", in: text, now: now, required: false)
+        guard let rolling else {
+            throw UsageParsingError.parseFailure
+        }
+
+        return ProviderUsage(
+            fiveHour: rolling,
+            weekly: weekly ?? UsageWindow(percentRemaining: nil, resetsAt: nil),
+            monthly: monthly
+        )
+    }
+
+    private static func window(
+        named name: String,
+        in text: String,
+        now: Date,
+        required: Bool
+    ) throws -> UsageWindow? {
+        let number = #"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"#
+        let pattern = #"\b"# + NSRegularExpression.escapedPattern(for: name)
+            + #"\s*:\s*\$R\[\d+\]\s*=\s*\{[^}]*\bresetInSec\s*:\s*("#
+            + number + #")\s*,[^}]*\busagePercent\s*:\s*("# + number + #")[^}]*\}"#
+        let regex = try NSRegularExpression(pattern: pattern)
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range) else {
+            // Fixture-backed contract: an optional window may be omitted, but a named
+            // value in any unobserved shape is drift and must not be guessed at.
+            if required || text.contains("\(name):") {
+                throw UsageParsingError.parseFailure
+            }
+            return nil
+        }
+        guard let resetRange = Range(match.range(at: 1), in: text),
+              let percentRange = Range(match.range(at: 2), in: text),
+              let reset = Double(text[resetRange]), reset.isFinite, reset >= 0,
+              let usedPercent = Double(text[percentRange]), usedPercent.isFinite
+        else {
+            throw UsageParsingError.parseFailure
+        }
+
+        return UsageWindow(
+            percentRemaining: percentRemaining(fromUsedPercentage: usedPercent),
+            resetsAt: now.addingTimeInterval(reset)
+        )
+    }
+
+    private static func looksSignedOut(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("/auth/authorize") || lower.contains(">sign in<")
+    }
 }
 
 public struct ClaudeStatuslineParser: Sendable {
@@ -1607,6 +1696,9 @@ public enum MenuBarTitleFormatter {
     public static func segments(_ states: [ProviderID: ProviderState]) -> [MenuBarTitleSegment] {
         ProviderID.allCases.compactMap { provider -> MenuBarTitleSegment? in
             guard let state = states[provider] else {
+                if provider == .openCodeGo {
+                    return nil
+                }
                 return MenuBarTitleSegment(
                     provider: provider,
                     value: remainingPlaceholder(for: provider),
@@ -1982,6 +2074,8 @@ private extension ProviderUsage {
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
         case .codex:
             return weekly.percentRemaining.map(String.init) ?? "--"
+        case .openCodeGo:
+            return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")/\(monthly?.percentRemaining.map(String.init) ?? "--")"
         }
     }
 }
@@ -1992,6 +2086,8 @@ private func remainingPlaceholder(for provider: ProviderID) -> String {
         return "--/--"
     case .codex:
         return "--"
+    case .openCodeGo:
+        return "--/--/--"
     }
 }
 
@@ -2002,6 +2098,8 @@ private extension ProviderID {
             "*"
         case .codex:
             "#"
+        case .openCodeGo:
+            "G"
         }
     }
 }

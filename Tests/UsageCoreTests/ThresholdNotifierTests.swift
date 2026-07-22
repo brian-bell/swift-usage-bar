@@ -146,6 +146,42 @@ func thresholdNotifierTracksProvidersAndWindowsIndependently() async {
 }
 
 @Test
+func thresholdNotifierIncludesMonthlyAndExcludesFable() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_800_000_000)
+    let previous = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 25, resetsAt: reset),
+        fable: UsageWindow(percentRemaining: 25, resetsAt: reset)
+    )
+    let current = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 18, resetsAt: reset),
+        fable: UsageWindow(percentRemaining: 1, resetsAt: reset)
+    )
+
+    await notifier.evaluate(
+        previous: previous,
+        current: current,
+        provider: .openCodeGo,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .openCodeGo,
+            window: .monthly,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: reset
+        ),
+    ])
+}
+
+@Test
 func thresholdNotifierRearmsOnlyWindowWhoseResetCycleChanges() async {
     let sender = RecordingNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)

@@ -10,6 +10,7 @@ func settingsStoreReturnsDefaultsWhenNothingHasBeenSaved() {
         #expect(store.pollInterval == UsagePoller.defaultInterval)
         #expect(store.isProviderVisible(.claude))
         #expect(store.isProviderVisible(.codex))
+        #expect(!store.isProviderVisible(.openCodeGo))
         #expect(store.thresholdPercent == 20)
         #expect(!store.launchAtLoginEnabled)
     }
@@ -35,6 +36,18 @@ func settingsStoreRoundTripsProviderVisibility() {
         #expect(!reloaded.isProviderVisible(.claude))
         #expect(reloaded.isProviderVisible(.codex))
     }
+}
+
+@Test
+func openCodeGoWorkspaceNormalizerAcceptsIDsAndWorkspaceURLs() {
+    let id = "wrk_01KEXAMPLE123"
+
+    #expect(OpenCodeGoWorkspace.normalizedID(from: id) == id)
+    #expect(OpenCodeGoWorkspace.normalizedID(
+        from: "https://opencode.ai/workspace/\(id)/go"
+    ) == id)
+    #expect(OpenCodeGoWorkspace.normalizedID(from: "not a workspace") == nil)
+    #expect(OpenCodeGoWorkspace.normalizedID(from: "   ") == nil)
 }
 
 @Test

@@ -12,6 +12,9 @@ public struct DropdownViewModel: Equatable, Sendable {
         locale: Locale = .current
     ) {
         let rows = ProviderID.allCases.compactMap { provider -> DropdownProviderRow? in
+            if provider == .openCodeGo, states[provider] == nil {
+                return nil
+            }
             let state = states[provider] ?? .stale(last: nil, reason: .networkError)
             guard state != .hidden else {
                 return nil
@@ -45,6 +48,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
     /// `nil` when the provider does not expose a 5-hour window (Codex is weekly-only).
     public let fiveHour: DropdownUsageWindowRow?
     public let weekly: DropdownUsageWindowRow
+    public let monthly: DropdownUsageWindowRow?
     public let fable: DropdownUsageWindowRow?
     public let statusTone: UsageStatusTone?
 
@@ -77,6 +81,9 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 calendar: calendar,
                 locale: locale
             )
+            self.monthly = usage.monthly.map {
+                DropdownUsageWindowRow(title: "Monthly", usageWindow: $0, now: now, calendar: calendar, locale: locale)
+            }
             self.fable = usage.fable.map { fable in
                 DropdownUsageWindowRow(
                     title: "Fable",
@@ -103,6 +110,9 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 calendar: calendar,
                 locale: locale
             )
+            self.monthly = usage.monthly.map {
+                DropdownUsageWindowRow(title: "Monthly", usageWindow: $0, now: now, calendar: calendar, locale: locale)
+            }
             self.fable = usage.fable.map { fable in
                 DropdownUsageWindowRow(
                     title: "Fable",
@@ -120,6 +130,9 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: "5h")
                 : nil
             self.weekly = DropdownUsageWindowRow.placeholder(title: "Weekly")
+            self.monthly = provider == .openCodeGo
+                ? DropdownUsageWindowRow.placeholder(title: "Monthly")
+                : nil
             self.fable = nil
             self.statusTone = nil
         case .hidden:
@@ -129,6 +142,9 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: "5h")
                 : nil
             self.weekly = DropdownUsageWindowRow.placeholder(title: "Weekly")
+            self.monthly = provider == .openCodeGo
+                ? DropdownUsageWindowRow.placeholder(title: "Monthly")
+                : nil
             self.fable = nil
             self.statusTone = nil
         }
@@ -232,6 +248,8 @@ private extension ProviderID {
             return "Claude"
         case .codex:
             return "Codex"
+        case .openCodeGo:
+            return "OpenCode Go"
         }
     }
 
@@ -241,6 +259,8 @@ private extension ProviderID {
             return true
         case .codex:
             return false
+        case .openCodeGo:
+            return true
         }
     }
 }
@@ -256,6 +276,10 @@ private extension StaleReason {
             return "token expired"
         case .credentialUnavailable:
             return "credential unavailable"
+        case .workspaceSelectionRequired:
+            return "select an OpenCode Go workspace in Settings"
+        case .sessionExpired:
+            return "OpenCode session expired; sign in again in Chrome"
         }
     }
 }

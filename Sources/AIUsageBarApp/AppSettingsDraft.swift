@@ -8,13 +8,17 @@ struct AppSettingsDraft: Equatable {
     var pollInterval: TimeInterval
     var providerVisibility: [ProviderID: Bool]
     var thresholdPercent: Int
+    var openCodeGoWorkspace: String
     var launchAtLoginEnabled: Bool
 
     /// Neutral defaults used only until the live values are captured in `onAppear`.
     static let placeholder = AppSettingsDraft(
         pollInterval: 120,
-        providerVisibility: Dictionary(uniqueKeysWithValues: ProviderID.allCases.map { ($0, true) }),
+        providerVisibility: Dictionary(
+            uniqueKeysWithValues: ProviderID.allCases.map { ($0, $0 != .openCodeGo) }
+        ),
         thresholdPercent: 20,
+        openCodeGoWorkspace: "",
         launchAtLoginEnabled: false
     )
 
@@ -32,6 +36,7 @@ extension AppSettingsDraft {
                 uniqueKeysWithValues: ProviderID.allCases.map { ($0, model.isProviderVisible($0)) }
             ),
             thresholdPercent: model.thresholdPercent,
+            openCodeGoWorkspace: model.openCodeGoWorkspaceID ?? "",
             launchAtLoginEnabled: model.launchAtLoginEnabled
         )
     }
@@ -59,6 +64,11 @@ extension AppSettingsDraft {
 
         if model.thresholdPercent != thresholdPercent {
             model.setThresholdPercent(thresholdPercent)
+        }
+
+        let normalizedWorkspace = OpenCodeGoWorkspace.normalizedID(from: openCodeGoWorkspace)
+        if model.openCodeGoWorkspaceID != normalizedWorkspace {
+            model.setOpenCodeGoWorkspace(openCodeGoWorkspace)
         }
 
         guard model.launchAtLoginEnabled != launchAtLoginEnabled else {

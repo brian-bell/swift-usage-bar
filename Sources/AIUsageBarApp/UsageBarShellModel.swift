@@ -21,6 +21,7 @@ final class UsageBarShellModel {
     private(set) var pollInterval: TimeInterval
     private(set) var thresholdPercent: Int
     private(set) var launchAtLoginEnabled: Bool
+    private(set) var openCodeGoWorkspaceID: String?
     private var providerVisibility: [ProviderID: Bool]
     private var settingsOpener: (@MainActor () -> Void)?
     var launchAtLoginError: String?
@@ -40,6 +41,7 @@ final class UsageBarShellModel {
         self.pollInterval = settingsStore.pollInterval
         self.thresholdPercent = settingsStore.thresholdPercent
         self.launchAtLoginEnabled = launchAtLoginManager.status.isRegistered
+        self.openCodeGoWorkspaceID = settingsStore.openCodeGoWorkspaceID
         self.providerVisibility = Dictionary(uniqueKeysWithValues: ProviderID.allCases.map { provider in
             (provider, settingsStore.isProviderVisible(provider))
         })
@@ -91,6 +93,12 @@ final class UsageBarShellModel {
     func setThresholdPercent(_ thresholdPercent: Int) {
         self.thresholdPercent = thresholdPercent
         settingsStore.thresholdPercent = thresholdPercent
+    }
+
+    func setOpenCodeGoWorkspace(_ rawValue: String?) {
+        let normalized = OpenCodeGoWorkspace.normalizedID(from: rawValue)
+        openCodeGoWorkspaceID = normalized
+        settingsStore.openCodeGoWorkspaceID = normalized
     }
 
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
@@ -166,7 +174,7 @@ extension UsageBarShellModel {
     static func live() -> UsageBarShellModel {
         let settingsStore = SettingsStore()
         let appState = AppState()
-        let providers = liveProviders()
+        let providers = liveProviders(settingsStore: settingsStore)
         let notifier = ThresholdNotifier(sender: UserNotificationSender())
         let poller = UsagePoller(
             providers: providers,
@@ -185,7 +193,7 @@ extension UsageBarShellModel {
         )
     }
 
-    private static func liveProviders() -> [ProviderID: any UsageProvider] {
+    private static func liveProviders(settingsStore: SettingsStore) -> [ProviderID: any UsageProvider] {
         [
             .claude: ClaudeUsageProvider(
                 credentialReader: ClaudeCredentialReader(
@@ -199,6 +207,11 @@ extension UsageBarShellModel {
             ),
             .codex: CodexUsageProvider(
                 credentialReader: CodexCredentialReader(store: KeychainCredentialStore())
+            ),
+            .openCodeGo: OpenCodeGoProvider(
+                sessionReader: ChromeOpenCodeSessionReader(),
+                transport: OpenCodeGoHTTPTransport(),
+                workspaceOverride: { settingsStore.openCodeGoWorkspaceID }
             ),
         ]
     }

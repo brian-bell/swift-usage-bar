@@ -85,6 +85,9 @@ private struct ProviderUsageRowView: View {
                 UsageWindowRowView(row: fiveHour)
             }
             UsageWindowRowView(row: row.weekly)
+            if let monthly = row.monthly {
+                UsageWindowRowView(row: monthly)
+            }
             if let fable = row.fable {
                 UsageWindowRowView(row: fable)
             }
@@ -114,4 +117,3 @@ private struct UsageWindowRowView: View {
         }
     }
 }
-

@@ -10,8 +10,9 @@ enum ProviderIconAsset {
     static func image(for provider: ProviderID, pointSize: CGFloat? = nil) -> NSImage? {
         guard
             let bundle = resourceBundle(),
+            let resourceBaseName = resourceBaseName(for: provider),
             let url = bundle.url(
-                forResource: resourceBaseName(for: provider),
+                forResource: resourceBaseName,
                 withExtension: "svg"
             ),
             let image = NSImage(contentsOf: url)
@@ -64,12 +65,14 @@ enum ProviderIconAsset {
         return ancestors
     }
 
-    private static func resourceBaseName(for provider: ProviderID) -> String {
+    private static func resourceBaseName(for provider: ProviderID) -> String? {
         switch provider {
         case .claude:
             return "ProviderIcon-claude"
         case .codex:
             return "ProviderIcon-codex"
+        case .openCodeGo:
+            return "ProviderIcon-opencode-go"
         }
     }
 }
@@ -97,6 +100,8 @@ struct ProviderIconView: View {
             return "*"
         case .codex:
             return "#"
+        case .openCodeGo:
+            return "G"
         }
     }
 }
