@@ -72,14 +72,27 @@ public struct ChromeOpenCodeSessionReader: OpenCodeSessionReading {
 
 public struct ChromeCookieDatabaseReader: ChromeOpenCodeCookieReading {
     private let chromeRoot: URL
+    private let host: String
+    private let cookieNames: [String]
 
-    public init(chromeRoot: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/Google/Chrome", isDirectory: true))
-    {
+    public init(
+        host: String = "opencode.ai",
+        cookieNames: [String] = ["auth", "__Host-auth"],
+        chromeRoot: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Google/Chrome", isDirectory: true)
+    ) {
+        self.host = host
+        self.cookieNames = cookieNames
         self.chromeRoot = chromeRoot
     }
 
     public func readCookies() throws -> [ChromeCookieRecord] {
+        try readCookieProfiles().flatMap { $0 }
+    }
+
+    /// Keeps cookies from each Chrome profile together so callers that need a
+    /// coherent authenticated session never combine unrelated profile state.
+    public func readCookieProfiles() throws -> [[ChromeCookieRecord]] {
         let profileURLs = (try? FileManager.default.contentsOfDirectory(
             at: chromeRoot,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -88,35 +101,45 @@ public struct ChromeCookieDatabaseReader: ChromeOpenCodeCookieReading {
             url.lastPathComponent == "Default" || url.lastPathComponent.hasPrefix("Profile ")
         }.sorted { $0.lastPathComponent < $1.lastPathComponent } ?? []
 
-        var records: [ChromeCookieRecord] = []
+        var profiles: [[ChromeCookieRecord]] = []
         for profile in profileURLs {
             for relativePath in ["Network/Cookies", "Cookies"] {
                 let databaseURL = profile.appendingPathComponent(relativePath)
                 guard FileManager.default.fileExists(atPath: databaseURL.path) else { continue }
-                records.append(contentsOf: Self.readDatabase(databaseURL))
+                profiles.append(Self.readDatabase(databaseURL, host: host, cookieNames: cookieNames))
                 break
             }
         }
-        return records
+        return profiles
     }
 
-    private static func readDatabase(_ url: URL) -> [ChromeCookieRecord] {
+    private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+    private static func readDatabase(_ url: URL, host: String, cookieNames: [String]) -> [ChromeCookieRecord] {
         var database: OpaquePointer?
         guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
               let database
         else { return [] }
         defer { sqlite3_close(database) }
 
+        // host_key is stored either bare (`opencode.ai`) or dot-prefixed
+        // (`.claude.ai`); match both. Names are bound placeholders.
+        let namePlaceholders = cookieNames.map { _ in "?" }.joined(separator: ", ")
         let sql = """
         SELECT name, encrypted_value FROM cookies
-        WHERE host_key = 'opencode.ai' AND name IN ('auth', '__Host-auth')
-        ORDER BY CASE name WHEN '__Host-auth' THEN 0 ELSE 1 END
+        WHERE host_key IN (?, ?) AND name IN (\(namePlaceholders))
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
               let statement
         else { return [] }
         defer { sqlite3_finalize(statement) }
+
+        sqlite3_bind_text(statement, 1, host, -1, sqliteTransient)
+        sqlite3_bind_text(statement, 2, "." + host, -1, sqliteTransient)
+        for (index, name) in cookieNames.enumerated() {
+            sqlite3_bind_text(statement, Int32(3 + index), name, -1, sqliteTransient)
+        }
 
         var records: [ChromeCookieRecord] = []
         while sqlite3_step(statement) == SQLITE_ROW {
@@ -178,6 +201,14 @@ private let chromeLegacyKeychainInteraction: any ChromeLegacyKeychainInteraction
 
 public enum ChromeCookieDecryptor {
     public static func decrypt(_ encryptedValue: Data, password: Data) -> String? {
+        decrypt(encryptedValue, password: password, hostCandidates: ["opencode.ai"])
+    }
+
+    /// Decrypts a Chromium `v10`/`v11` cookie, stripping the SHA-256 host prefix
+    /// that Chrome 130+ prepends. `hostCandidates` lists the exact `host_key`
+    /// forms to try (e.g. `[".claude.ai", "claude.ai"]`); the first prefix that
+    /// matches is removed, and a value with no matching prefix is returned as-is.
+    public static func decrypt(_ encryptedValue: Data, password: Data, hostCandidates: [String]) -> String? {
         guard encryptedValue.count > 3,
               encryptedValue.prefix(3) == Data("v10".utf8) || encryptedValue.prefix(3) == Data("v11".utf8)
         else { return nil }
@@ -230,9 +261,12 @@ public enum ChromeCookieDecryptor {
         guard cryptStatus == kCCSuccess else { return nil }
         plaintext.count = outputLength
 
-        let hostDigest = Data(SHA256.hash(data: Data("opencode.ai".utf8)))
-        if plaintext.starts(with: hostDigest) {
-            plaintext.removeFirst(hostDigest.count)
+        for host in hostCandidates {
+            let hostDigest = Data(SHA256.hash(data: Data(host.utf8)))
+            if plaintext.starts(with: hostDigest) {
+                plaintext.removeFirst(hostDigest.count)
+                break
+            }
         }
         return String(data: plaintext, encoding: .utf8)
     }

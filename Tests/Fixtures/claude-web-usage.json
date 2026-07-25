@@ -1,0 +1,42 @@
+{
+  "five_hour": {
+    "utilization": 5.0,
+    "resets_at": "2026-07-25T15:59:59.716570+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null
+  },
+  "seven_day": {
+    "utilization": 41.0,
+    "resets_at": "2026-07-27T09:59:59.716592+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null
+  },
+  "seven_day_oauth_apps": null,
+  "seven_day_opus": null,
+  "seven_day_sonnet": null,
+  "extra_usage": {
+    "is_enabled": false,
+    "monthly_limit": 2500,
+    "used_credits": 1505.0,
+    "utilization": 60.2,
+    "currency": "USD",
+    "decimal_places": 2,
+    "disabled_reason": "org_level_disabled_until",
+    "daily": null,
+    "weekly": null
+  },
+  "limits": [
+    {
+      "kind": "session",
+      "group": "session",
+      "percent": 5,
+      "severity": "normal",
+      "resets_at": "2026-07-25T15:59:59.716570+00:00",
+      "scope": null,
+      "is_active": false
+    }
+  ],
+  "member_dashboard_available": false
+}
