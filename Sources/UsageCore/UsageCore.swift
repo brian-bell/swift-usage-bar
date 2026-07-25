@@ -1717,6 +1717,21 @@ public enum CountdownFormatter {
             formatter.calendar = calendar
             formatter.locale = locale
             formatter.timeZone = calendar.timeZone
+
+            // Beyond a week the weekday name repeats, so it can't say which week the
+            // reset lands in — show the calendar-day count instead.
+            if remainingSeconds > 7 * 24 * 60 * 60 {
+                let days = calendar.dateComponents(
+                    [.day],
+                    from: calendar.startOfDay(for: now),
+                    to: calendar.startOfDay(for: resetAt)
+                ).day ?? 0
+                formatter.dateFormat = "h:mm a"
+
+                let unit = days == 1 ? "day" : "days"
+                return "resets in \(days) \(unit) \(formatter.string(from: resetAt))"
+            }
+
             formatter.dateFormat = "EEE h:mm a"
 
             return "resets \(formatter.string(from: resetAt))"

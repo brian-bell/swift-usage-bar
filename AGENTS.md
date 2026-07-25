@@ -85,7 +85,7 @@ All seams are protocols with injectable fakes; production adapters are thin leav
 - `AppState` (`@MainActor @Observable`) — provider states, hidden set, last-attempted vs. last-successful refresh times (a failed poll updates "attempted" but not "as of").
 - `ThresholdNotifier` (actor) — fires once per (provider, window, threshold, reset-cycle) when percent remaining crosses below the threshold (default 20%, configurable); re-arms on new reset cycle; retries after failed delivery; stale providers never notify.
 - `UsageClock` — injectable now/sleep for deterministic poller tests.
-- Formatters are pure functions: `MenuBarTitleFormatter`, `CountdownFormatter` (relative under 24 h, weekday+time beyond, "resetting..." when past), `tone(for:)` (normal / warning below threshold / critical below 5%, driven by five-hour, weekly, and optional monthly windows).
+- Formatters are pure functions: `MenuBarTitleFormatter`, `CountdownFormatter` (relative under 24 h, weekday+time from 1 day up to 7 days out, calendar-day count + time beyond 7 days — e.g. `resets in 22 days 10:52 PM`, since a weekday name alone can't say which week a monthly reset lands in — "resetting..." when past), `tone(for:)` (normal / warning below threshold / critical below 5%, driven by five-hour, weekly, and optional monthly windows).
 - `SettingsStore` — UserDefaults keys under `settings.*`: poll interval, threshold percent, per-provider visibility, launch-at-login flag, and optional non-secret OpenCode workspace ID. OpenCode visibility defaults to false; Claude and Codex remain true.
 
 ## Conventions and gotchas
