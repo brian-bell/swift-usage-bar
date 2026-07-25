@@ -409,6 +409,32 @@ func openCodeGoWorkspaceEditIsStagedAndNormalizesOnlyOnApply() {
     }
 }
 
+@Test
+@MainActor
+func shellModelExposesProviderStatusRowsForTheSettingsProvidersTab() throws {
+    let appState = AppState(
+        providerStates: [
+            .claude: .fresh(claudeUsage, asOf: referenceNow),
+            .codex: .stale(last: codexUsage, reason: .tokenExpired),
+            .openCodeGo: .hidden,
+        ],
+        lastSuccessfulRefreshes: [
+            .claude: referenceNow.addingTimeInterval(-120),
+            .codex: referenceNow.addingTimeInterval(-3_600),
+        ],
+        lastDataSources: [.claude: .claudeWebSession, .codex: .codexAPI]
+    )
+    let model = shellModel(appState: appState)
+
+    let rows = model.providerStatusViewModel.rows
+    #expect(rows.map(\.provider) == ProviderID.allCases)
+    #expect(try #require(rows.first { $0.provider == .claude }).text
+        == "Live \u{00B7} claude.ai web session \u{00B7} updated 2 min ago")
+    #expect(try #require(rows.first { $0.provider == .codex }).text
+        == "Stale \u{00B7} Keychain token expired \u{00B7} last data 1 h ago")
+    #expect(try #require(rows.first { $0.provider == .openCodeGo }).text == "Off")
+}
+
 private let referenceNow = Date(timeIntervalSince1970: 1_767_268_800)
 
 private let claudeUsage = ProviderUsage(

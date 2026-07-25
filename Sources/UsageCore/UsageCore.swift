@@ -250,6 +250,11 @@ public enum CredentialAccessMode: Sendable, Equatable {
 
 public protocol UsageProvider: Sendable {
     func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState
+
+    /// Same fetch, additionally naming which retrieval path produced the data.
+    /// Providers that walk a fallback chain (Claude) implement this as the real
+    /// entry point and express `fetch` in terms of it, so the two can't drift.
+    func fetchReport(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderFetchReport
 }
 
 public extension UsageProvider {
@@ -257,6 +262,15 @@ public extension UsageProvider {
     /// the prompt-safe `.background` mode.
     func fetch(previous: ProviderUsage?) async -> ProviderState {
         await fetch(previous: previous, mode: .background)
+    }
+
+    /// Default for providers (and test doubles) that don't name a source: the
+    /// state is reported with an unknown source rather than a fabricated one.
+    func fetchReport(
+        previous: ProviderUsage?,
+        mode: CredentialAccessMode
+    ) async -> ProviderFetchReport {
+        ProviderFetchReport(state: await fetch(previous: previous, mode: mode), source: nil)
     }
 }
 
@@ -287,11 +301,16 @@ public final class AppState: @unchecked Sendable {
     private var hiddenProviders: Set<ProviderID>
     private var lastAttemptedRefreshes: [ProviderID: Date]
     private var lastSuccessfulRefreshes: [ProviderID: Date]
+    /// Which retrieval path last *produced data* for each provider. Retained
+    /// across a subsequent failure (like `lastSuccessfulRefreshes`) so the UI can
+    /// still say where the last-known numbers came from.
+    private var lastDataSources: [ProviderID: ProviderDataSource]
 
     public init(
         providerStates: [ProviderID: ProviderState] = [:],
         lastAttemptedRefreshes: [ProviderID: Date] = [:],
-        lastSuccessfulRefreshes: [ProviderID: Date] = [:]
+        lastSuccessfulRefreshes: [ProviderID: Date] = [:],
+        lastDataSources: [ProviderID: ProviderDataSource] = [:]
     ) {
         self.providerStates = providerStates.filter { _, state in state != .hidden }
         self.hiddenProviders = Set(providerStates.compactMap { provider, state in
@@ -299,6 +318,7 @@ public final class AppState: @unchecked Sendable {
         })
         self.lastAttemptedRefreshes = lastAttemptedRefreshes
         self.lastSuccessfulRefreshes = lastSuccessfulRefreshes
+        self.lastDataSources = lastDataSources
     }
 
     public var states: [ProviderID: ProviderState] {
@@ -323,6 +343,14 @@ public final class AppState: @unchecked Sendable {
 
     public func lastUpdated(provider: ProviderID) -> Date? {
         lastSuccessfulRefreshes[provider]
+    }
+
+    public func dataSource(provider: ProviderID) -> ProviderDataSource? {
+        lastDataSources[provider]
+    }
+
+    public var dataSources: [ProviderID: ProviderDataSource] {
+        lastDataSources
     }
 
     public func previousUsage(provider: ProviderID) -> ProviderUsage? {
@@ -358,7 +386,8 @@ public final class AppState: @unchecked Sendable {
         attemptedAt: Date,
         state: ProviderState,
         completedAt: Date,
-        shouldApply: @Sendable () -> Bool = { true }
+        shouldApply: @Sendable () -> Bool = { true },
+        source: ProviderDataSource? = nil
     ) -> Bool {
         guard shouldApply() else {
             return false
@@ -369,14 +398,15 @@ public final class AppState: @unchecked Sendable {
         }
 
         recordRefreshAttempt(provider: provider, at: attemptedAt)
-        applyRefreshResult(provider: provider, state: state, completedAt: completedAt)
+        applyRefreshResult(provider: provider, state: state, completedAt: completedAt, source: source)
         return true
     }
 
     public func applyRefreshResult(
         provider: ProviderID,
         state: ProviderState,
-        completedAt: Date
+        completedAt: Date,
+        source: ProviderDataSource? = nil
     ) {
         if hiddenProviders.contains(provider) {
             return
@@ -385,7 +415,14 @@ public final class AppState: @unchecked Sendable {
         if state == .hidden {
             providerStates.removeValue(forKey: provider)
             hiddenProviders.insert(provider)
+            lastDataSources.removeValue(forKey: provider)
             return
+        }
+
+        // Only a path that produced data names itself; a failed fetch reports no
+        // source and must not erase the last one that worked.
+        if let source {
+            lastDataSources[provider] = source
         }
 
         let resolvedState: ProviderState
@@ -617,7 +654,7 @@ public actor UsagePoller {
                         return nil
                     }
 
-                    let state = await provider.fetch(previous: previous, mode: mode)
+                    let report = await provider.fetchReport(previous: previous, mode: mode)
                     if Task.isCancelled {
                         return nil
                     }
@@ -631,7 +668,8 @@ public actor UsagePoller {
                         provider: providerID,
                         previousUsage: previous,
                         attemptedAt: attemptedAt,
-                        state: state,
+                        state: report.state,
+                        source: report.source,
                         completedAt: completedAt
                     )
                 }
@@ -652,7 +690,8 @@ public actor UsagePoller {
                     attemptedAt: result.attemptedAt,
                     state: result.state,
                     completedAt: result.completedAt,
-                    shouldApply: { lifecycle.isCurrent(generation) }
+                    shouldApply: { lifecycle.isCurrent(generation) },
+                    source: result.source
                 )
                 guard didApply else {
                     continue
@@ -781,6 +820,7 @@ private struct ProviderPollResult: Sendable {
     let previousUsage: ProviderUsage?
     let attemptedAt: Date
     let state: ProviderState
+    let source: ProviderDataSource?
     let completedAt: Date
 }
 
@@ -918,24 +958,31 @@ public struct ClaudeUsageProvider: UsageProvider {
     // `.background` read fails silently instead of presenting a prompt
     // (kSecUseAuthenticationUIFail), degrading to the statusline-cache fallback.
     public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        await fetchReport(previous: previous, mode: mode).state
+    }
+
+    public func fetchReport(
+        previous: ProviderUsage?,
+        mode: CredentialAccessMode
+    ) async -> ProviderFetchReport {
         guard !Task.isCancelled else {
-            return .stale(last: previous, reason: .networkError)
+            return ProviderFetchReport(state: .stale(last: previous, reason: .networkError))
         }
         if let webState = await fetchFromWebSession(mode: mode) {
-            return webState
+            return ProviderFetchReport(state: webState, source: .claudeWebSession)
         }
 
         // Cancellation is not a web-session failure: do not turn a stopped
         // refresh into a Keychain read or cache lookup in the fallback chain.
         guard !Task.isCancelled else {
-            return .stale(last: previous, reason: .networkError)
+            return ProviderFetchReport(state: .stale(last: previous, reason: .networkError))
         }
 
         switch await fetchFromAPI(mode: mode) {
         case let .fresh(usage, asOf):
-            return .fresh(usage, asOf: asOf)
+            return ProviderFetchReport(state: .fresh(usage, asOf: asOf), source: .claudeOAuthAPI)
         case let .stale(apiReason):
-            return fallbackState(apiReason: apiReason, previous: previous)
+            return fallbackReport(apiReason: apiReason, previous: previous)
         }
     }
 
@@ -999,16 +1046,20 @@ public struct ClaudeUsageProvider: UsageProvider {
     // The API's failure reason wins over the cache's: the API is the primary
     // path and its reason is more actionable (tokenExpired -> run Claude Code,
     // which also refreshes the statusline cache).
-    private func fallbackState(apiReason: StaleReason, previous: ProviderUsage?) -> ProviderState {
+    private func fallbackReport(apiReason: StaleReason, previous: ProviderUsage?) -> ProviderFetchReport {
         guard let cacheResult = try? cacheReader.read(now: now()) else {
-            return .stale(last: previous, reason: apiReason)
+            return ProviderFetchReport(state: .stale(last: previous, reason: apiReason))
         }
 
         switch cacheResult {
         case let .fresh(data: _, usage: usage, asOf: asOf):
-            return .fresh(usage, asOf: asOf)
+            // The cache — not the API — is what actually produced these numbers.
+            return ProviderFetchReport(
+                state: .fresh(usage, asOf: asOf),
+                source: .claudeStatuslineCache
+            )
         case let .stale(last: last, reason: _, hint: _):
-            return .stale(last: last ?? previous, reason: apiReason)
+            return ProviderFetchReport(state: .stale(last: last ?? previous, reason: apiReason))
         }
     }
 
@@ -1291,29 +1342,39 @@ public struct CodexUsageProvider: UsageProvider {
     }
 
     public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        await fetchReport(previous: previous, mode: mode).state
+    }
+
+    public func fetchReport(
+        previous: ProviderUsage?,
+        mode: CredentialAccessMode
+    ) async -> ProviderFetchReport {
         let credential: CodexCredential
         do {
             switch try credentialReader.read(mode: mode) {
             case let .fresh(freshCredential):
                 credential = freshCredential
             case let .stale(reason):
-                return .stale(last: previous, reason: reason)
+                return ProviderFetchReport(state: .stale(last: previous, reason: reason))
             }
         } catch {
-            return .stale(last: previous, reason: .credentialUnavailable)
+            return ProviderFetchReport(state: .stale(last: previous, reason: .credentialUnavailable))
         }
 
         do {
             let (data, response) = try await transport.send(Self.usageRequest(for: credential))
             guard response.statusCode == 200 else {
-                return .stale(last: previous, reason: staleReason(forHTTPStatusCode: response.statusCode))
+                return ProviderFetchReport(state: .stale(
+                    last: previous,
+                    reason: staleReason(forHTTPStatusCode: response.statusCode)
+                ))
             }
 
-            return .fresh(try parser.parse(data), asOf: now())
+            return ProviderFetchReport(state: .fresh(try parser.parse(data), asOf: now()), source: .codexAPI)
         } catch UsageParsingError.parseFailure {
-            return .stale(last: previous, reason: .parseFailure)
+            return ProviderFetchReport(state: .stale(last: previous, reason: .parseFailure))
         } catch {
-            return .stale(last: previous, reason: .networkError)
+            return ProviderFetchReport(state: .stale(last: previous, reason: .networkError))
         }
     }
 

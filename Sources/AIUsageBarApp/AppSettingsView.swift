@@ -21,7 +21,7 @@ struct AppSettingsView: View {
                 )
                 .settingsTabItem(.general)
 
-                ProvidersSettingsPane(draft: $draft)
+                ProvidersSettingsPane(draft: $draft, statusRows: model.providerStatusViewModel.rows)
                     .settingsTabItem(.providers)
 
                 NotificationsSettingsPane(draft: $draft)
@@ -102,19 +102,28 @@ private struct GeneralSettingsPane: View {
 
 private struct ProvidersSettingsPane: View {
     @Binding var draft: AppSettingsDraft
+    let statusRows: [ProviderStatusRow]
 
     var body: some View {
         SettingsPaneLayout {
+            // Each provider is one visual unit: its toggle, then the status line
+            // for that provider tucked directly beneath it.
             ForEach(ProviderID.allCases, id: \.self) { provider in
-                LabeledContent(provider.settingsDisplayName) {
-                    Toggle(
-                        provider.settingsDisplayName,
-                        isOn: Binding(
-                            get: { draft.visibility(for: provider) },
-                            set: { draft.providerVisibility[provider] = $0 }
+                VStack(alignment: .leading, spacing: 3) {
+                    LabeledContent(provider.settingsDisplayName) {
+                        Toggle(
+                            provider.settingsDisplayName,
+                            isOn: Binding(
+                                get: { draft.visibility(for: provider) },
+                                set: { draft.providerVisibility[provider] = $0 }
+                            )
                         )
-                    )
-                    .labelsHidden()
+                        .labelsHidden()
+                    }
+
+                    if let status = statusRows.first(where: { $0.provider == provider }) {
+                        ProviderStatusLineView(status: status)
+                    }
                 }
             }
 
@@ -125,6 +134,39 @@ private struct ProvidersSettingsPane: View {
                         .frame(width: 190)
                 }
             }
+        }
+    }
+}
+
+/// One-line `State · method · age` indicator under a provider's toggle.
+/// Renders only: every string and the dot state come from `ProviderStatusRow`.
+private struct ProviderStatusLineView: View {
+    let status: ProviderStatusRow
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(status.indicator.dotColor)
+                .frame(width: 7, height: 7)
+            Text(status.text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(status.providerName) status: \(status.text)")
+    }
+}
+
+private extension ProviderStatusIndicator {
+    var dotColor: Color {
+        switch self {
+        case .live:
+            return .green
+        case .stale:
+            return .orange
+        case .off, .checking:
+            return .secondary
         }
     }
 }

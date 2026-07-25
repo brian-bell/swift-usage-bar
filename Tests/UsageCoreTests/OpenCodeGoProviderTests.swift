@@ -238,3 +238,56 @@ private func fixtureData(_ name: String) throws -> Data {
         .appendingPathComponent("Fixtures")
         .appendingPathComponent(name))
 }
+
+// MARK: - Winning data source reporting
+
+@Test
+func openCodeGoProviderReportsTheChromeCookieAsItsSource() async throws {
+    let responseTime = Date(timeIntervalSince1970: 2_000_000_000)
+    let provider = OpenCodeGoProvider(
+        sessionReader: RecordingOpenCodeSessionReader(
+            session: OpenCodeSession(authenticationCookie: "auth=test")
+        ),
+        transport: StubOpenCodeGoTransport(
+            workspaceIDs: [],
+            pages: [
+                "wrk_selected": OpenCodeGoPageResponse(
+                    data: try fixtureData("opencode-go-usage.html"),
+                    receivedAt: responseTime
+                ),
+            ]
+        ),
+        workspaceOverride: { "wrk_selected" }
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .interactive)
+
+    #expect(report.source == .openCodeGoChromeCookie)
+    guard case .fresh = report.state else {
+        Issue.record("Expected fresh state, got \(report.state)"); return
+    }
+}
+
+@Test
+func openCodeGoProviderReportsNoSourceAndPreservesStaleReasonWhenSessionExpired() async {
+    let previous = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 44, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 55, resetsAt: nil)
+    )
+    let provider = OpenCodeGoProvider(
+        sessionReader: RecordingOpenCodeSessionReader(
+            session: OpenCodeSession(authenticationCookie: "auth=test")
+        ),
+        transport: StubOpenCodeGoTransport(
+            workspaceIDs: ["wrk_expired"],
+            pages: [:],
+            errors: ["wrk_expired": .sessionExpired]
+        ),
+        workspaceOverride: { nil }
+    )
+
+    let report = await provider.fetchReport(previous: previous, mode: .background)
+
+    #expect(report.source == nil)
+    #expect(report.state == .stale(last: previous, reason: .sessionExpired))
+}

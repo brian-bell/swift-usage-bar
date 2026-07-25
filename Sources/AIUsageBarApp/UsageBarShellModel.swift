@@ -148,6 +148,16 @@ extension UsageBarShellModel {
             now: now()
         )
     }
+
+    /// Per-provider `State · method · age` status lines for Settings › Providers.
+    var providerStatusViewModel: ProviderStatusViewModel {
+        ProviderStatusViewModel(
+            states: appState.states,
+            dataSources: appState.dataSources,
+            lastUpdatedAt: lastUpdatedDates(),
+            now: now()
+        )
+    }
 }
 
 struct UsagePollerController: UsageControlling {
