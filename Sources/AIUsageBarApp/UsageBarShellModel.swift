@@ -203,7 +203,9 @@ extension UsageBarShellModel {
                 cacheReader: ClaudeStatuslineCacheReader(
                     cacheURL: claudeStatuslineCacheURL(),
                     maximumAge: UsagePoller.defaultInterval * 3
-                )
+                ),
+                webSessionReader: ChromeClaudeWebSessionReader(),
+                webTransport: ClaudeWebHTTPTransport()
             ),
             .codex: CodexUsageProvider(
                 credentialReader: CodexCredentialReader(store: KeychainCredentialStore())

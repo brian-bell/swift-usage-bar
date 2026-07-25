@@ -1,0 +1,22 @@
+{
+  "account": {
+    "uuid": "00000000-0000-4000-8000-000000000001",
+    "email_address": "user@example.com",
+    "memberships": [
+      {
+        "organization": {
+          "uuid": "00000000-0000-4000-8000-0000000000a1",
+          "name": "Example API Org",
+          "capabilities": ["api", "api_individual"]
+        }
+      },
+      {
+        "organization": {
+          "uuid": "00000000-0000-4000-8000-0000000000b2",
+          "name": "Example Personal",
+          "capabilities": ["chat", "claude_max"]
+        }
+      }
+    ]
+  }
+}

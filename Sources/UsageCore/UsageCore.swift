@@ -884,6 +884,8 @@ public struct ClaudeUsageProvider: UsageProvider {
     private let credentialReader: any ClaudeCredentialReading
     private let cacheReader: any ClaudeStatuslineCacheReading
     private let transport: any HTTPTransport
+    private let webSessionReader: (any ClaudeWebSessionReading)?
+    private let webTransport: (any ClaudeWebTransporting)?
     private let parser: ClaudeUsageParser
     private let now: @Sendable () -> Date
 
@@ -891,26 +893,57 @@ public struct ClaudeUsageProvider: UsageProvider {
         credentialReader: any ClaudeCredentialReading,
         cacheReader: any ClaudeStatuslineCacheReading,
         transport: any HTTPTransport = URLSessionHTTPTransport(),
+        webSessionReader: (any ClaudeWebSessionReading)? = nil,
+        webTransport: (any ClaudeWebTransporting)? = nil,
         parser: ClaudeUsageParser = ClaudeUsageParser(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.credentialReader = credentialReader
         self.cacheReader = cacheReader
         self.transport = transport
+        self.webSessionReader = webSessionReader
+        self.webTransport = webTransport
         self.parser = parser
         self.now = now
     }
 
-    // Both modes take the API-then-cache path; the difference lives in the
-    // keychain layer, where a `.background` read fails silently instead of
-    // presenting a prompt (kSecUseAuthenticationUIFail), degrading to the
-    // statusline-cache fallback.
+    // The claude.ai browser-cookie path runs first when wired: its session
+    // outlives the OAuth token (~30 days vs <24 h), so it yields fresh data on
+    // machines with no recent Claude Code activity. Any failure — no cookie,
+    // Cloudflare challenge, expired session, unparseable body — falls back
+    // silently to the OAuth API path, which then falls back to the statusline
+    // cache. The web path never surfaces its own failure reason.
+    //
+    // Both remaining paths differ only in the keychain layer, where a
+    // `.background` read fails silently instead of presenting a prompt
+    // (kSecUseAuthenticationUIFail), degrading to the statusline-cache fallback.
     public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        if let webState = await fetchFromWebSession(mode: mode) {
+            return webState
+        }
+
         switch await fetchFromAPI(mode: mode) {
         case let .fresh(usage, asOf):
             return .fresh(usage, asOf: asOf)
         case let .stale(apiReason):
             return fallbackState(apiReason: apiReason, previous: previous)
+        }
+    }
+
+    /// Returns a `.fresh` state only when the web-cookie path fully succeeds;
+    /// `nil` means "fall back silently" for every failure mode.
+    private func fetchFromWebSession(mode: CredentialAccessMode) async -> ProviderState? {
+        guard let webSessionReader, let webTransport else { return nil }
+        // `try?` flattens the reader's `ClaudeWebSession?` result, so a thrown
+        // error and an absent session both collapse to nil here.
+        guard let session = try? webSessionReader.readSession(mode: mode) else { return nil }
+
+        do {
+            let response = try await webTransport.fetchUsage(session: session)
+            let usage = try parser.parse(response.data)
+            return .fresh(usage, asOf: response.receivedAt)
+        } catch {
+            return nil
         }
     }
 
