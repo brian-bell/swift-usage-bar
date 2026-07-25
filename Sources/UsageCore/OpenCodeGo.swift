@@ -87,6 +87,12 @@ public struct ChromeCookieDatabaseReader: ChromeOpenCodeCookieReading {
     }
 
     public func readCookies() throws -> [ChromeCookieRecord] {
+        try readCookieProfiles().flatMap { $0 }
+    }
+
+    /// Keeps cookies from each Chrome profile together so callers that need a
+    /// coherent authenticated session never combine unrelated profile state.
+    public func readCookieProfiles() throws -> [[ChromeCookieRecord]] {
         let profileURLs = (try? FileManager.default.contentsOfDirectory(
             at: chromeRoot,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -95,16 +101,16 @@ public struct ChromeCookieDatabaseReader: ChromeOpenCodeCookieReading {
             url.lastPathComponent == "Default" || url.lastPathComponent.hasPrefix("Profile ")
         }.sorted { $0.lastPathComponent < $1.lastPathComponent } ?? []
 
-        var records: [ChromeCookieRecord] = []
+        var profiles: [[ChromeCookieRecord]] = []
         for profile in profileURLs {
             for relativePath in ["Network/Cookies", "Cookies"] {
                 let databaseURL = profile.appendingPathComponent(relativePath)
                 guard FileManager.default.fileExists(atPath: databaseURL.path) else { continue }
-                records.append(contentsOf: Self.readDatabase(databaseURL, host: host, cookieNames: cookieNames))
+                profiles.append(Self.readDatabase(databaseURL, host: host, cookieNames: cookieNames))
                 break
             }
         }
-        return records
+        return profiles
     }
 
     private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

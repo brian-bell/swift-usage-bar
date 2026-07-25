@@ -918,8 +918,17 @@ public struct ClaudeUsageProvider: UsageProvider {
     // `.background` read fails silently instead of presenting a prompt
     // (kSecUseAuthenticationUIFail), degrading to the statusline-cache fallback.
     public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        guard !Task.isCancelled else {
+            return .stale(last: previous, reason: .networkError)
+        }
         if let webState = await fetchFromWebSession(mode: mode) {
             return webState
+        }
+
+        // Cancellation is not a web-session failure: do not turn a stopped
+        // refresh into a Keychain read or cache lookup in the fallback chain.
+        guard !Task.isCancelled else {
+            return .stale(last: previous, reason: .networkError)
         }
 
         switch await fetchFromAPI(mode: mode) {
@@ -934,17 +943,25 @@ public struct ClaudeUsageProvider: UsageProvider {
     /// `nil` means "fall back silently" for every failure mode.
     private func fetchFromWebSession(mode: CredentialAccessMode) async -> ProviderState? {
         guard let webSessionReader, let webTransport else { return nil }
-        // `try?` flattens the reader's `ClaudeWebSession?` result, so a thrown
-        // error and an absent session both collapse to nil here.
-        guard let session = try? webSessionReader.readSession(mode: mode) else { return nil }
-
-        do {
-            let response = try await webTransport.fetchUsage(session: session)
-            let usage = try parser.parse(response.data)
-            return .fresh(usage, asOf: response.receivedAt)
-        } catch {
-            return nil
+        let sessions: [ClaudeWebSession]
+        if let candidateReader = webSessionReader as? any ClaudeWebSessionCandidateReading {
+            sessions = (try? candidateReader.readSessions(mode: mode)) ?? []
+        } else if let session = try? webSessionReader.readSession(mode: mode) {
+            sessions = [session]
+        } else {
+            sessions = []
         }
+
+        for session in sessions {
+            do {
+                let response = try await webTransport.fetchUsage(session: session)
+                let usage = try parser.parse(response.data)
+                return .fresh(usage, asOf: response.receivedAt)
+            } catch {
+                if Task.isCancelled { return nil }
+            }
+        }
+        return nil
     }
 
     private enum APIOutcome {

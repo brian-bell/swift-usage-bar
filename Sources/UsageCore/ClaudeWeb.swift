@@ -21,18 +21,31 @@ public protocol ClaudeWebSessionReading: Sendable {
     func readSession(mode: CredentialAccessMode) throws -> ClaudeWebSession?
 }
 
+/// Optional richer interface for sources that can offer more than one coherent
+/// browser session (for example, separate Chrome profiles).
+public protocol ClaudeWebSessionCandidateReading: ClaudeWebSessionReading {
+    func readSessions(mode: CredentialAccessMode) throws -> [ClaudeWebSession]
+}
+
 public protocol ChromeClaudeWebCookieReading: Sendable {
     func readCookies() throws -> [ChromeCookieRecord]
 }
 
 extension ChromeCookieDatabaseReader: ChromeClaudeWebCookieReading {}
 
+/// Optional richer interface for cookie stores that retain profile boundaries.
+public protocol ChromeClaudeWebCookieProfileReading: ChromeClaudeWebCookieReading {
+    func readCookieProfiles() throws -> [[ChromeCookieRecord]]
+}
+
+extension ChromeCookieDatabaseReader: ChromeClaudeWebCookieProfileReading {}
+
 /// Reads the read-only claude.ai session cookies from Chrome. Requires a
 /// decryptable `sessionKey`; opportunistically forwards `lastActiveOrg`,
 /// `cf_clearance`, and `__cf_bm` so requests survive Cloudflare's bot check.
 /// Safe Storage is only consulted when a `sessionKey` cookie exists, so a
 /// machine that never signed into claude.ai in Chrome never prompts.
-public struct ChromeClaudeWebSessionReader: ClaudeWebSessionReading {
+public struct ChromeClaudeWebSessionReader: ClaudeWebSessionCandidateReading {
     public typealias Decrypt = @Sendable (Data, Data) -> String?
 
     /// Emitted in this order so the header is deterministic; `sessionKey` leads.
@@ -62,11 +75,27 @@ public struct ChromeClaudeWebSessionReader: ClaudeWebSessionReading {
     }
 
     public func readSession(mode: CredentialAccessMode) throws -> ClaudeWebSession? {
-        let records = try cookieReader.readCookies()
-        guard records.contains(where: { $0.name == "sessionKey" }),
-              let password = try safeStorageReader.readPassword(mode: mode)
-        else { return nil }
+        try readSessions(mode: mode).first
+    }
 
+    public func readSessions(mode: CredentialAccessMode) throws -> [ClaudeWebSession] {
+        let profiles: [[ChromeCookieRecord]]
+        if let profileReader = cookieReader as? any ChromeClaudeWebCookieProfileReading {
+            profiles = try profileReader.readCookieProfiles()
+        } else {
+            profiles = [try cookieReader.readCookies()]
+        }
+
+        guard profiles.contains(where: { $0.contains(where: { $0.name == "sessionKey" }) }),
+              let password = try safeStorageReader.readPassword(mode: mode)
+        else { return [] }
+
+        return profiles.compactMap { profile in
+            session(from: profile, password: password)
+        }
+    }
+
+    private func session(from records: [ChromeCookieRecord], password: Data) -> ClaudeWebSession? {
         var decrypted: [String: String] = [:]
         for record in records where Self.cookieNames.contains(record.name) {
             guard let value = decrypt(record.encryptedValue, password),
@@ -121,9 +150,19 @@ public enum ChromeUserAgent {
     static let fallbackVersion = "150.0.0.0"
 
     public static func current(
-        infoPlistURL: URL = URL(fileURLWithPath: "/Applications/Google Chrome.app/Contents/Info.plist")
+        infoPlistURLs: [URL] = standardInfoPlistURLs()
     ) -> String {
-        make(version: installedVersion(infoPlistURL: infoPlistURL) ?? fallbackVersion)
+        make(version: infoPlistURLs.lazy.compactMap { installedVersion(infoPlistURL: $0) }.first ?? fallbackVersion)
+    }
+
+    static func standardInfoPlistURLs(fileManager: FileManager = .default) -> [URL] {
+        let chromeInfoPlist = "Google Chrome.app/Contents/Info.plist"
+        return [
+            URL(fileURLWithPath: "/Applications").appendingPathComponent(chromeInfoPlist),
+            fileManager.homeDirectoryForCurrentUser
+                .appendingPathComponent("Applications", isDirectory: true)
+                .appendingPathComponent(chromeInfoPlist),
+        ]
     }
 
     static func make(version: String) -> String {

@@ -75,9 +75,49 @@ func claudeWebReaderBuildsSessionWithoutOrgHintWhenLastActiveOrgMissing() throws
     #expect(session.organizationHint == nil)
 }
 
+@Test
+func claudeWebReaderKeepsCookieSetsWithinTheirChromeProfile() throws {
+    let reader = ChromeClaudeWebSessionReader(
+        cookieReader: ProfiledClaudeCookieReader(profiles: [
+            [
+                ChromeCookieRecord(name: "sessionKey", encryptedValue: Data([1])),
+                ChromeCookieRecord(name: "cf_clearance", encryptedValue: Data([2])),
+            ],
+            [
+                ChromeCookieRecord(name: "sessionKey", encryptedValue: Data([3])),
+                ChromeCookieRecord(name: "lastActiveOrg", encryptedValue: Data([4])),
+            ],
+        ]),
+        safeStorageReader: RecordingClaudeSafeStorage(password: Data("password".utf8)),
+        decrypt: { encrypted, _ in
+            switch encrypted {
+            case Data([1]): return "profile-one-session"
+            case Data([2]): return "profile-one-clearance"
+            case Data([3]): return "profile-two-session"
+            case Data([4]): return "profile-two-org"
+            default: return nil
+            }
+        }
+    )
+
+    let sessions = try reader.readSessions(mode: .background)
+
+    #expect(sessions.map(\.cookieHeader) == [
+        "sessionKey=profile-one-session; cf_clearance=profile-one-clearance",
+        "sessionKey=profile-two-session; lastActiveOrg=profile-two-org",
+    ])
+    #expect(sessions.map(\.organizationHint) == [nil, "profile-two-org"])
+}
+
 private struct StubClaudeWebCookieReading: ChromeClaudeWebCookieReading {
     let records: [ChromeCookieRecord]
     func readCookies() throws -> [ChromeCookieRecord] { records }
+}
+
+private struct ProfiledClaudeCookieReader: ChromeClaudeWebCookieReading, ChromeClaudeWebCookieProfileReading {
+    let profiles: [[ChromeCookieRecord]]
+    func readCookies() throws -> [ChromeCookieRecord] { profiles.flatMap { $0 } }
+    func readCookieProfiles() throws -> [[ChromeCookieRecord]] { profiles }
 }
 
 private final class RecordingClaudeSafeStorage: ChromeSafeStorageReading, @unchecked Sendable {

@@ -176,6 +176,10 @@ func chromeUserAgentReadsInstalledVersionAndFallsBack() throws {
     #expect(ChromeUserAgent.installedVersion(
         infoPlistURL: directory.appendingPathComponent("missing.plist")
     ) == nil)
+
+    #expect(ChromeUserAgent.current(infoPlistURLs: [
+        directory.appendingPathComponent("missing.plist"), plistURL,
+    ]).contains("Chrome/151.2.3.4"))
 }
 
 private func fixtureData(_ name: String) throws -> Data {

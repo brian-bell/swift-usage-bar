@@ -84,6 +84,35 @@ func claudeProviderSilentlyFallsBackWhenWebTransportFails() async throws {
 }
 
 @Test
+func claudeProviderTriesEachCoherentWebSessionBeforeOAuth() async throws {
+    let sessions = [
+        ClaudeWebSession(cookieHeader: "sessionKey=first", organizationHint: nil),
+        ClaudeWebSession(cookieHeader: "sessionKey=second", organizationHint: nil),
+    ]
+    let transport = SequencedWebTransport(results: [
+        .failure(ClaudeWebTransportError.sessionExpired),
+        .success(ClaudeWebPageResponse(data: try fixtureData("claude-usage.json"), receivedAt: webAsOf)),
+    ])
+    let oauth = FailingHTTPTransport()
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeCredReader(result: .fresh(cred())),
+        cacheReader: CountingCacheReader(),
+        transport: oauth,
+        webSessionReader: CandidateWebSessionReader(sessions: sessions),
+        webTransport: transport,
+        now: { apiAsOf }
+    )
+
+    let state = await provider.fetch(previous: nil, mode: .background)
+
+    guard case .fresh = state else {
+        Issue.record("Expected second coherent web session to succeed, got \(state)"); return
+    }
+    #expect(transport.cookieHeaders == sessions.map(\.cookieHeader))
+    #expect(oauth.requestCount == 0)
+}
+
+@Test
 func claudeProviderSilentlyFallsBackWhenWebBodyIsUnparseable() async throws {
     let session = ClaudeWebSession(cookieHeader: "sessionKey=x", organizationHint: "max-org")
     let oauth = StubOKTransport(body: try fixtureData("claude-usage.json"))
@@ -127,6 +156,26 @@ func claudeProviderWebPathFallsBackToCacheWhenBothWebAndOAuthFail() async throws
     #expect(state == .fresh(cached, asOf: cacheAsOf))
 }
 
+@Test
+func claudeProviderDoesNotStartOAuthFallbackAfterWebRequestCancellation() async throws {
+    let oauth = StubOKTransport(body: try fixtureData("claude-usage.json"))
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeCredReader(result: .fresh(cred())),
+        cacheReader: CountingCacheReader(),
+        transport: oauth,
+        webSessionReader: FakeWebSessionReader(result: ClaudeWebSession(cookieHeader: "sessionKey=x", organizationHint: nil)),
+        webTransport: SuspendedWebTransport(),
+        now: { apiAsOf }
+    )
+
+    let task = Task { await provider.fetch(previous: nil, mode: .interactive) }
+    try await Task.sleep(for: .milliseconds(20))
+    task.cancel()
+    _ = await task.value
+
+    #expect(oauth.requestCount == 0)
+}
+
 // MARK: - Fakes
 
 private final class FakeWebSessionReader: ClaudeWebSessionReading, @unchecked Sendable {
@@ -144,6 +193,12 @@ private final class FakeWebSessionReader: ClaudeWebSessionReading, @unchecked Se
     }
 }
 
+private struct CandidateWebSessionReader: ClaudeWebSessionCandidateReading {
+    let sessions: [ClaudeWebSession]
+    func readSession(mode _: CredentialAccessMode) throws -> ClaudeWebSession? { sessions.first }
+    func readSessions(mode _: CredentialAccessMode) throws -> [ClaudeWebSession] { sessions }
+}
+
 private final class FakeWebTransport: ClaudeWebTransporting, @unchecked Sendable {
     private let response: ClaudeWebPageResponse?
     private let error: (any Error)?
@@ -156,6 +211,27 @@ private final class FakeWebTransport: ClaudeWebTransporting, @unchecked Sendable
         callCount += 1
         if let error { throw error }
         return response!
+    }
+}
+
+private struct SuspendedWebTransport: ClaudeWebTransporting {
+    func fetchUsage(session _: ClaudeWebSession) async throws -> ClaudeWebPageResponse {
+        try await Task.sleep(for: .seconds(60))
+        throw ClaudeWebTransportError.network
+    }
+}
+
+private final class SequencedWebTransport: ClaudeWebTransporting, @unchecked Sendable {
+    private var results: [Result<ClaudeWebPageResponse, ClaudeWebTransportError>]
+    private(set) var cookieHeaders: [String] = []
+
+    init(results: [Result<ClaudeWebPageResponse, ClaudeWebTransportError>]) {
+        self.results = results
+    }
+
+    func fetchUsage(session: ClaudeWebSession) async throws -> ClaudeWebPageResponse {
+        cookieHeaders.append(session.cookieHeader)
+        return try results.removeFirst().get()
     }
 }
 
