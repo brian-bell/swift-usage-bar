@@ -149,9 +149,13 @@ public protocol ClaudeWebTransporting: Sendable {
 public enum ChromeUserAgent {
     static let fallbackVersion = "150.0.0.0"
 
-    public static func current(
-        infoPlistURLs: [URL] = standardInfoPlistURLs()
-    ) -> String {
+    public static func current() -> String {
+        current(infoPlistURLs: standardInfoPlistURLs())
+    }
+
+    /// Seam for tests: `standardInfoPlistURLs()` is internal, so it can't be a
+    /// default argument on the public entry point above.
+    static func current(infoPlistURLs: [URL]) -> String {
         make(version: infoPlistURLs.lazy.compactMap { installedVersion(infoPlistURL: $0) }.first ?? fallbackVersion)
     }
 
