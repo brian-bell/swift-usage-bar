@@ -38,9 +38,12 @@ func claudeStatuslineCacheReaderReturnsStaleHintWhenCacheFileIsMissing() throws 
 
     let result = try reader.read(now: Date(timeIntervalSince1970: 1_783_000_120))
 
+    // An absent cache file is a missing source, not a network failure: nothing
+    // about reading this local file touches the network, and the chain UI turns
+    // this reason into "No cache file".
     #expect(result == .stale(
         last: nil,
-        reason: .networkError,
+        reason: .credentialUnavailable,
         hint: "Configure Claude Code statusline to write its cache."
     ))
 }

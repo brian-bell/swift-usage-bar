@@ -60,21 +60,93 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
     }
 }
 
-/// A provider's fetch outcome plus the source that produced it.
+public extension ProviderID {
+    /// The provider's retrieval sources in the order they are attempted, which
+    /// is also the order the chain UI numbers and lists them in. Claude is the
+    /// only provider with more than one.
+    var dataSourceChain: [ProviderDataSource] {
+        switch self {
+        case .claude:
+            return [.claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache]
+        case .codex:
+            return [.codexAPI]
+        case .openCodeGo:
+            return [.openCodeGoChromeCookie]
+        }
+    }
+}
+
+/// What happened to one step of a provider's retrieval chain during a fetch.
+public enum ProviderDataSourceStepOutcome: Equatable, Sendable {
+    /// This step produced the data the app is showing.
+    case used
+    /// Never attempted, because an earlier step already succeeded.
+    case standingBy
+    /// Attempted and failed. The reason is recorded *for display only* — it does
+    /// not necessarily become the provider's surfaced `StaleReason`. Claude's web
+    /// path in particular fails silently by design: its reason lives here and
+    /// never leaves the chain.
+    case failed(StaleReason)
+}
+
+/// One step of a provider's retrieval chain: a source label and its outcome.
+///
+/// Like `ProviderDataSource` this is a *label plus a verdict*, never data — no
+/// cookie, token, org ID or session key is carried, logged, or persisted.
+public struct ProviderDataSourceStep: Equatable, Sendable {
+    public let source: ProviderDataSource
+    public let outcome: ProviderDataSourceStepOutcome
+
+    public init(_ source: ProviderDataSource, _ outcome: ProviderDataSourceStepOutcome) {
+        self.source = source
+        self.outcome = outcome
+    }
+
+    /// Convenience for single-path providers, whose one step's outcome is
+    /// exactly the fetch's outcome.
+    public static func singlePath(
+        _ source: ProviderDataSource,
+        state: ProviderState
+    ) -> ProviderDataSourceStep {
+        switch state {
+        case .fresh:
+            return ProviderDataSourceStep(source, .used)
+        case let .stale(last: _, reason: reason):
+            return ProviderDataSourceStep(source, .failed(reason))
+        case .hidden:
+            return ProviderDataSourceStep(source, .standingBy)
+        }
+    }
+}
+
+/// A provider's fetch outcome plus the retrieval chain that produced it.
 ///
 /// Carried alongside `ProviderState` rather than inside it so that adding source
 /// reporting does not change `ProviderState`'s pattern arity or its `Equatable`
 /// semantics — two states holding the same usage still compare equal regardless
 /// of which path fetched them.
 ///
-/// `source` is `nil` whenever no path produced data (every stale outcome) or
-/// when a provider does not report one.
+/// A provider reports only the steps it actually walked; the view model pads the
+/// remainder of the declared chain as `standingBy`. `source` is derived: it is
+/// the step that was `used`, and is `nil` whenever no path produced data (every
+/// stale outcome) or when a provider reports no chain at all.
 public struct ProviderFetchReport: Equatable, Sendable {
     public let state: ProviderState
-    public let source: ProviderDataSource?
+    public let chain: [ProviderDataSourceStep]
 
+    public var source: ProviderDataSource? {
+        chain.first { $0.outcome == .used }?.source
+    }
+
+    public init(state: ProviderState, chain: [ProviderDataSourceStep]) {
+        self.state = state
+        self.chain = chain
+    }
+
+    /// Naming a single winning source is the same thing as a one-step chain
+    /// whose only step was used; no winner means no steps to report.
     public init(state: ProviderState, source: ProviderDataSource? = nil) {
         self.state = state
-        self.source = source
+        self.chain = source.map { [ProviderDataSourceStep($0, .used)] } ?? []
     }
 }
