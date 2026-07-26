@@ -574,3 +574,71 @@ private func fixtureData(_ name: String) throws -> Data {
 
     return try Data(contentsOf: fixtureURL)
 }
+
+// MARK: - Winning data source reporting
+
+@Test
+func claudeUsageProviderReportsOAuthAPIAsTheWinningSource() async throws {
+    let asOf = Date(timeIntervalSince1970: 1_783_128_465)
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .fresh(validCredential())),
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .fresh(
+            data: Data("{}".utf8),
+            usage: sampleUsage(fiveHour: 1, weekly: 1),
+            asOf: Date(timeIntervalSince1970: 1_783_000_000)
+        )),
+        transport: FakeHTTPTransport(response: (
+            try fixtureData("claude-usage.json"),
+            try httpResponse(statusCode: 200)
+        )),
+        now: { asOf }
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .interactive)
+
+    #expect(report.source == .claudeOAuthAPI)
+    #expect(report.state == .fresh(try ClaudeUsageParser().parse(fixtureData("claude-usage.json")), asOf: asOf))
+}
+
+@Test
+func claudeUsageProviderReportsStatuslineCacheAsTheWinningSourceAfterAPIFailure() async {
+    // The criterion most easily missed: `fallbackState` served fresh cache data
+    // after the OAuth path failed, so the cache is the source that produced data.
+    let cacheAsOf = Date(timeIntervalSince1970: 1_783_000_000)
+    let cached = sampleUsage(fiveHour: 62, weekly: 81)
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .fresh(validCredential())),
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .fresh(
+            data: Data("{}".utf8),
+            usage: cached,
+            asOf: cacheAsOf
+        )),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .background)
+
+    #expect(report.source == .claudeStatuslineCache)
+    #expect(report.state == .fresh(cached, asOf: cacheAsOf))
+}
+
+@Test
+func claudeUsageProviderReportsNoWinningSourceWhenEveryPathFails() async {
+    let previous = sampleUsage(fiveHour: 55, weekly: 75)
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeClaudeCredentialReader(result: .stale(reason: .tokenExpired)),
+        cacheReader: FakeClaudeStatuslineCacheReader(result: .stale(
+            last: nil,
+            reason: .parseFailure,
+            hint: "hint"
+        )),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_128_465) }
+    )
+
+    let report = await provider.fetchReport(previous: previous, mode: .background)
+
+    #expect(report.source == nil)
+    #expect(report.state == .stale(last: previous, reason: .tokenExpired))
+}

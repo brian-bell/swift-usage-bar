@@ -368,3 +368,44 @@ private func fixtureData(_ name: String) throws -> Data {
 
     return try Data(contentsOf: fixtureURL)
 }
+
+// MARK: - Winning data source reporting
+
+@Test
+func codexUsageProviderReportsTheChatGPTAPIAsItsSource() async throws {
+    let asOf = Date(timeIntervalSince1970: 1_783_000_120)
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(result: .fresh(validCredential())),
+        transport: FakeHTTPTransport(response: (
+            try fixtureData("codex-usage.json"),
+            try httpResponse(statusCode: 200)
+        )),
+        now: { asOf }
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .background)
+
+    #expect(report.source == .codexAPI)
+    #expect(report.state == .fresh(ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(
+            percentRemaining: 56,
+            resetsAt: Date(timeIntervalSince1970: 1_783_388_608)
+        )
+    ), asOf: asOf))
+}
+
+@Test
+func codexUsageProviderReportsNoSourceAndPreservesStaleReasonWhenItFails() async {
+    let previous = sampleUsage(fiveHour: 69, weekly: 77)
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(result: .stale(reason: .tokenExpired)),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        now: { Date(timeIntervalSince1970: 1_783_000_120) }
+    )
+
+    let report = await provider.fetchReport(previous: previous, mode: .background)
+
+    #expect(report.source == nil)
+    #expect(report.state == .stale(last: previous, reason: .tokenExpired))
+}

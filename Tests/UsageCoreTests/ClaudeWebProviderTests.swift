@@ -289,3 +289,27 @@ private func fixtureData(_ name: String) throws -> Data {
     return try Data(contentsOf: packageRoot
         .appendingPathComponent("Tests/Fixtures").appendingPathComponent(name))
 }
+
+@Test
+func claudeProviderReportsWebSessionAsTheWinningSource() async throws {
+    let session = ClaudeWebSession(cookieHeader: "sessionKey=x", organizationHint: "max-org")
+    let provider = ClaudeUsageProvider(
+        credentialReader: FakeCredReader(result: .fresh(cred())),
+        cacheReader: CountingCacheReader(),
+        transport: FailingHTTPTransport(),
+        webSessionReader: FakeWebSessionReader(result: session),
+        webTransport: FakeWebTransport(response: ClaudeWebPageResponse(
+            data: try fixtureData("claude-usage.json"),
+            receivedAt: webAsOf
+        )),
+        now: { apiAsOf }
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .background)
+
+    #expect(report.source == .claudeWebSession)
+    guard case let .fresh(_, asOf: asOf) = report.state else {
+        Issue.record("Expected fresh web state, got \(report.state)"); return
+    }
+    #expect(asOf == webAsOf)
+}

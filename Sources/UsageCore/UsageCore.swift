@@ -250,6 +250,11 @@ public enum CredentialAccessMode: Sendable, Equatable {
 
 public protocol UsageProvider: Sendable {
     func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState
+
+    /// Same fetch, additionally naming which retrieval path produced the data.
+    /// Providers that walk a fallback chain (Claude) implement this as the real
+    /// entry point and express `fetch` in terms of it, so the two can't drift.
+    func fetchReport(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderFetchReport
 }
 
 public extension UsageProvider {
@@ -257,6 +262,15 @@ public extension UsageProvider {
     /// the prompt-safe `.background` mode.
     func fetch(previous: ProviderUsage?) async -> ProviderState {
         await fetch(previous: previous, mode: .background)
+    }
+
+    /// Default for providers (and test doubles) that don't name a source: the
+    /// state is reported with an unknown source rather than a fabricated one.
+    func fetchReport(
+        previous: ProviderUsage?,
+        mode: CredentialAccessMode
+    ) async -> ProviderFetchReport {
+        ProviderFetchReport(state: await fetch(previous: previous, mode: mode), source: nil)
     }
 }
 
@@ -287,11 +301,22 @@ public final class AppState: @unchecked Sendable {
     private var hiddenProviders: Set<ProviderID>
     private var lastAttemptedRefreshes: [ProviderID: Date]
     private var lastSuccessfulRefreshes: [ProviderID: Date]
+    /// Which retrieval path last *produced data* for each provider. Retained
+    /// across a subsequent failure (like `lastSuccessfulRefreshes`) so the UI can
+    /// still say where the last-known numbers came from.
+    private var lastDataSources: [ProviderID: ProviderDataSource]
+    /// The retrieval chain each provider last reported. Unlike the winning
+    /// source, a failing fetch's chain *is* the story the UI must tell, so a
+    /// non-empty chain always replaces the previous one; only a provider that
+    /// reports no steps at all leaves the last chain standing.
+    private var lastChains: [ProviderID: [ProviderDataSourceStep]]
 
     public init(
         providerStates: [ProviderID: ProviderState] = [:],
         lastAttemptedRefreshes: [ProviderID: Date] = [:],
-        lastSuccessfulRefreshes: [ProviderID: Date] = [:]
+        lastSuccessfulRefreshes: [ProviderID: Date] = [:],
+        lastDataSources: [ProviderID: ProviderDataSource] = [:],
+        lastChains: [ProviderID: [ProviderDataSourceStep]] = [:]
     ) {
         self.providerStates = providerStates.filter { _, state in state != .hidden }
         self.hiddenProviders = Set(providerStates.compactMap { provider, state in
@@ -299,6 +324,8 @@ public final class AppState: @unchecked Sendable {
         })
         self.lastAttemptedRefreshes = lastAttemptedRefreshes
         self.lastSuccessfulRefreshes = lastSuccessfulRefreshes
+        self.lastDataSources = lastDataSources
+        self.lastChains = lastChains
     }
 
     public var states: [ProviderID: ProviderState] {
@@ -325,6 +352,22 @@ public final class AppState: @unchecked Sendable {
         lastSuccessfulRefreshes[provider]
     }
 
+    public func dataSource(provider: ProviderID) -> ProviderDataSource? {
+        lastDataSources[provider]
+    }
+
+    public var dataSources: [ProviderID: ProviderDataSource] {
+        lastDataSources
+    }
+
+    public func chain(provider: ProviderID) -> [ProviderDataSourceStep]? {
+        lastChains[provider]
+    }
+
+    public var chains: [ProviderID: [ProviderDataSourceStep]] {
+        lastChains
+    }
+
     public func previousUsage(provider: ProviderID) -> ProviderUsage? {
         switch providerStates[provider] {
         case let .fresh(usage, asOf: _):
@@ -345,6 +388,8 @@ public final class AppState: @unchecked Sendable {
             hiddenProviders.remove(provider)
         } else {
             hiddenProviders.insert(provider)
+            lastDataSources.removeValue(forKey: provider)
+            lastChains.removeValue(forKey: provider)
         }
     }
 
@@ -358,7 +403,9 @@ public final class AppState: @unchecked Sendable {
         attemptedAt: Date,
         state: ProviderState,
         completedAt: Date,
-        shouldApply: @Sendable () -> Bool = { true }
+        shouldApply: @Sendable () -> Bool = { true },
+        source: ProviderDataSource? = nil,
+        chain: [ProviderDataSourceStep] = []
     ) -> Bool {
         guard shouldApply() else {
             return false
@@ -369,14 +416,22 @@ public final class AppState: @unchecked Sendable {
         }
 
         recordRefreshAttempt(provider: provider, at: attemptedAt)
-        applyRefreshResult(provider: provider, state: state, completedAt: completedAt)
+        applyRefreshResult(
+            provider: provider,
+            state: state,
+            completedAt: completedAt,
+            source: source,
+            chain: chain
+        )
         return true
     }
 
     public func applyRefreshResult(
         provider: ProviderID,
         state: ProviderState,
-        completedAt: Date
+        completedAt: Date,
+        source: ProviderDataSource? = nil,
+        chain: [ProviderDataSourceStep] = []
     ) {
         if hiddenProviders.contains(provider) {
             return
@@ -385,7 +440,19 @@ public final class AppState: @unchecked Sendable {
         if state == .hidden {
             providerStates.removeValue(forKey: provider)
             hiddenProviders.insert(provider)
+            lastDataSources.removeValue(forKey: provider)
+            lastChains.removeValue(forKey: provider)
             return
+        }
+
+        // Only a path that produced data names itself; a failed fetch reports no
+        // source and must not erase the last one that worked.
+        if let source {
+            lastDataSources[provider] = source
+        }
+
+        if !chain.isEmpty {
+            lastChains[provider] = chain
         }
 
         let resolvedState: ProviderState
@@ -617,7 +684,7 @@ public actor UsagePoller {
                         return nil
                     }
 
-                    let state = await provider.fetch(previous: previous, mode: mode)
+                    let report = await provider.fetchReport(previous: previous, mode: mode)
                     if Task.isCancelled {
                         return nil
                     }
@@ -631,7 +698,9 @@ public actor UsagePoller {
                         provider: providerID,
                         previousUsage: previous,
                         attemptedAt: attemptedAt,
-                        state: state,
+                        state: report.state,
+                        source: report.source,
+                        chain: report.chain,
                         completedAt: completedAt
                     )
                 }
@@ -652,7 +721,9 @@ public actor UsagePoller {
                     attemptedAt: result.attemptedAt,
                     state: result.state,
                     completedAt: result.completedAt,
-                    shouldApply: { lifecycle.isCurrent(generation) }
+                    shouldApply: { lifecycle.isCurrent(generation) },
+                    source: result.source,
+                    chain: result.chain
                 )
                 guard didApply else {
                     continue
@@ -781,6 +852,8 @@ private struct ProviderPollResult: Sendable {
     let previousUsage: ProviderUsage?
     let attemptedAt: Date
     let state: ProviderState
+    let source: ProviderDataSource?
+    let chain: [ProviderDataSourceStep]
     let completedAt: Date
 }
 
@@ -818,6 +891,13 @@ public enum UsageStatusTone: Equatable, Sendable {
 
 public enum ClaudeStatuslineCacheReadResult: Equatable, Sendable {
     case fresh(data: Data, usage: ProviderUsage, asOf: Date)
+    /// Reading the cache is a purely local file operation, so its `reason` is
+    /// narrowed to the three things that can actually go wrong here, and never
+    /// blames a network that was never involved:
+    /// `.credentialUnavailable` — no cache file (the statusline wrapper is not
+    /// wired), `.parseFailure` — the file exists but isn't usable statusline
+    /// JSON, `.networkError` — the file parsed but is older than `maximumAge`.
+    /// The retrieval-chain UI phrases each of those per source.
     case stale(last: ProviderUsage?, reason: StaleReason, hint: String)
 }
 
@@ -842,9 +922,11 @@ public struct ClaudeStatuslineCacheReader: Sendable {
 
     public func read(now: Date) throws -> ClaudeStatuslineCacheReadResult {
         guard FileManager.default.fileExists(atPath: cacheURL.path) else {
+            // No cache file at all — the statusline wrapper has never run here.
+            // That is a missing source, not a network failure.
             return .stale(
                 last: nil,
-                reason: .networkError,
+                reason: .credentialUnavailable,
                 hint: Self.configureStatuslineHint
             )
         }
@@ -864,6 +946,9 @@ public struct ClaudeStatuslineCacheReader: Sendable {
         }
 
         if now.timeIntervalSince(modifiedAt) > maximumAge {
+            // Parsed fine, just too old to call fresh. This is the one reason
+            // the cache reports as `.networkError`, which the chain UI phrases
+            // as "Cache out of date" for this source.
             return .stale(
                 last: usage,
                 reason: .networkError,
@@ -918,31 +1003,59 @@ public struct ClaudeUsageProvider: UsageProvider {
     // `.background` read fails silently instead of presenting a prompt
     // (kSecUseAuthenticationUIFail), degrading to the statusline-cache fallback.
     public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        await fetchReport(previous: previous, mode: mode).state
+    }
+
+    public func fetchReport(
+        previous: ProviderUsage?,
+        mode: CredentialAccessMode
+    ) async -> ProviderFetchReport {
+        var chain: [ProviderDataSourceStep] = []
+
         guard !Task.isCancelled else {
-            return .stale(last: previous, reason: .networkError)
+            return ProviderFetchReport(state: .stale(last: previous, reason: .networkError), chain: chain)
         }
-        if let webState = await fetchFromWebSession(mode: mode) {
-            return webState
+
+        switch await fetchFromWebSession(mode: mode) {
+        case let .fresh(usage, asOf):
+            chain.append(ProviderDataSourceStep(.claudeWebSession, .used))
+            return ProviderFetchReport(state: .fresh(usage, asOf: asOf), chain: chain)
+        case let .failed(webReason):
+            // Recorded for the chain UI only. The web path fails *silently* by
+            // design (CLAUDE.md): this reason is never surfaced as the
+            // provider's `StaleReason` — the OAuth path's reason still wins.
+            chain.append(ProviderDataSourceStep(.claudeWebSession, .failed(webReason)))
+        case .notAttempted:
+            break
         }
 
         // Cancellation is not a web-session failure: do not turn a stopped
         // refresh into a Keychain read or cache lookup in the fallback chain.
         guard !Task.isCancelled else {
-            return .stale(last: previous, reason: .networkError)
+            return ProviderFetchReport(state: .stale(last: previous, reason: .networkError), chain: chain)
         }
 
         switch await fetchFromAPI(mode: mode) {
         case let .fresh(usage, asOf):
-            return .fresh(usage, asOf: asOf)
+            chain.append(ProviderDataSourceStep(.claudeOAuthAPI, .used))
+            return ProviderFetchReport(state: .fresh(usage, asOf: asOf), chain: chain)
         case let .stale(apiReason):
-            return fallbackState(apiReason: apiReason, previous: previous)
+            chain.append(ProviderDataSourceStep(.claudeOAuthAPI, .failed(apiReason)))
+            return fallbackReport(apiReason: apiReason, previous: previous, chain: chain)
         }
     }
 
-    /// Returns a `.fresh` state only when the web-cookie path fully succeeds;
-    /// `nil` means "fall back silently" for every failure mode.
-    private func fetchFromWebSession(mode: CredentialAccessMode) async -> ProviderState? {
-        guard let webSessionReader, let webTransport else { return nil }
+    /// Outcome of the claude.ai browser-cookie path. `failed` carries the reason
+    /// purely so the chain UI can name what went wrong; the caller must not
+    /// promote it to the provider's surfaced stale reason.
+    private enum WebOutcome {
+        case notAttempted
+        case fresh(ProviderUsage, asOf: Date)
+        case failed(StaleReason)
+    }
+
+    private func fetchFromWebSession(mode: CredentialAccessMode) async -> WebOutcome {
+        guard let webSessionReader, let webTransport else { return .notAttempted }
         let sessions: [ClaudeWebSession]
         if let candidateReader = webSessionReader as? any ClaudeWebSessionCandidateReading {
             sessions = (try? candidateReader.readSessions(mode: mode)) ?? []
@@ -952,16 +1065,39 @@ public struct ClaudeUsageProvider: UsageProvider {
             sessions = []
         }
 
+        guard !sessions.isEmpty else { return .failed(.credentialUnavailable) }
+
+        var lastReason = StaleReason.networkError
         for session in sessions {
             do {
                 let response = try await webTransport.fetchUsage(session: session)
                 let usage = try parser.parse(response.data)
                 return .fresh(usage, asOf: response.receivedAt)
             } catch {
-                if Task.isCancelled { return nil }
+                if Task.isCancelled { return .notAttempted }
+                lastReason = Self.webStaleReason(for: error)
             }
         }
-        return nil
+        return .failed(lastReason)
+    }
+
+    private static func webStaleReason(for error: any Error) -> StaleReason {
+        if let transportError = error as? ClaudeWebTransportError {
+            switch transportError {
+            case .sessionExpired:
+                return .sessionExpired
+            case .parseFailure:
+                return .parseFailure
+            case .network, .notFound:
+                return .networkError
+            }
+        }
+
+        if error is UsageParsingError {
+            return .parseFailure
+        }
+
+        return .networkError
     }
 
     private enum APIOutcome {
@@ -999,16 +1135,30 @@ public struct ClaudeUsageProvider: UsageProvider {
     // The API's failure reason wins over the cache's: the API is the primary
     // path and its reason is more actionable (tokenExpired -> run Claude Code,
     // which also refreshes the statusline cache).
-    private func fallbackState(apiReason: StaleReason, previous: ProviderUsage?) -> ProviderState {
+    private func fallbackReport(
+        apiReason: StaleReason,
+        previous: ProviderUsage?,
+        chain: [ProviderDataSourceStep]
+    ) -> ProviderFetchReport {
+        var chain = chain
         guard let cacheResult = try? cacheReader.read(now: now()) else {
-            return .stale(last: previous, reason: apiReason)
+            // A throwing read is a local I/O failure (the file vanished between
+            // the existence check and the read, or is unreadable) — the cache
+            // could not be obtained, which is not a network failure either.
+            chain.append(ProviderDataSourceStep(.claudeStatuslineCache, .failed(.credentialUnavailable)))
+            return ProviderFetchReport(state: .stale(last: previous, reason: apiReason), chain: chain)
         }
 
         switch cacheResult {
         case let .fresh(data: _, usage: usage, asOf: asOf):
-            return .fresh(usage, asOf: asOf)
-        case let .stale(last: last, reason: _, hint: _):
-            return .stale(last: last ?? previous, reason: apiReason)
+            // The cache — not the API — is what actually produced these numbers.
+            chain.append(ProviderDataSourceStep(.claudeStatuslineCache, .used))
+            return ProviderFetchReport(state: .fresh(usage, asOf: asOf), chain: chain)
+        case let .stale(last: last, reason: cacheReason, hint: _):
+            // Like the web step, the cache's own reason is chain-only: the
+            // surfaced reason stays the API's, which is the more actionable one.
+            chain.append(ProviderDataSourceStep(.claudeStatuslineCache, .failed(cacheReason)))
+            return ProviderFetchReport(state: .stale(last: last ?? previous, reason: apiReason), chain: chain)
         }
     }
 
@@ -1291,6 +1441,24 @@ public struct CodexUsageProvider: UsageProvider {
     }
 
     public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        await fetchReport(previous: previous, mode: mode).state
+    }
+
+    public func fetchReport(
+        previous: ProviderUsage?,
+        mode: CredentialAccessMode
+    ) async -> ProviderFetchReport {
+        // Codex has exactly one retrieval path, so its chain is one step whose
+        // outcome is the fetch's outcome.
+        let state = await fetchState(previous: previous, mode: mode)
+
+        return ProviderFetchReport(
+            state: state,
+            chain: [ProviderDataSourceStep.singlePath(.codexAPI, state: state)]
+        )
+    }
+
+    private func fetchState(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
         let credential: CodexCredential
         do {
             switch try credentialReader.read(mode: mode) {

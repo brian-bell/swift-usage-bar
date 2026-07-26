@@ -148,6 +148,55 @@ extension UsageBarShellModel {
             now: now()
         )
     }
+
+    /// Per-provider `State · method · age` status lines, plus the expandable
+    /// retrieval chain behind each, for Settings › Providers.
+    var providerStatusViewModel: ProviderStatusViewModel {
+        providerStatusViewModel(stagedVisibility: [:])
+    }
+
+    /// Same rows, previewed against the Settings draft's staged visibility.
+    ///
+    /// Visibility is only committed on OK, but the disclosure has to react to the
+    /// toggle immediately: turning a provider off must hide its chain, and
+    /// turning one on must reveal it — otherwise OpenCode Go's workspace field,
+    /// which now lives inside that disclosure, would be unreachable in the same
+    /// visit that enables the provider.
+    func providerStatusViewModel(
+        stagedVisibility: [ProviderID: Bool]
+    ) -> ProviderStatusViewModel {
+        var states = appState.states
+        var dataSources = appState.dataSources
+        var chains = appState.chains
+        var lastUpdatedAt = lastUpdatedDates()
+        for (provider, isVisible) in stagedVisibility {
+            if isVisible {
+                // Staged on but not yet polled: no state at all, which renders
+                // as `Checking…`. Everything the last poll before the provider
+                // was hidden left behind has to go with it — a retained chain
+                // would render a green "Used 3 h ago" step, and a retained
+                // timestamp an age, directly under a row that says nothing has
+                // reported yet. Whatever AppState still holds resurfaces once OK
+                // actually makes the provider visible again.
+                guard states[provider] == .hidden else { continue }
+                states.removeValue(forKey: provider)
+                dataSources.removeValue(forKey: provider)
+                chains.removeValue(forKey: provider)
+                lastUpdatedAt.removeValue(forKey: provider)
+            } else {
+                states[provider] = .hidden
+            }
+        }
+
+        return ProviderStatusViewModel(
+            states: states,
+            dataSources: dataSources,
+            chains: chains,
+            lastUpdatedAt: lastUpdatedAt,
+            workspaceID: openCodeGoWorkspaceID,
+            now: now()
+        )
+    }
 }
 
 struct UsagePollerController: UsageControlling {
