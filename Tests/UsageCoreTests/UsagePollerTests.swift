@@ -1460,3 +1460,124 @@ private func waitForProviderState(
         try? await Task.sleep(nanoseconds: 1_000_000)
     }
 }
+
+// MARK: - Winning data source plumbing
+
+@Test
+func usagePollerRecordsTheWinningDataSourceReportedByEachProvider() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 9_000))
+    let appState = await AppState()
+    let claude = SourceReportingUsageProvider(
+        report: ProviderFetchReport(
+            state: .fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 8_900)),
+            source: .claudeStatuslineCache
+        )
+    )
+    let codex = SourceReportingUsageProvider(
+        report: ProviderFetchReport(
+            state: .fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 8_901)),
+            source: .codexAPI
+        )
+    )
+    let poller = UsagePoller(providers: [.claude: claude, .codex: codex], appState: appState, clock: clock)
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await codex.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+    await poller.stop()
+
+    #expect(await appState.dataSource(provider: .claude) == .claudeStatuslineCache)
+    #expect(await appState.dataSource(provider: .codex) == .codexAPI)
+}
+
+@Test
+func usagePollerLeavesTheDataSourceUnsetForProvidersThatReportNone() async {
+    let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 9_100))
+    let appState = await AppState()
+    let claude = RecordingUsageProvider(
+        results: [.fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 9_000))]
+    )
+    let poller = UsagePoller(providers: [.claude: claude], appState: appState, clock: clock)
+
+    await poller.start()
+    await claude.waitForFetchCount(1)
+    await poller.waitUntilIdle()
+    await poller.stop()
+
+    #expect(await appState.dataSource(provider: .claude) == nil)
+}
+
+@Test
+func appStateKeepsTheLastWinningSourceWhenAProviderGoesStale() async {
+    let appState = await AppState()
+
+    await appState.applyRefreshResult(
+        provider: .claude,
+        state: .fresh(sampleUsage(fiveHour: 62, weekly: 81), asOf: Date(timeIntervalSince1970: 10_000)),
+        completedAt: Date(timeIntervalSince1970: 10_000),
+        source: .claudeWebSession
+    )
+    await appState.applyRefreshResult(
+        provider: .claude,
+        state: .stale(last: nil, reason: .networkError),
+        completedAt: Date(timeIntervalSince1970: 10_120),
+        source: nil
+    )
+
+    #expect(await appState.dataSource(provider: .claude) == .claudeWebSession)
+    #expect(await appState.dataSources == [.claude: .claudeWebSession])
+}
+
+@Test
+func appStateClearsTheWinningSourceWhenAProviderBecomesHidden() async {
+    let appState = await AppState()
+
+    await appState.applyRefreshResult(
+        provider: .codex,
+        state: .fresh(sampleUsage(fiveHour: 72, weekly: 90), asOf: Date(timeIntervalSince1970: 11_000)),
+        completedAt: Date(timeIntervalSince1970: 11_000),
+        source: .codexAPI
+    )
+    await appState.applyRefreshResult(
+        provider: .codex,
+        state: .hidden,
+        completedAt: Date(timeIntervalSince1970: 11_120)
+    )
+
+    #expect(await appState.dataSource(provider: .codex) == nil)
+}
+
+private actor SourceReportingUsageProvider: UsageProvider {
+    private let report: ProviderFetchReport
+    private var fetchCount = 0
+    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    init(report: ProviderFetchReport) {
+        self.report = report
+    }
+
+    func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
+        await fetchReport(previous: previous, mode: mode).state
+    }
+
+    func fetchReport(previous _: ProviderUsage?, mode _: CredentialAccessMode) async -> ProviderFetchReport {
+        fetchCount += 1
+        let ready = waiters.filter { fetchCount >= $0.0 }
+        waiters.removeAll { fetchCount >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
+        return report
+    }
+
+    func waitForFetchCount(_ count: Int) async {
+        if fetchCount >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append((count, continuation))
+        }
+    }
+}
