@@ -71,6 +71,7 @@ struct AppSettingsView: View {
         .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             draft = .capture(from: model)
+            selectedTab = SettingsTab.initial
             expandedProviders = model.providerStatusViewModel
                 .expandedProviders(remembering: expandedProviders)
         }
