@@ -156,6 +156,11 @@ public actor ThresholdNotifier {
     private let sender: any NotificationSending
     private var firedCycles: Set<ThresholdNotificationKey> = []
     private var failedCycles: Set<ThresholdNotificationKey> = []
+    private var pendingCycles: [ThresholdNotificationPendingKey: ResetCycle] = [:]
+    private var lastNotifiedPercentages: [ThresholdNotificationWindowKey: Int] = [:]
+    private var windowsWithChangedUsage: Set<ThresholdNotificationWindowKey> = []
+    private var latestSuccessfulDeliveryGenerations: [ThresholdNotificationWindowKey: UInt64] = [:]
+    private var nextDeliveryGeneration: UInt64 = 0
 
     public init(sender: any NotificationSending) {
         self.sender = sender
@@ -176,6 +181,16 @@ public actor ThresholdNotifier {
                 continue
             }
 
+            let windowKey = ThresholdNotificationWindowKey(
+                provider: provider,
+                window: window.kind
+            )
+            if let lastNotifiedPercentage = lastNotifiedPercentages[windowKey],
+               window.previous.percentRemaining != lastNotifiedPercentage
+                || currentPercentRemaining != lastNotifiedPercentage {
+                windowsWithChangedUsage.insert(windowKey)
+            }
+
             let previousResetCycle = ResetCycle(resetsAt: window.previous.resetsAt)
             let currentResetCycle = ResetCycle(resetsAt: window.current.resetsAt)
             let crossedThreshold = (window.previous.percentRemaining.map { $0 >= threshold } ?? false)
@@ -189,10 +204,28 @@ public actor ThresholdNotifier {
                 threshold: threshold,
                 resetCycle: currentResetCycle
             )
+            let pendingKey = ThresholdNotificationPendingKey(
+                provider: provider,
+                window: window.kind,
+                threshold: threshold
+            )
             let retryingFailedDelivery = failedCycles.contains(key)
                 && currentPercentRemaining < threshold
+            let resumingPendingCycle = pendingCycles[pendingKey] == currentResetCycle
+                && currentPercentRemaining < threshold
 
-            guard crossedThreshold || newResetCycleAlreadyBelowThreshold || retryingFailedDelivery else {
+            guard crossedThreshold
+                || newResetCycleAlreadyBelowThreshold
+                || retryingFailedDelivery
+                || resumingPendingCycle else {
+                continue
+            }
+
+            guard lastNotifiedPercentages[windowKey] == nil
+                || windowsWithChangedUsage.contains(windowKey) else {
+                if newResetCycleAlreadyBelowThreshold {
+                    pendingCycles[pendingKey] = currentResetCycle
+                }
                 continue
             }
 
@@ -200,6 +233,8 @@ public actor ThresholdNotifier {
                 continue
             }
 
+            nextDeliveryGeneration += 1
+            let deliveryGeneration = nextDeliveryGeneration
             do {
                 try await sender.send(UsageThresholdNotification(
                     provider: provider,
@@ -209,6 +244,14 @@ public actor ThresholdNotifier {
                     resetsAt: window.current.resetsAt
                 ))
                 failedCycles.remove(key)
+                if pendingCycles[pendingKey] == currentResetCycle {
+                    pendingCycles.removeValue(forKey: pendingKey)
+                }
+                if deliveryGeneration > latestSuccessfulDeliveryGenerations[windowKey, default: 0] {
+                    latestSuccessfulDeliveryGenerations[windowKey] = deliveryGeneration
+                    lastNotifiedPercentages[windowKey] = currentPercentRemaining
+                    windowsWithChangedUsage.remove(windowKey)
+                }
             } catch {
                 firedCycles.remove(key)
                 failedCycles.insert(key)
@@ -222,6 +265,17 @@ private struct ThresholdNotificationKey: Hashable, Sendable {
     let window: UsageWindowKind
     let threshold: Int
     let resetCycle: ResetCycle
+}
+
+private struct ThresholdNotificationWindowKey: Hashable, Sendable {
+    let provider: ProviderID
+    let window: UsageWindowKind
+}
+
+private struct ThresholdNotificationPendingKey: Hashable, Sendable {
+    let provider: ProviderID
+    let window: UsageWindowKind
+    let threshold: Int
 }
 
 private enum ResetCycle: Hashable, Sendable {

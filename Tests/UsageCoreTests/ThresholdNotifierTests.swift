@@ -197,7 +197,7 @@ func thresholdNotifierRearmsOnlyWindowWhoseResetCycleChanges() async {
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 25, fiveHourReset: firstFiveHourReset, weekly: 25, weeklyReset: weeklyReset),
-        current: usage(fiveHour: 18, fiveHourReset: secondFiveHourReset, weekly: 17, weeklyReset: weeklyReset),
+        current: usage(fiveHour: 16, fiveHourReset: secondFiveHourReset, weekly: 17, weeklyReset: weeklyReset),
         provider: .claude,
         threshold: 20
     )
@@ -205,7 +205,7 @@ func thresholdNotifierRearmsOnlyWindowWhoseResetCycleChanges() async {
     #expect(await sender.sentNotifications() == [
         thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 18, threshold: 20, resetsAt: firstFiveHourReset),
         thresholdNotification(provider: .claude, window: .weekly, percentRemaining: 17, threshold: 20, resetsAt: weeklyReset),
-        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 18, threshold: 20, resetsAt: secondFiveHourReset),
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 16, threshold: 20, resetsAt: secondFiveHourReset),
     ])
 }
 
@@ -232,6 +232,119 @@ func thresholdNotifierSendsForNewResetCycleAlreadyBelowThreshold() async {
     #expect(await sender.sentNotifications() == [
         thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 18, threshold: 20, resetsAt: firstReset),
         thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 16, threshold: 20, resetsAt: secondReset),
+    ])
+}
+
+@Test
+func thresholdNotifierDoesNotRefireForNewResetCycleWhenUsageIsUnchanged() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let firstReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let secondReset = Date(timeIntervalSince1970: 1_783_026_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: firstReset
+        ),
+    ])
+}
+
+@Test
+func thresholdNotifierRefiresWhenUsageChangedAndReturnsToLastNotifiedPercentage() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let firstReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let secondReset = Date(timeIntervalSince1970: 1_783_026_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: secondReset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: firstReset
+        ),
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: secondReset
+        ),
+    ])
+}
+
+@Test
+func thresholdNotifierRefiresAfterUsageChangesLaterInSuppressedResetCycle() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let firstReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let secondReset = Date(timeIntervalSince1970: 1_783_026_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
+        current: usage(fiveHour: 17, fiveHourReset: secondReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: firstReset
+        ),
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 17,
+            threshold: 20,
+            resetsAt: secondReset
+        ),
     ])
 }
 
@@ -350,6 +463,49 @@ func thresholdNotifierDoesNotDoubleSendConcurrentCrossingForSameCycle() async {
 }
 
 @Test
+func thresholdNotifierIgnoresOlderDeliveryThatCompletesAfterNewerDelivery() async {
+    let sender = OutOfOrderNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let firstReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let secondReset = Date(timeIntervalSince1970: 1_783_026_000)
+    let thirdReset = Date(timeIntervalSince1970: 1_783_044_000)
+
+    let firstEvaluation = Task {
+        await notifier.evaluate(
+            previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+            current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+            provider: .claude,
+            threshold: 20
+        )
+    }
+    await sender.waitForSendCount(1)
+
+    let secondEvaluation = Task {
+        await notifier.evaluate(
+            previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+            current: usage(fiveHour: 17, fiveHourReset: secondReset, weekly: 80),
+            provider: .claude,
+            threshold: 20
+        )
+    }
+    await sender.waitForSendCount(2)
+
+    await sender.release(percentRemaining: 17)
+    await secondEvaluation.value
+    await sender.release(percentRemaining: 18)
+    await firstEvaluation.value
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 17, fiveHourReset: secondReset, weekly: 80),
+        current: usage(fiveHour: 17, fiveHourReset: thirdReset, weekly: 80),
+        provider: .claude,
+        threshold: 20
+    )
+
+    #expect(await sender.sendCount == 2)
+}
+
+@Test
 func thresholdNotifierRetriesCycleAfterSenderFailure() async {
     let sender = FailingOnceNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
@@ -465,6 +621,47 @@ private actor SuspendingNotificationSender: NotificationSending {
         for continuation in continuations {
             continuation.resume()
         }
+    }
+
+    private func resumeSendWaiters() {
+        let ready = sendWaiters.filter { sendCount >= $0.0 }
+        sendWaiters.removeAll { sendCount >= $0.0 }
+        for waiter in ready {
+            waiter.1.resume()
+        }
+    }
+}
+
+private actor OutOfOrderNotificationSender: NotificationSending {
+    private var sendWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var releaseContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
+    private(set) var sendCount = 0
+
+    func send(_ notification: UsageThresholdNotification) async {
+        sendCount += 1
+        resumeSendWaiters()
+
+        guard sendCount <= 2 else {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            releaseContinuations[notification.percentRemaining] = continuation
+        }
+    }
+
+    func waitForSendCount(_ count: Int) async {
+        if sendCount >= count {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            sendWaiters.append((count, continuation))
+        }
+    }
+
+    func release(percentRemaining: Int) {
+        releaseContinuations.removeValue(forKey: percentRemaining)?.resume()
     }
 
     private func resumeSendWaiters() {
