@@ -188,7 +188,7 @@ func chainStepStylingMapsToDotEmphasisAndMuting() throws {
     (.claudeStatuslineCache, .networkError, "Cache out of date"),
     (.claudeStatuslineCache, .parseFailure, "Unexpected response"),
     (.codexAPI, .credentialUnavailable, "No credential found"),
-    (.openCodeGoChromeCookie, .credentialUnavailable, "No Chrome cookie"),
+    (.openCodeGoChromeCookie, .credentialUnavailable, "Usage unavailable"),
     (.openCodeGoChromeCookie, .workspaceSelectionRequired, "Choose a workspace"),
 ])
 func chainStepPhrasesEveryFailureReasonPerSource(
@@ -273,8 +273,8 @@ func freshProviderShowsNoRecoveryCallout() throws {
     (
         .openCodeGo,
         .credentialUnavailable,
-        "Showing last-known data. Sign in to opencode.ai in Chrome, then choose Refresh Now "
-            + "from the menu bar."
+        "Showing last-known data. Check your opencode.ai sign-in and workspace access in Chrome, "
+            + "then choose Refresh Now from the menu bar."
     ),
     (
         .openCodeGo,

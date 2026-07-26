@@ -388,6 +388,8 @@ public final class AppState: @unchecked Sendable {
             hiddenProviders.remove(provider)
         } else {
             hiddenProviders.insert(provider)
+            lastDataSources.removeValue(forKey: provider)
+            lastChains.removeValue(forKey: provider)
         }
     }
 

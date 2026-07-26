@@ -101,6 +101,20 @@ func appStateClearsTheChainWhenAProviderBecomesHidden() async {
 }
 
 @Test
+func appStateClearsSourceAndChainWhenHiddenThroughVisibilitySetter() async {
+    let chain = [ProviderDataSourceStep(.codexAPI, .used)]
+    let appState = await AppState(
+        lastDataSources: [.codex: .codexAPI],
+        lastChains: [.codex: chain]
+    )
+
+    await appState.setProvider(.codex, visible: false)
+
+    #expect(await appState.dataSource(provider: .codex) == nil)
+    #expect(await appState.chain(provider: .codex) == nil)
+}
+
+@Test
 func usagePollerPlumbsEachProvidersChainIntoAppState() async {
     let appState = await AppState()
     let chain: [ProviderDataSourceStep] = [

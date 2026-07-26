@@ -91,6 +91,26 @@ func providerStatusRendersStaleOpenCodeSessionExpiryWithAmberDot() throws {
 }
 
 @Test
+func providerStatusUsesNeutralOpenCodeUnavailableGuidance() throws {
+    let model = ProviderStatusViewModel(
+        states: [.openCodeGo: .stale(last: nil, reason: .credentialUnavailable)],
+        chains: [.openCodeGo: [
+            ProviderDataSourceStep(.openCodeGoChromeCookie, .failed(.credentialUnavailable)),
+        ]],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
+    #expect(row.methodLabel == "OpenCode usage unavailable")
+    #expect(row.chain.steps.map(\.stateText) == ["Usage unavailable"])
+    #expect(
+        row.chain.recoveryCallout
+            == "Showing last-known data. Check your opencode.ai sign-in and workspace access "
+                + "in Chrome, then choose Refresh Now from the menu bar."
+    )
+}
+
+@Test
 func providerStatusRendersOffForHiddenProvider() throws {
     let model = ProviderStatusViewModel(
         states: [.openCodeGo: .hidden],
@@ -213,7 +233,7 @@ func providerStatusClampsFutureRefreshTimestampsToJustNow() throws {
     (.openCodeGo, .parseFailure, "Unexpected response format"),
     (.openCodeGo, .networkError, "Network error"),
     (.openCodeGo, .tokenExpired, "Session token expired"),
-    (.openCodeGo, .credentialUnavailable, "No opencode.ai cookie in Chrome"),
+    (.openCodeGo, .credentialUnavailable, "OpenCode usage unavailable"),
     (.openCodeGo, .sessionExpired, "Chrome session expired"),
     (.openCodeGo, .workspaceSelectionRequired, "Choose a workspace in Settings"),
 ])

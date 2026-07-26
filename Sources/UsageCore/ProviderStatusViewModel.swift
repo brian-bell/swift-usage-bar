@@ -319,8 +319,10 @@ public extension ProviderDataSource {
             return "Choose a workspace"
         case .credentialUnavailable:
             switch self {
-            case .claudeWebSession, .openCodeGoChromeCookie:
+            case .claudeWebSession:
                 return "No Chrome cookie"
+            case .openCodeGoChromeCookie:
+                return "Usage unavailable"
             case .claudeStatuslineCache:
                 // The cache file is absent (the statusline wrapper was never
                 // wired) or could not be read at all.
@@ -370,11 +372,12 @@ private extension ProviderID {
         case (.codex, .credentialUnavailable), (.codex, .sessionExpired):
             return prefix + "Sign in with the Codex CLI, then choose Refresh Now from the "
                 + "menu bar."
-        case (.openCodeGo, .sessionExpired),
-             (.openCodeGo, .credentialUnavailable),
-             (.openCodeGo, .tokenExpired):
+        case (.openCodeGo, .sessionExpired), (.openCodeGo, .tokenExpired):
             return prefix + "Sign in to opencode.ai in Chrome, then choose Refresh Now "
                 + "from the menu bar."
+        case (.openCodeGo, .credentialUnavailable):
+            return prefix + "Check your opencode.ai sign-in and workspace access in Chrome, "
+                + "then choose Refresh Now from the menu bar."
         case (.openCodeGo, .workspaceSelectionRequired):
             return prefix + "Several workspaces matched. Set a workspace ID below, then "
                 + "choose Refresh Now from the menu bar."
@@ -428,7 +431,7 @@ private extension StaleReason {
             case .codex:
                 return "No Codex credential found"
             case .openCodeGo:
-                return "No opencode.ai cookie in Chrome"
+                return "OpenCode usage unavailable"
             }
         case .sessionExpired:
             switch provider {
