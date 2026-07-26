@@ -170,7 +170,8 @@ public actor ThresholdNotifier {
         previous: ProviderUsage?,
         current: ProviderUsage,
         provider: ProviderID,
-        threshold: Int
+        threshold: Int,
+        at evaluatedAt: Date = Date()
     ) async {
         guard let previous else {
             return
@@ -193,6 +194,7 @@ public actor ThresholdNotifier {
 
             let previousResetCycle = ResetCycle(resetsAt: window.previous.resetsAt)
             let currentResetCycle = ResetCycle(resetsAt: window.current.resetsAt)
+            let previousResetCycleElapsed = window.previous.resetsAt.map { $0 <= evaluatedAt } ?? false
             let crossedThreshold = (window.previous.percentRemaining.map { $0 >= threshold } ?? false)
                 && currentPercentRemaining < threshold
             let newResetCycleAlreadyBelowThreshold = previousResetCycle != currentResetCycle
@@ -222,7 +224,8 @@ public actor ThresholdNotifier {
             }
 
             guard lastNotifiedPercentages[windowKey] == nil
-                || windowsWithChangedUsage.contains(windowKey) else {
+                || windowsWithChangedUsage.contains(windowKey)
+                || (newResetCycleAlreadyBelowThreshold && previousResetCycleElapsed) else {
                 if newResetCycleAlreadyBelowThreshold {
                     pendingCycles[pendingKey] = currentResetCycle
                 }
@@ -720,7 +723,8 @@ public actor UsagePoller {
                         appState: appState,
                         thresholdProvider: thresholdProvider,
                         previous: result.previousUsage,
-                        provider: result.provider
+                        provider: result.provider,
+                        evaluatedAt: result.completedAt
                     )
                 }
             }
@@ -734,7 +738,8 @@ public actor UsagePoller {
         appState: AppState,
         thresholdProvider: @escaping @Sendable () async -> Int,
         previous: ProviderUsage?,
-        provider: ProviderID
+        provider: ProviderID,
+        evaluatedAt: Date
     ) {
         let taskID = UUID()
         thresholdEvaluationTasks[taskID] = Task {
@@ -769,7 +774,8 @@ public actor UsagePoller {
                 previous: previous,
                 current: current,
                 provider: provider,
-                threshold: threshold
+                threshold: threshold,
+                at: evaluatedAt
             )
             self.thresholdEvaluationDidFinish(taskID)
         }
