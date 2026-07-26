@@ -307,6 +307,67 @@ func usagePollerReadsInjectedThresholdProviderDuringEvaluation() async {
 }
 
 @Test
+func usagePollerClassifiesResetUsingPollCompletionTimeWhenThresholdLookupIsDelayed() async {
+    let firstReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let secondReset = Date(timeIntervalSince1970: 1_783_026_000)
+    let clock = ManualUsageClock(now: firstReset.addingTimeInterval(-1))
+    let previousUsage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 18, resetsAt: firstReset),
+        weekly: UsageWindow(percentRemaining: 81, resetsAt: nil)
+    )
+    let currentUsage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 18, resetsAt: secondReset),
+        weekly: UsageWindow(percentRemaining: 81, resetsAt: nil)
+    )
+    let appState = await AppState(providerStates: [
+        .claude: .fresh(previousUsage, asOf: firstReset.addingTimeInterval(-2)),
+    ])
+    let sender = RecordingThresholdNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    await notifier.evaluate(
+        previous: ProviderUsage(
+            fiveHour: UsageWindow(percentRemaining: 25, resetsAt: firstReset),
+            weekly: UsageWindow(percentRemaining: 81, resetsAt: nil)
+        ),
+        current: previousUsage,
+        provider: .claude,
+        threshold: 20,
+        at: firstReset.addingTimeInterval(-2)
+    )
+    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let claude = RecordingUsageProvider(results: [
+        .fresh(currentUsage, asOf: firstReset.addingTimeInterval(-1)),
+    ])
+    let poller = UsagePoller(
+        providers: [.claude: claude],
+        appState: appState,
+        clock: clock,
+        thresholdNotifier: notifier,
+        thresholdProvider: {
+            await thresholdProvider.threshold()
+        }
+    )
+
+    await poller.start()
+    await thresholdProvider.waitForRequestCount(1)
+    await clock.advance(by: 2)
+    await thresholdProvider.releaseAll()
+    await poller.waitUntilIdle()
+
+    #expect(await sender.sentNotifications() == [
+        UsageThresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: firstReset
+        ),
+    ])
+
+    await poller.stop()
+}
+
+@Test
 func usagePollerDoesNotEvaluateNotificationsForHiddenProviders() async {
     let clock = ManualUsageClock(now: Date(timeIntervalSince1970: 4_500))
     let appState = await AppState(providerStates: [.claude: .hidden])
