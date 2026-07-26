@@ -64,7 +64,10 @@ struct AppSettingsView: View {
             }
             .padding(12)
         }
-        .frame(width: 460)
+        // Wider than the mockup's 460: at that width Codex's real status line
+        // ("Live · ChatGPT API (Keychain token) · updated 2 min ago") wraps once
+        // the leading chevron, icon, and trailing switch take their share.
+        .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             draft = .capture(from: model)
@@ -83,32 +86,36 @@ private struct GeneralSettingsPane: View {
 
     var body: some View {
         SettingsPaneLayout {
-            LabeledContent("Refresh every") {
-                Picker("Refresh every", selection: $draft.pollInterval) {
-                    Text("1 minute").tag(TimeInterval(60))
-                    Text("2 minutes").tag(TimeInterval(120))
-                    Text("5 minutes").tag(TimeInterval(300))
-                    Text("10 minutes").tag(TimeInterval(600))
-                }
-                .labelsHidden()
-                .fixedSize()
-            }
-
-            Text("Also refreshes on wake and with Refresh Now.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            LabeledContent("Launch at login") {
-                Toggle("Launch at login", isOn: $draft.launchAtLoginEnabled)
+            SettingsGroup {
+                SettingsRow("Refresh every") {
+                    Picker("Refresh every", selection: $draft.pollInterval) {
+                        Text("1 minute").tag(TimeInterval(60))
+                        Text("2 minutes").tag(TimeInterval(120))
+                        Text("5 minutes").tag(TimeInterval(300))
+                        Text("10 minutes").tag(TimeInterval(600))
+                    }
                     .labelsHidden()
+                    .fixedSize()
+                }
+
+                SettingsCaption("Also refreshes on wake and with Refresh Now.")
             }
 
-            if let launchAtLoginError {
-                Text(launchAtLoginError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            SettingsGroup {
+                SettingsRow("Launch at login") {
+                    Toggle("Launch at login", isOn: $draft.launchAtLoginEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+
+                if let launchAtLoginError {
+                    Text(launchAtLoginError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
     }
@@ -121,28 +128,35 @@ private struct ProvidersSettingsPane: View {
 
     var body: some View {
         SettingsPaneLayout {
-            // Each provider is one visual unit: its toggle, then the status line
-            // for that provider, which doubles as the disclosure label for the
-            // retrieval chain beneath it.
-            ForEach(statusRows) { status in
-                ProviderSettingsRow(
-                    status: status,
-                    isVisible: Binding(
-                        get: { draft.visibility(for: status.provider) },
-                        set: { draft.providerVisibility[status.provider] = $0 }
-                    ),
-                    isExpanded: Binding(
-                        get: { expandedProviders.contains(status.provider) },
-                        set: { isExpanded in
-                            if isExpanded {
-                                expandedProviders.insert(status.provider)
-                            } else {
-                                expandedProviders.remove(status.provider)
+            // One card per provider inside a single group, separated by hairlines,
+            // as in the round-2 mockup.
+            SettingsGroup(spacing: 0) {
+                ForEach(Array(statusRows.enumerated()), id: \.element.id) { index, status in
+                    if index > 0 {
+                        Divider()
+                            .padding(.vertical, 2)
+                    }
+
+                    ProviderSettingsRow(
+                        status: status,
+                        isVisible: Binding(
+                            get: { draft.visibility(for: status.provider) },
+                            set: { draft.providerVisibility[status.provider] = $0 }
+                        ),
+                        isExpanded: Binding(
+                            get: { expandedProviders.contains(status.provider) },
+                            set: { isExpanded in
+                                if isExpanded {
+                                    expandedProviders.insert(status.provider)
+                                } else {
+                                    expandedProviders.remove(status.provider)
+                                }
                             }
-                        }
-                    ),
-                    workspace: $draft.openCodeGoWorkspace
-                )
+                        ),
+                        workspace: $draft.openCodeGoWorkspace
+                    )
+                    .padding(.vertical, 6)
+                }
             }
         }
     }
@@ -157,24 +171,70 @@ private struct ProviderSettingsRow: View {
     @Binding var isExpanded: Bool
     @Binding var workspace: String
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            LabeledContent(status.providerName) {
-                Toggle(status.providerName, isOn: $isVisible)
-                    .labelsHidden()
-            }
+    /// Width reserved for the chevron, so a provider with no disclosure (hidden)
+    /// still lines its name up with the expandable cards above and below it.
+    private static let chevronWidth: CGFloat = 12
 
-            if isVisible {
-                DisclosureGroup(isExpanded: $isExpanded) {
-                    ProviderChainView(chain: status.chain, workspace: $workspace)
-                        .padding(.top, 6)
-                } label: {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                if isVisible {
+                    ProviderDisclosureChevron(
+                        isExpanded: $isExpanded,
+                        providerName: status.providerName
+                    )
+                } else {
+                    Color.clear.frame(width: Self.chevronWidth, height: 1)
+                }
+
+                ProviderIconView(provider: status.provider, size: 14)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(status.providerName)
+                        .font(.system(size: 13, weight: .semibold))
                     ProviderStatusLineView(status: status)
                 }
-            } else {
-                ProviderStatusLineView(status: status)
+
+                Spacer(minLength: 12)
+
+                Toggle(status.providerName, isOn: $isVisible)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+
+            if isVisible, isExpanded {
+                ProviderChainView(chain: status.chain, workspace: $workspace)
+                    .padding(.leading, Self.chevronWidth + 22)
             }
         }
+    }
+}
+
+/// The mockup's leading disclosure triangle: a bare chevron that rotates, rather
+/// than a `DisclosureGroup`, so the chevron can sit ahead of the provider icon
+/// and name instead of owning the whole row.
+private struct ProviderDisclosureChevron: View {
+    @Binding var isExpanded: Bool
+    let providerName: String
+
+    var body: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .frame(width: 12, height: 12)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Show \(providerName) data sources")
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
     }
 }
 
@@ -208,11 +268,25 @@ private struct ProviderChainView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(chain.steps) { step in
+            // The numbered steps sit in their own inset box, as in the mockup, so
+            // the chain reads as one unit distinct from the caption below it.
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(chain.steps.enumerated()), id: \.element.id) { index, step in
+                    if index > 0 {
+                        Divider()
+                    }
+
                     ProviderChainStepView(step: step)
+                        .padding(.vertical, 5)
                 }
             }
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.background.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(.separator, lineWidth: 0.5)
+            )
 
             if let caption = chain.caption {
                 SettingsCaption(caption)
@@ -223,9 +297,10 @@ private struct ProviderChainView: View {
             }
 
             if chain.showsWorkspaceField {
-                LabeledContent(chain.workspaceFieldLabel) {
+                SettingsRow(chain.workspaceFieldLabel) {
                     TextField(chain.workspaceFieldPlaceholder, text: $workspace)
                         .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
                         .frame(width: 190)
                         .accessibilityLabel(chain.workspaceFieldAccessibilityLabel)
                 }
@@ -235,7 +310,6 @@ private struct ProviderChainView: View {
                 }
             }
         }
-        .padding(.leading, 4)
     }
 }
 
@@ -341,41 +415,82 @@ private struct NotificationsSettingsPane: View {
 
     var body: some View {
         SettingsPaneLayout {
-            LabeledContent("Alert below") {
-                HStack(spacing: 6) {
-                    Text("\(draft.thresholdPercent)")
-                        .monospacedDigit()
-                    Stepper(
-                        "Alert below",
-                        value: $draft.thresholdPercent,
-                        in: 1...100,
-                        step: 1
-                    )
-                    .labelsHidden()
-                    Text("% remaining")
+            SettingsGroup {
+                SettingsRow("Alert below") {
+                    HStack(spacing: 6) {
+                        Text("\(draft.thresholdPercent)")
+                            .monospacedDigit()
+                        Stepper(
+                            "Alert below",
+                            value: $draft.thresholdPercent,
+                            in: 1...100,
+                            step: 1
+                        )
+                        .labelsHidden()
+                        Text("% remaining")
+                    }
                 }
-            }
 
-            Text("One alert per usage window each reset cycle. Stale data never alerts.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                SettingsCaption("One alert per usage window each reset cycle. Stale data never alerts.")
+            }
         }
     }
 }
 
 // MARK: - Shared pane chrome
 
-/// Common spacing/alignment for every tab's rows, so panes differ only in their controls.
+/// Common spacing/alignment for every tab's groups, so panes differ only in their controls.
 private struct SettingsPaneLayout<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
+    }
+}
+
+/// The mockup's rounded, hairline-bordered container. Hand-rolled rather than
+/// `GroupBox` so the Providers tab can host edge-to-edge dividers between cards,
+/// and rather than a grouped `Form` so no scroll view is introduced.
+private struct SettingsGroup<Content: View>: View {
+    var spacing: CGFloat = 8
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            content
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(.separator, lineWidth: 0.5)
+        )
+    }
+}
+
+/// A settings row: label pinned left, control pinned right. `LabeledContent`
+/// only spreads like this inside a `Form`, which would bring a scroll view.
+private struct SettingsRow<Control: View>: View {
+    let label: String
+    @ViewBuilder var control: Control
+
+    init(_ label: String, @ViewBuilder control: () -> Control) {
+        self.label = label
+        self.control = control()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(label)
+            Spacer(minLength: 12)
+            control
+        }
+        .frame(minHeight: 22)
     }
 }
 
