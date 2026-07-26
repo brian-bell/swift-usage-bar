@@ -475,11 +475,11 @@ public struct OpenCodeGoProvider: UsageProvider {
         // OpenCode Go has exactly one retrieval path, so a fresh state can only
         // have come from the Chrome cookie; a stale one produced no data at all.
         let state = await fetchState(previous: previous, mode: mode)
-        guard case .fresh = state else {
-            return ProviderFetchReport(state: state)
-        }
 
-        return ProviderFetchReport(state: state, source: .openCodeGoChromeCookie)
+        return ProviderFetchReport(
+            state: state,
+            chain: [ProviderDataSourceStep.singlePath(.openCodeGoChromeCookie, state: state)]
+        )
     }
 
     private func fetchState(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {

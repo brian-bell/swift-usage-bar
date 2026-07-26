@@ -32,12 +32,16 @@ public struct ProviderStatusRow: Equatable, Identifiable, Sendable {
     public let ageLabel: String?
     /// The three slots joined with ` · `, omitting the empty ones.
     public let text: String
+    /// Everything rendered inside this provider's expandable disclosure.
+    public let chain: ProviderChainSection
 
     fileprivate init(
         provider: ProviderID,
         state: ProviderState?,
         source: ProviderDataSource?,
+        chain: [ProviderDataSourceStep],
         lastUpdatedAt: Date?,
+        workspaceID: String?,
         now: Date
     ) {
         self.provider = provider
@@ -72,6 +76,155 @@ public struct ProviderStatusRow: Equatable, Identifiable, Sendable {
         self.text = [stateLabel, methodLabel, ageLabel]
             .compactMap { $0 }
             .joined(separator: " \u{00B7} ")
+
+        self.chain = ProviderChainSection(
+            provider: provider,
+            state: state,
+            reportedSteps: chain,
+            age: age,
+            workspaceID: workspaceID
+        )
+    }
+}
+
+// MARK: - Retrieval chain disclosure
+
+/// How one chain step reads: the mockup's three step states.
+public enum ProviderChainStepStyle: Equatable, Sendable {
+    /// This step produced the data. Bold, primary ink, green dot.
+    case used
+    /// Never attempted because an earlier step won. Muted, plain, no dot.
+    case standingBy
+    /// Attempted and failed. Bold, amber, amber dot.
+    case failed
+}
+
+/// One numbered row inside a provider's chain disclosure.
+public struct ProviderChainStepRow: Equatable, Identifiable, Sendable {
+    public var id: Int { number }
+
+    /// 1-based position in the provider's fallback order.
+    public let number: Int
+    public let source: ProviderDataSource
+    /// The step's label, e.g. `ChatGPT API · Keychain token`.
+    public let name: String
+    /// The right-hand state text: `Used 2 min ago`, `Standing by`,
+    /// `Session expired · 1 h ago`.
+    public let stateText: String
+    public let style: ProviderChainStepStyle
+
+    /// Dot colour, or `nil` for a standing-by step, which shows no dot at all.
+    public var indicator: ProviderStatusIndicator? {
+        switch style {
+        case .used:
+            return .live
+        case .failed:
+            return .stale
+        case .standingBy:
+            return nil
+        }
+    }
+
+    /// Bold for the steps that carry information; plain for standing-by.
+    public var isEmphasized: Bool { style != .standingBy }
+    /// Secondary ink for the steps that merely explain what did not run.
+    public var isMuted: Bool { style == .standingBy }
+
+    fileprivate init(
+        number: Int,
+        source: ProviderDataSource,
+        outcome: ProviderDataSourceStepOutcome,
+        age: String?
+    ) {
+        self.number = number
+        self.source = source
+        self.name = source.chainStepName
+
+        switch outcome {
+        case .used:
+            self.style = .used
+            self.stateText = age.map { "Used \($0)" } ?? "Used"
+        case .standingBy:
+            self.style = .standingBy
+            self.stateText = "Standing by"
+        case let .failed(reason):
+            self.style = .failed
+            let phrase = source.chainFailureSummary(for: reason)
+            self.stateText = age.map { "\(phrase) \u{00B7} \($0)" } ?? phrase
+        }
+    }
+}
+
+/// Everything inside one provider's disclosure: the numbered chain, an optional
+/// explanatory caption, a recovery callout when the provider is stale, and — for
+/// OpenCode Go only — the optional workspace field.
+public struct ProviderChainSection: Equatable, Identifiable, Sendable {
+    public var id: ProviderID { provider }
+
+    public let provider: ProviderID
+    /// Empty when the provider is off: a hidden provider reads no sources, so it
+    /// has no chain to show.
+    public let steps: [ProviderChainStepRow]
+    public let caption: String?
+    /// Actionable guidance shown in an amber callout while the provider is stale.
+    public let recoveryCallout: String?
+    public let isOff: Bool
+    public let showsWorkspaceField: Bool
+    public let workspaceCaption: String?
+
+    public var workspaceFieldLabel: String { "Workspace" }
+    public var workspaceFieldPlaceholder: String { "Optional wrk_\u{2026} ID or URL" }
+    public var workspaceFieldAccessibilityLabel: String { "OpenCode workspace" }
+
+    fileprivate init(
+        provider: ProviderID,
+        state: ProviderState?,
+        reportedSteps: [ProviderDataSourceStep],
+        age: String?,
+        workspaceID: String?
+    ) {
+        self.provider = provider
+
+        guard state != .hidden else {
+            self.steps = []
+            self.caption = nil
+            self.recoveryCallout = nil
+            self.isOff = true
+            self.showsWorkspaceField = false
+            self.workspaceCaption = nil
+            return
+        }
+
+        self.isOff = false
+        // Providers report only the steps they walked; the remainder of the
+        // declared chain never ran because an earlier step won, which is exactly
+        // what "standing by" means.
+        self.steps = provider.dataSourceChain.enumerated().map { index, source in
+            let outcome = reportedSteps.first { $0.source == source }?.outcome ?? .standingBy
+            return ProviderChainStepRow(
+                number: index + 1,
+                source: source,
+                outcome: outcome,
+                age: age
+            )
+        }
+        self.caption = provider.chainCaption
+
+        if case let .stale(last: _, reason: reason) = state {
+            self.recoveryCallout = provider.recoveryCallout(for: reason)
+        } else {
+            self.recoveryCallout = nil
+        }
+
+        self.showsWorkspaceField = provider == .openCodeGo
+        if provider == .openCodeGo {
+            let trimmed = workspaceID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            self.workspaceCaption = trimmed.isEmpty
+                ? "Currently auto-discovered. Set an ID to skip discovery."
+                : "Using the workspace ID you set; discovery is skipped."
+        } else {
+            self.workspaceCaption = nil
+        }
     }
 }
 
@@ -82,7 +235,9 @@ public struct ProviderStatusViewModel: Equatable, Sendable {
     public init(
         states: [ProviderID: ProviderState],
         dataSources: [ProviderID: ProviderDataSource] = [:],
+        chains: [ProviderID: [ProviderDataSourceStep]] = [:],
         lastUpdatedAt: [ProviderID: Date] = [:],
+        workspaceID: String? = nil,
         now: Date = Date()
     ) {
         // Every provider gets a line: the Providers tab lists a toggle for each,
@@ -92,10 +247,21 @@ public struct ProviderStatusViewModel: Equatable, Sendable {
                 provider: provider,
                 state: states[provider],
                 source: dataSources[provider],
+                chain: chains[provider] ?? [],
                 lastUpdatedAt: lastUpdatedAt[provider],
+                workspaceID: workspaceID,
                 now: now
             )
         }
+    }
+
+    /// Which provider disclosures should be open when the Settings window opens.
+    ///
+    /// A stale provider auto-expands so its recovery guidance is visible without
+    /// a click; everything the user opened by hand stays open. This is a
+    /// decision, not rendering, so it lives here rather than in `onAppear`.
+    public func expandedProviders(remembering remembered: Set<ProviderID>) -> Set<ProviderID> {
+        remembered.union(rows.filter { $0.indicator == .stale }.map(\.provider))
     }
 }
 
@@ -122,7 +288,108 @@ private func formatStatusAge(updatedAt: Date, now: Date) -> String {
     return "\(elapsedHours / 24) d ago"
 }
 
+public extension ProviderDataSource {
+    /// Short failure phrase for this source's row in the chain disclosure.
+    ///
+    /// Deliberately terser than `StaleReason.statusSummary(for:)`: the step's own
+    /// name already says which path failed, so repeating it ("Chrome session
+    /// expired" next to "Chrome cookie · opencode.ai") would be noise.
+    func chainFailureSummary(for reason: StaleReason) -> String {
+        switch reason {
+        case .parseFailure:
+            return "Unexpected response"
+        case .networkError:
+            switch self {
+            case .claudeStatuslineCache:
+                // Reading the statusline cache is a local file operation, so it
+                // can never fail for network reasons. `.networkError` is the one
+                // reason its reader uses for a cache that parsed but is older
+                // than the app's freshness bound; saying "Network error" here
+                // would send the user off debugging a network that was never
+                // involved.
+                return "Cache out of date"
+            case .claudeWebSession, .claudeOAuthAPI, .codexAPI, .openCodeGoChromeCookie:
+                return "Network error"
+            }
+        case .tokenExpired:
+            return "Token expired"
+        case .sessionExpired:
+            return "Session expired"
+        case .workspaceSelectionRequired:
+            return "Choose a workspace"
+        case .credentialUnavailable:
+            switch self {
+            case .claudeWebSession, .openCodeGoChromeCookie:
+                return "No Chrome cookie"
+            case .claudeStatuslineCache:
+                // The cache file is absent (the statusline wrapper was never
+                // wired) or could not be read at all.
+                return "No cache file"
+            case .claudeOAuthAPI, .codexAPI:
+                return "No credential found"
+            }
+        }
+    }
+}
+
 private extension ProviderID {
+    /// Explanatory caption under a provider's chain. OpenCode Go has none: its
+    /// caption belongs to the workspace field instead.
+    var chainCaption: String? {
+        switch self {
+        case .claude:
+            return """
+                Sources are tried in order each refresh; data comes from the first that succeeds. \
+                All access is read-only.
+                """
+        case .codex:
+            return "Codex reads the Codex CLI's token and tracks the weekly window only."
+        case .openCodeGo:
+            return nil
+        }
+    }
+
+    /// Actionable recovery guidance for a stale provider, shown in an amber
+    /// callout inside its disclosure. Every string names one concrete next step
+    /// and ends at Refresh Now, because nothing the app does can fix it —
+    /// credential access is strictly read-only.
+    func recoveryCallout(for reason: StaleReason) -> String {
+        let prefix = "Showing last-known data. "
+        switch (self, reason) {
+        case (.claude, .tokenExpired):
+            return prefix + "Run Claude Code once to refresh its OAuth token, then choose "
+                + "Refresh Now from the menu bar."
+        case (.claude, .credentialUnavailable):
+            return prefix + "Sign in to Claude Code, then choose Refresh Now from the menu bar."
+        case (.claude, .sessionExpired):
+            return prefix + "Sign in to claude.ai in Chrome, then choose Refresh Now from "
+                + "the menu bar."
+        case (.codex, .tokenExpired):
+            return prefix + "Run the Codex CLI once to refresh its token, then choose "
+                + "Refresh Now from the menu bar."
+        case (.codex, .credentialUnavailable), (.codex, .sessionExpired):
+            return prefix + "Sign in with the Codex CLI, then choose Refresh Now from the "
+                + "menu bar."
+        case (.openCodeGo, .sessionExpired),
+             (.openCodeGo, .credentialUnavailable),
+             (.openCodeGo, .tokenExpired):
+            return prefix + "Sign in to opencode.ai in Chrome, then choose Refresh Now "
+                + "from the menu bar."
+        case (.openCodeGo, .workspaceSelectionRequired):
+            return prefix + "Several workspaces matched. Set a workspace ID below, then "
+                + "choose Refresh Now from the menu bar."
+        case (_, .networkError):
+            return prefix + "Check your network connection, then choose Refresh Now from "
+                + "the menu bar."
+        case (_, .parseFailure):
+            return prefix + "The service returned an unexpected response; this usually "
+                + "clears on its own."
+        case (_, .workspaceSelectionRequired):
+            return prefix + "Choose a workspace in Settings, then choose Refresh Now from "
+                + "the menu bar."
+        }
+    }
+
     var statusDisplayName: String {
         switch self {
         case .claude:
