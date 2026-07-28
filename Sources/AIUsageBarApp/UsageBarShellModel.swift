@@ -207,7 +207,7 @@ struct UsagePollerController: UsageControlling {
     }
 
     func stop() async {
-        await poller.stop()
+        await poller.shutdown()
     }
 
     func refreshNow() async {

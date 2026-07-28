@@ -275,6 +275,41 @@ func codexAppServerReaderShutdownTerminatesReusableChild() async throws {
 }
 
 @Test
+func codexAppServerReaderStopTerminatesChildAndAllowsLaterRelaunch() async throws {
+    let fixtureObject = try #require(JSONSerialization.jsonObject(
+        with: fixtureData("codex-app-server-rate-limits.json")
+    ) as? [String: Any])
+    let firstSession = FakeCodexAppServerProcessSession(lines: [
+        try jsonLine(["id": 1, "result": [:]]),
+        try jsonLine(["id": 2, "result": fixtureObject]),
+    ])
+    let secondSession = FakeCodexAppServerProcessSession(lines: [
+        try jsonLine(["id": 3, "result": [:]]),
+        try jsonLine(["id": 4, "result": fixtureObject]),
+    ])
+    let launcher = FakeCodexAppServerProcessLauncher(
+        sessions: [firstSession, secondSession]
+    )
+    let reader = CodexAppServerUsageReader(
+        helperDiscovery: FakeCodexDesktopHelperDiscovery(
+            result: URL(fileURLWithPath: "/trusted/codex")
+        ),
+        processLauncher: launcher
+    )
+    #expect(await reader.readUsage().isFresh)
+
+    await reader.stop()
+
+    #expect(firstSession.terminationCount == 1)
+    #expect(firstSession.isRunning == false)
+    #expect(await reader.readUsage().isFresh)
+    #expect(launcher.launches.count == 2)
+    #expect(secondSession.isRunning)
+
+    await reader.shutdown()
+}
+
+@Test
 func codexAppServerReaderShutdownPreventsLateReadFromLaunchingChild() async {
     let session = FakeCodexAppServerProcessSession(lines: [])
     let launcher = FakeCodexAppServerProcessLauncher(session: session)

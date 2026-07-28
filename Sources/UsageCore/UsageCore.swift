@@ -318,6 +318,10 @@ public protocol UsageProviderShuttingDown: Sendable {
     func shutdown() async
 }
 
+public protocol UsageProviderStopping: Sendable {
+    func stop() async
+}
+
 public extension UsageProvider {
     /// Convenience for callers that don't distinguish access modes; defaults to
     /// the prompt-safe `.background` mode.
@@ -608,6 +612,16 @@ public actor UsagePoller {
         wakeTask = nil
         thresholdEvaluationTasks.removeAll()
         resumeIdleWaiters()
+
+        for provider in providers.values {
+            if let stoppingProvider = provider as? any UsageProviderStopping {
+                await stoppingProvider.stop()
+            }
+        }
+    }
+
+    public func shutdown() async {
+        await stop()
 
         for provider in providers.values {
             if let shutdownProvider = provider as? any UsageProviderShuttingDown {
@@ -1602,11 +1616,16 @@ public struct CodexUsageProvider: UsageProvider {
         return request
     }
 
+    public func stop() async {
+        await appServerReader?.stop()
+    }
+
     public func shutdown() async {
         await appServerReader?.shutdown()
     }
 }
 
+extension CodexUsageProvider: UsageProviderStopping {}
 extension CodexUsageProvider: UsageProviderShuttingDown {}
 
 // Both Keychain prompt-suppressors `KeychainCredentialStore` relies on are

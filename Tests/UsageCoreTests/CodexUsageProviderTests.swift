@@ -248,6 +248,40 @@ func codexUsageProviderFallsBackToAppServerWhenKeychainHasNoCLICredential() asyn
 }
 
 @Test
+func codexAppServerFallbackRemainsAvailableAfterPollerStopAndRestart() async {
+    let asOf = Date(timeIntervalSince1970: 1_783_000_120)
+    let appServerUsage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(
+            percentRemaining: 73,
+            resetsAt: Date(timeIntervalSince1970: 1_783_388_608)
+        )
+    )
+    let appServer = RestartAwareCodexAppServerUsageReader(usage: appServerUsage)
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(
+            result: .stale(reason: .credentialUnavailable)
+        ),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        appServerReader: appServer,
+        now: { asOf }
+    )
+    let appState = await AppState()
+    let poller = UsagePoller(providers: [.codex: provider], appState: appState)
+
+    await poller.start()
+    await poller.waitUntilIdle()
+    await poller.stop()
+    await poller.start()
+    await poller.waitUntilIdle()
+
+    #expect(appServer.successfulReadCount == 2)
+    #expect(await appState.providerState(for: .codex) == .fresh(appServerUsage, asOf: asOf))
+
+    await poller.stop()
+}
+
+@Test
 func codexUsageProviderDoesNotFallBackForNonUnavailableCredentialFailures() async {
     for reason in [StaleReason.tokenExpired, .parseFailure] {
         let appServer = FakeCodexAppServerUsageReader(
@@ -466,6 +500,31 @@ private final class FakeCodexAppServerUsageReader: CodexAppServerUsageReading, @
     func readUsage() async -> CodexAppServerUsageReadResult {
         readCount += 1
         return result
+    }
+}
+
+private final class RestartAwareCodexAppServerUsageReader:
+    CodexAppServerUsageReading,
+    @unchecked Sendable
+{
+    private let usage: ProviderUsage
+    private var isShutDown = false
+    private(set) var successfulReadCount = 0
+
+    init(usage: ProviderUsage) {
+        self.usage = usage
+    }
+
+    func readUsage() async -> CodexAppServerUsageReadResult {
+        guard !isShutDown else {
+            return .stale(reason: .credentialUnavailable)
+        }
+        successfulReadCount += 1
+        return .fresh(usage)
+    }
+
+    func shutdown() async {
+        isShutDown = true
     }
 }
 

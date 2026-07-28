@@ -13,10 +13,12 @@ public enum CodexAppServerUsageReadResult: Equatable, Sendable {
 /// mutation operations are exposed here.
 public protocol CodexAppServerUsageReading: Sendable {
     func readUsage() async -> CodexAppServerUsageReadResult
+    func stop() async
     func shutdown() async
 }
 
 public extension CodexAppServerUsageReading {
+    func stop() async {}
     func shutdown() async {}
 }
 
@@ -310,7 +312,7 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
     }
 
     public func readUsage() async -> CodexAppServerUsageReadResult {
-        guard !isShutDown else {
+        guard !isShutDown, !Task.isCancelled else {
             return .stale(reason: .credentialUnavailable)
         }
 
@@ -373,6 +375,10 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
             closeSession()
             return .stale(reason: .networkError)
         }
+    }
+
+    public func stop() async {
+        closeSession()
     }
 
     public func shutdown() async {
