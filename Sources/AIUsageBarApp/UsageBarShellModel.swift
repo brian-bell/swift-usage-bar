@@ -257,7 +257,11 @@ extension UsageBarShellModel {
                 webTransport: ClaudeWebHTTPTransport()
             ),
             .codex: CodexUsageProvider(
-                credentialReader: CodexCredentialReader(store: KeychainCredentialStore())
+                credentialReader: CodexCredentialReader(store: KeychainCredentialStore()),
+                appServerReader: CodexAppServerUsageReader(
+                    helperDiscovery: CodexDesktopHelperDiscovery(),
+                    processLauncher: FoundationCodexAppServerProcessLauncher()
+                )
             ),
             .openCodeGo: OpenCodeGoProvider(
                 sessionReader: ChromeOpenCodeSessionReader(),

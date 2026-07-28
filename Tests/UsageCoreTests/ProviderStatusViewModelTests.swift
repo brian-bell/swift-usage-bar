@@ -17,7 +17,8 @@ func providerDataSourceExposesStatusLineDisplayNames() {
     #expect(ProviderDataSource.claudeWebSession.displayName == "claude.ai web session")
     #expect(ProviderDataSource.claudeOAuthAPI.displayName == "OAuth usage API")
     #expect(ProviderDataSource.claudeStatuslineCache.displayName == "Statusline cache")
-    #expect(ProviderDataSource.codexAPI.displayName == "ChatGPT API (Keychain token)")
+    #expect(ProviderDataSource.codexAPI.displayName == "ChatGPT API (local Codex credential)")
+    #expect(ProviderDataSource.codexAppServer.displayName == "Codex desktop app")
     #expect(ProviderDataSource.openCodeGoChromeCookie.displayName == "Chrome cookie")
 }
 
@@ -28,7 +29,8 @@ func providerDataSourceExposesChainStepNamesForTheChainUI() {
     #expect(ProviderDataSource.claudeWebSession.chainStepName == "claude.ai web session")
     #expect(ProviderDataSource.claudeOAuthAPI.chainStepName == "OAuth usage API")
     #expect(ProviderDataSource.claudeStatuslineCache.chainStepName == "Statusline cache")
-    #expect(ProviderDataSource.codexAPI.chainStepName == "ChatGPT API \u{00B7} Keychain token")
+    #expect(ProviderDataSource.codexAPI.chainStepName == "ChatGPT API \u{00B7} Local Codex credential")
+    #expect(ProviderDataSource.codexAppServer.chainStepName == "Codex app-server \u{00B7} Desktop sign-in")
     #expect(ProviderDataSource.openCodeGoChromeCookie.chainStepName == "Chrome cookie \u{00B7} opencode.ai")
 }
 
@@ -38,6 +40,7 @@ func providerDataSourceKnowsItsOwningProvider() {
     #expect(ProviderDataSource.claudeOAuthAPI.provider == .claude)
     #expect(ProviderDataSource.claudeStatuslineCache.provider == .claude)
     #expect(ProviderDataSource.codexAPI.provider == .codex)
+    #expect(ProviderDataSource.codexAppServer.provider == .codex)
     #expect(ProviderDataSource.openCodeGoChromeCookie.provider == .openCodeGo)
 }
 
@@ -70,7 +73,7 @@ func providerStatusRendersLiveCodexLine() throws {
     )
 
     let row = try #require(model.rows.first { $0.provider == .codex })
-    #expect(row.text == "Live \u{00B7} ChatGPT API (Keychain token) \u{00B7} updated 2 min ago")
+    #expect(row.text == "Live \u{00B7} ChatGPT API (local Codex credential) \u{00B7} updated 2 min ago")
 }
 
 @Test
@@ -227,7 +230,7 @@ func providerStatusClampsFutureRefreshTimestampsToJustNow() throws {
     (.codex, .parseFailure, "Unexpected response format"),
     (.codex, .networkError, "Network error"),
     (.codex, .tokenExpired, "Keychain token expired"),
-    (.codex, .credentialUnavailable, "No Codex credential found"),
+    (.codex, .credentialUnavailable, "No local Codex sign-in found"),
     (.codex, .sessionExpired, "Session expired"),
     (.codex, .workspaceSelectionRequired, "Workspace selection required"),
     (.openCodeGo, .parseFailure, "Unexpected response format"),

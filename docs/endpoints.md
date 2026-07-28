@@ -28,6 +28,8 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 
 ## Codex
 
+### Primary: local credential and ChatGPT usage API
+
 - Auth source: macOS Keychain generic password with service `Codex Auth` and account `cli|<sha256(canonical CODEX_HOME)[0..<16]>`.
 - Credential shape: JSON with `auth_mode`, `last_refresh`, and `tokens`. The `tokens` object has `access_token`, `refresh_token`, `id_token`, and optional `account_id`.
 - Expiry detection: parse the JWT payload from `tokens.access_token` and read the standard `exp` claim; Codex refreshes inside a 5-minute window.
@@ -37,6 +39,16 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 - Source evidence: `openai/codex` tag `rust-v0.142.5`, especially `codex-rs/login/src/auth/storage.rs`, `codex-rs/login/src/token_data.rs`, `codex-rs/login/src/auth/manager.rs`, `codex-rs/backend-client/src/client.rs`, and `codex-rs/backend-client/src/client/rate_limit_resets.rs`.
 - Live result: the controlled `curl` attempt succeeded and produced the sanitized fixture at `Tests/Fixtures/codex-usage.json`.
 - Response shape (fields the app uses): weekly quota only. Prefer `rate_limit.secondary_window` when present (legacy: primary=5h, secondary=weekly); else use `primary_window` only when `limit_window_seconds` is `604800` (live as of Jul 2026: weekly lives in primary, secondary null). Each window has `used_percent` → percent remaining and `reset_at` epoch seconds. A 5h-only primary (`limit_window_seconds: 18000`) or both windows null/absent is a parse failure. `additional_rate_limits` and other top-level fields are ignored.
+
+### Fallback: signed Codex desktop app-server
+
+- Exact trigger: the fallback is attempted only when the primary credential read produces `.credentialUnavailable`; an absent CLI Keychain item and a thrown credential read both map to that reason. It is not attempted for an actually expired credential (`.tokenExpired`), `.parseFailure`, HTTP failures after a valid credential, primary response parse failures, or primary transport/network failures. The primary HTTP path is otherwise unchanged.
+- Trust boundary: `NSWorkspace` resolves the application registered for bundle id `com.openai.codex`; AIUsageBar appends `Contents/Resources/codex`, resolves symlinks, requires the helper to remain inside that application bundle and be executable, validates its code signature, and requires OpenAI Team Identifier `2DC432GLL2`. No `PATH` lookup or caller-supplied executable is used.
+- Invocation: the actor-owned helper is started lazily on the first eligible fallback with `--sandbox read-only --ask-for-approval untrusted app-server --stdio`. A healthy primary request never starts it. A successful initialized child is reused across later fallback polls. EOF, malformed/oversized output, JSON-RPC error, timeout, process failure, poller stop, and application termination close the pipes and terminate the child; a later eligible poll may launch a fresh child.
+- JSON-RPC contract: newline-delimited JSON over stdio. The only sequence is request `initialize` with `AIUsageBar` client name/title/version, notification `initialized`, then request `account/rateLimits/read`. Responses are matched by id while unrelated notifications and responses are ignored. Initialization and usage reads have finite timeouts and each response line is bounded to 256 KiB. Raw stdout, stderr, payloads, account identifiers, and credentials are never persisted or logged; stderr is discarded.
+- Response shape: parse `rateLimitsByLimitId["codex"]` when present, otherwise the backward-compatible `rateLimits` snapshot. Each snapshot may have `primary` and `secondary` windows with `usedPercent`, nullable `windowDurationMins`, and nullable `resetsAt` Unix seconds. Weekly is identified by `windowDurationMins == 10080`; the only missing-duration compatibility is the documented legacy secondary weekly window. A 5-hour (`300`), 15-minute (`15`), unknown-duration primary, or other limit id is never treated as weekly. Percent used is clamped/rounded to percent remaining, Codex five-hour remains unavailable, and credits, reset-credit inventory, spend controls, account metadata, and non-Codex limit ids are ignored. Sanitized fixture: `Tests/Fixtures/codex-app-server-rate-limits.json`.
+- Success and failure precedence: success returns fresh usage with source `.codexAppServer`, after a failed `.codexAPI` step. If the fallback also fails, the fallback reason is recorded only on its retrieval-chain step; the provider retains previous usage and continues to surface the primary path's original `.credentialUnavailable`.
+- Approved narrow exception: AIUsageBar never reads, logs, persists, refreshes, or writes Codex credentials. It may invoke OpenAI's signed helper, which can maintain or refresh its own authentication state while servicing this read-only RPC. AIUsageBar does not call login, logout, turn, tool, reset-credit, or any other mutation method.
 
 ## OpenCode Go
 

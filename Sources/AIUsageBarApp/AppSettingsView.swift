@@ -65,7 +65,7 @@ struct AppSettingsView: View {
             .padding(12)
         }
         // Wider than the mockup's 460: at that width Codex's real status line
-        // ("Live · ChatGPT API (Keychain token) · updated 2 min ago") wraps once
+        // ("Live · ChatGPT API (local Codex credential) · updated 2 min ago") wraps once
         // the leading chevron, icon, and trailing switch take their share.
         .frame(width: 500)
         .fixedSize(horizontal: false, vertical: true)

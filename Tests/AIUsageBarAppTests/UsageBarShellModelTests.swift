@@ -532,8 +532,8 @@ func stagedVisibilityDoesNotResurrectTheChainRecordedBeforeAProviderWasTurnedOff
         #expect(row.stateLabel == "Checking\u{2026}")
         #expect(row.ageLabel == nil)
         #expect(row.text == "Checking\u{2026}")
-        #expect(row.chain.steps.map(\.stateText) == ["Standing by"])
-        #expect(row.chain.steps.map(\.indicator) == [nil])
+        #expect(row.chain.steps.map(\.stateText) == ["Standing by", "Standing by"])
+        #expect(row.chain.steps.map(\.indicator) == [nil, nil])
     }
 }
 

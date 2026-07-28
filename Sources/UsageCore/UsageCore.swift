@@ -314,6 +314,10 @@ public protocol UsageProvider: Sendable {
     func fetchReport(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderFetchReport
 }
 
+public protocol UsageProviderShuttingDown: Sendable {
+    func shutdown() async
+}
+
 public extension UsageProvider {
     /// Convenience for callers that don't distinguish access modes; defaults to
     /// the prompt-safe `.background` mode.
@@ -585,7 +589,7 @@ public actor UsagePoller {
         requestPoll(mode: .background)
     }
 
-    public func stop() {
+    public func stop() async {
         isRunning = false
         isPolling = false
         pendingPoll = false
@@ -604,6 +608,12 @@ public actor UsagePoller {
         wakeTask = nil
         thresholdEvaluationTasks.removeAll()
         resumeIdleWaiters()
+
+        for provider in providers.values {
+            if let shutdownProvider = provider as? any UsageProviderShuttingDown {
+                await shutdownProvider.shutdown()
+            }
+        }
     }
 
     public func refreshNow() {
@@ -1445,7 +1455,7 @@ public struct CodexCredentialReader: Sendable {
         }
 
         guard let data else {
-            return .stale(reason: .tokenExpired)
+            return .stale(reason: .credentialUnavailable)
         }
 
         let credential: CodexCredential
@@ -1485,17 +1495,20 @@ public struct URLSessionHTTPTransport: HTTPTransport {
 public struct CodexUsageProvider: UsageProvider {
     private let credentialReader: any CodexCredentialReading
     private let transport: any HTTPTransport
+    private let appServerReader: (any CodexAppServerUsageReading)?
     private let parser: CodexUsageParser
     private let now: @Sendable () -> Date
 
     public init(
         credentialReader: any CodexCredentialReading,
         transport: any HTTPTransport = URLSessionHTTPTransport(),
+        appServerReader: (any CodexAppServerUsageReading)? = nil,
         parser: CodexUsageParser = CodexUsageParser(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.credentialReader = credentialReader
         self.transport = transport
+        self.appServerReader = appServerReader
         self.parser = parser
         self.now = now
     }
@@ -1508,29 +1521,60 @@ public struct CodexUsageProvider: UsageProvider {
         previous: ProviderUsage?,
         mode: CredentialAccessMode
     ) async -> ProviderFetchReport {
-        // Codex has exactly one retrieval path, so its chain is one step whose
-        // outcome is the fetch's outcome.
-        let state = await fetchState(previous: previous, mode: mode)
-
-        return ProviderFetchReport(
-            state: state,
-            chain: [ProviderDataSourceStep.singlePath(.codexAPI, state: state)]
-        )
-    }
-
-    private func fetchState(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
         let credential: CodexCredential
         do {
             switch try credentialReader.read(mode: mode) {
             case let .fresh(freshCredential):
                 credential = freshCredential
             case let .stale(reason):
-                return .stale(last: previous, reason: reason)
+                guard reason == .credentialUnavailable else {
+                    let state = ProviderState.stale(last: previous, reason: reason)
+                    return ProviderFetchReport(
+                        state: state,
+                        chain: [ProviderDataSourceStep(.codexAPI, .failed(reason))]
+                    )
+                }
+                return await appServerFallback(previous: previous)
             }
         } catch {
-            return .stale(last: previous, reason: .credentialUnavailable)
+            return await appServerFallback(previous: previous)
         }
 
+        let state = await fetchAuthenticatedState(previous: previous, credential: credential)
+        return ProviderFetchReport(
+            state: state,
+            chain: [ProviderDataSourceStep.singlePath(.codexAPI, state: state)]
+        )
+    }
+
+    private func appServerFallback(previous: ProviderUsage?) async -> ProviderFetchReport {
+        let originalReason = StaleReason.credentialUnavailable
+        let primaryStep = ProviderDataSourceStep(.codexAPI, .failed(originalReason))
+        guard let appServerReader else {
+            return ProviderFetchReport(
+                state: .stale(last: previous, reason: originalReason),
+                chain: [primaryStep]
+            )
+        }
+
+        switch await appServerReader.readUsage() {
+        case let .fresh(usage):
+            return ProviderFetchReport(
+                state: .fresh(usage, asOf: now()),
+                chain: [primaryStep, ProviderDataSourceStep(.codexAppServer, .used)]
+            )
+        case let .stale(reason):
+            return ProviderFetchReport(
+                state: .stale(last: previous, reason: originalReason),
+                chain: [primaryStep, ProviderDataSourceStep(.codexAppServer, .failed(reason))]
+            )
+        }
+    }
+
+    private func fetchAuthenticatedState(
+        previous: ProviderUsage?,
+        credential: CodexCredential
+    ) async -> ProviderState {
         do {
             let (data, response) = try await transport.send(Self.usageRequest(for: credential))
             guard response.statusCode == 200 else {
@@ -1557,7 +1601,13 @@ public struct CodexUsageProvider: UsageProvider {
 
         return request
     }
+
+    public func shutdown() async {
+        await appServerReader?.shutdown()
+    }
 }
+
+extension CodexUsageProvider: UsageProviderShuttingDown {}
 
 // Both Keychain prompt-suppressors `KeychainCredentialStore` relies on are
 // deprecated — `SecKeychainSetUserInteractionAllowed` (macOS 10.10) and

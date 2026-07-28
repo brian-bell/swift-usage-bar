@@ -183,6 +183,154 @@ func codexUsageProviderMapsThrowingCredentialReaderToCredentialUnavailableWithou
 }
 
 @Test
+func codexUsageProviderFallsBackToAppServerOnlyWhenCredentialIsUnavailable() async throws {
+    let asOf = Date(timeIntervalSince1970: 1_783_000_120)
+    let appServerUsage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(
+            percentRemaining: 73,
+            resetsAt: Date(timeIntervalSince1970: 1_783_388_608)
+        )
+    )
+    let transport = FakeHTTPTransport(response: (
+        try fixtureData("codex-usage.json"),
+        try httpResponse(statusCode: 200)
+    ))
+    let appServer = FakeCodexAppServerUsageReader(result: .fresh(appServerUsage))
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(result: .stale(reason: .credentialUnavailable)),
+        transport: transport,
+        appServerReader: appServer,
+        now: { asOf }
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .background)
+
+    #expect(report.state == .fresh(appServerUsage, asOf: asOf))
+    #expect(report.source == .codexAppServer)
+    #expect(report.chain == [
+        ProviderDataSourceStep(.codexAPI, .failed(.credentialUnavailable)),
+        ProviderDataSourceStep(.codexAppServer, .used),
+    ])
+    #expect(transport.requests.isEmpty)
+    #expect(appServer.readCount == 1)
+}
+
+@Test
+func codexUsageProviderFallsBackToAppServerWhenKeychainHasNoCLICredential() async throws {
+    let asOf = Date(timeIntervalSince1970: 1_783_000_120)
+    let appServerUsage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(
+            percentRemaining: 73,
+            resetsAt: Date(timeIntervalSince1970: 1_783_388_608)
+        )
+    )
+    let transport = FakeHTTPTransport(error: URLError(.notConnectedToInternet))
+    let appServer = FakeCodexAppServerUsageReader(result: .fresh(appServerUsage))
+    let provider = CodexUsageProvider(
+        credentialReader: CodexCredentialReader(store: EmptyCredentialStore()),
+        transport: transport,
+        appServerReader: appServer,
+        now: { asOf }
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .background)
+
+    #expect(report.state == .fresh(appServerUsage, asOf: asOf))
+    #expect(report.source == .codexAppServer)
+    #expect(report.chain == [
+        ProviderDataSourceStep(.codexAPI, .failed(.credentialUnavailable)),
+        ProviderDataSourceStep(.codexAppServer, .used),
+    ])
+    #expect(transport.requests.isEmpty)
+    #expect(appServer.readCount == 1)
+}
+
+@Test
+func codexUsageProviderDoesNotFallBackForNonUnavailableCredentialFailures() async {
+    for reason in [StaleReason.tokenExpired, .parseFailure] {
+        let appServer = FakeCodexAppServerUsageReader(
+            result: .stale(reason: .credentialUnavailable)
+        )
+        let provider = CodexUsageProvider(
+            credentialReader: FakeCodexCredentialReader(result: .stale(reason: reason)),
+            transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+            appServerReader: appServer
+        )
+
+        let report = await provider.fetchReport(previous: nil, mode: .background)
+
+        #expect(report.state == .stale(last: nil, reason: reason))
+        #expect(report.chain == [ProviderDataSourceStep(.codexAPI, .failed(reason))])
+        #expect(appServer.readCount == 0)
+    }
+}
+
+@Test
+func codexUsageProviderDoesNotFallBackAfterValidPrimaryAuthentication() async throws {
+    let appServer = FakeCodexAppServerUsageReader(
+        result: .stale(reason: .credentialUnavailable)
+    )
+    let providers = [
+        CodexUsageProvider(
+            credentialReader: FakeCodexCredentialReader(result: .fresh(validCredential())),
+            transport: FakeHTTPTransport(response: (
+                try fixtureData("codex-usage.json"),
+                try httpResponse(statusCode: 500)
+            )),
+            appServerReader: appServer
+        ),
+        CodexUsageProvider(
+            credentialReader: FakeCodexCredentialReader(result: .fresh(validCredential())),
+            transport: FakeHTTPTransport(response: (
+                Data("not json".utf8),
+                try httpResponse(statusCode: 200)
+            )),
+            appServerReader: appServer
+        ),
+        CodexUsageProvider(
+            credentialReader: FakeCodexCredentialReader(result: .fresh(validCredential())),
+            transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+            appServerReader: appServer
+        ),
+    ]
+    let expectedReasons = [
+        StaleReason.networkError,
+        .parseFailure,
+        .networkError,
+    ]
+
+    for (provider, reason) in zip(providers, expectedReasons) {
+        let report = await provider.fetchReport(previous: nil, mode: .background)
+
+        #expect(report.state == .stale(last: nil, reason: reason))
+    }
+    #expect(appServer.readCount == 0)
+}
+
+@Test
+func codexUsageProviderPreservesOriginalReasonAndPreviousUsageWhenFallbackFails() async {
+    let previous = sampleUsage(fiveHour: 44, weekly: 66)
+    let appServer = FakeCodexAppServerUsageReader(result: .stale(reason: .parseFailure))
+    let provider = CodexUsageProvider(
+        credentialReader: FakeCodexCredentialReader(error: CredentialReaderError.unavailable),
+        transport: FakeHTTPTransport(error: URLError(.notConnectedToInternet)),
+        appServerReader: appServer
+    )
+
+    let report = await provider.fetchReport(previous: previous, mode: .background)
+
+    #expect(report.state == .stale(last: previous, reason: .credentialUnavailable))
+    #expect(report.source == nil)
+    #expect(report.chain == [
+        ProviderDataSourceStep(.codexAPI, .failed(.credentialUnavailable)),
+        ProviderDataSourceStep(.codexAppServer, .failed(.parseFailure)),
+    ])
+    #expect(appServer.readCount == 1)
+}
+
+@Test
 func codexUsageProviderMapsHTTPFailuresToStaleReasons() async throws {
     let previous = sampleUsage(fiveHour: 44, weekly: 66)
     let cases: [(Int, StaleReason)] = [
@@ -296,6 +444,29 @@ private final class FakeCodexCredentialReader: CodexCredentialReading, @unchecke
 
 private enum CredentialReaderError: Error {
     case unavailable
+}
+
+private struct EmptyCredentialStore: CredentialStore {
+    func read(
+        _ credential: CredentialIdentifier,
+        mode: CredentialAccessMode
+    ) throws -> Data? {
+        nil
+    }
+}
+
+private final class FakeCodexAppServerUsageReader: CodexAppServerUsageReading, @unchecked Sendable {
+    private let result: CodexAppServerUsageReadResult
+    private(set) var readCount = 0
+
+    init(result: CodexAppServerUsageReadResult) {
+        self.result = result
+    }
+
+    func readUsage() async -> CodexAppServerUsageReadResult {
+        readCount += 1
+        return result
+    }
 }
 
 private final class FakeHTTPTransport: HTTPTransport, @unchecked Sendable {
