@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 import UsageCore
@@ -34,6 +35,40 @@ func codexAppServerParserFallsBackToLegacySingleBucket() throws {
     let usage = try CodexAppServerRateLimitParser().parse(data)
 
     #expect(usage.weekly.percentRemaining == 59)
+    #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))
+}
+
+@Test
+func codexAppServerParserIgnoresMalformedUnselectedBuckets() throws {
+    let data = Data("""
+    {
+      "rateLimits": {
+        "primary": {
+          "usedPercent": "malformed",
+          "windowDurationMins": 10080
+        }
+      },
+      "rateLimitsByLimitId": {
+        "codex": {
+          "primary": {
+            "usedPercent": 32,
+            "windowDurationMins": 10080,
+            "resetsAt": 1783388608
+          }
+        },
+        "unrelated": {
+          "primary": {
+            "usedPercent": 10,
+            "windowDurationMins": {"unexpected": true}
+          }
+        }
+      }
+    }
+    """.utf8)
+
+    let usage = try CodexAppServerRateLimitParser().parse(data)
+
+    #expect(usage.weekly.percentRemaining == 68)
     #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))
 }
 
@@ -252,6 +287,40 @@ func codexAppServerReaderTimesOutAndTerminatesChild() async {
 }
 
 @Test
+func foundationCodexAppServerSessionForcesHungChildToExitBeforeReturning() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let pidFile = root.appendingPathComponent("pid")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let session = try FoundationCodexAppServerProcessLauncher().launch(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: [
+            "-c",
+            #"trap '' TERM; printf '%s' "$$" > "$1"; while :; do :; done"#,
+            "ai-usage-bar-termination-test",
+            pidFile.path,
+        ]
+    )
+
+    for _ in 0..<100 where !FileManager.default.fileExists(atPath: pidFile.path) {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    let pidString = try String(contentsOf: pidFile, encoding: .utf8)
+    let pid = try #require(pid_t(pidString))
+    defer {
+        if processExists(pid) {
+            _ = Darwin.kill(pid, SIGKILL)
+        }
+    }
+
+    session.terminate()
+
+    #expect(!processExists(pid))
+}
+
+@Test
 func codexAppServerReaderShutdownTerminatesReusableChild() async throws {
     let fixtureObject = try #require(JSONSerialization.jsonObject(
         with: fixtureData("codex-app-server-rate-limits.json")
@@ -305,6 +374,45 @@ func codexAppServerReaderStopTerminatesChildAndAllowsLaterRelaunch() async throw
     #expect(await reader.readUsage().isFresh)
     #expect(launcher.launches.count == 2)
     #expect(secondSession.isRunning)
+
+    await reader.shutdown()
+}
+
+@Test
+func staleReadCleanupDoesNotTerminateRelaunchedChild() async throws {
+    let fixtureObject = try #require(JSONSerialization.jsonObject(
+        with: fixtureData("codex-app-server-rate-limits.json")
+    ) as? [String: Any])
+    let staleSession = ControlledCodexAppServerProcessSession()
+    let replacementSession = ControlledCodexAppServerProcessSession()
+    let reader = CodexAppServerUsageReader(
+        helperDiscovery: FakeCodexDesktopHelperDiscovery(
+            result: URL(fileURLWithPath: "/trusted/codex")
+        ),
+        processLauncher: FakeCodexAppServerProcessLauncher(
+            sessions: [staleSession, replacementSession]
+        )
+    )
+
+    let staleRead = Task { await reader.readUsage() }
+    await staleSession.waitForReadCount(1)
+    await reader.stop()
+
+    let replacementRead = Task { await reader.readUsage() }
+    await replacementSession.waitForReadCount(1)
+    staleSession.deliver(nil)
+    _ = await staleRead.value
+
+    #expect(replacementSession.terminationCount == 0)
+    replacementSession.deliver(try jsonLine(["id": 2, "result": [:]]))
+    guard replacementSession.terminationCount == 0 else {
+        _ = await replacementRead.value
+        return
+    }
+    await replacementSession.waitForReadCount(2)
+    replacementSession.deliver(try jsonLine(["id": 3, "result": fixtureObject]))
+
+    #expect(await replacementRead.value.isFresh)
 
     await reader.shutdown()
 }
@@ -558,6 +666,87 @@ private final class BlockingCodexAppServerProcessSession:
     }
 }
 
+private final class ControlledCodexAppServerProcessSession:
+    CodexAppServerProcessSession,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var running = true
+    private var terminations = 0
+    private var reads = 0
+    private var pendingRead: CheckedContinuation<Data?, Never>?
+    private var readWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    var isRunning: Bool {
+        lock.withLock { running }
+    }
+
+    var terminationCount: Int {
+        lock.withLock { terminations }
+    }
+
+    func writeLine(_: Data) throws {
+        guard isRunning else {
+            throw CodexAppServerProcessError.processFailure
+        }
+    }
+
+    func readLine(maxBytes _: Int) async throws -> Data? {
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                pendingRead = continuation
+                reads += 1
+                resumeReadWaiters()
+            }
+        }
+    }
+
+    func terminate() {
+        lock.withLock {
+            guard running else {
+                return
+            }
+            running = false
+            terminations += 1
+        }
+    }
+
+    func deliver(_ line: Data?) {
+        let continuation = lock.withLock {
+            defer { pendingRead = nil }
+            return pendingRead
+        }
+        continuation?.resume(returning: line)
+    }
+
+    func waitForReadCount(_ target: Int) async {
+        if lock.withLock({ reads >= target }) {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                if reads >= target {
+                    continuation.resume()
+                } else {
+                    readWaiters.append((target, continuation))
+                }
+            }
+        }
+    }
+
+    private func resumeReadWaiters() {
+        var remaining: [(Int, CheckedContinuation<Void, Never>)] = []
+        for (target, continuation) in readWaiters {
+            if reads >= target {
+                continuation.resume()
+            } else {
+                remaining.append((target, continuation))
+            }
+        }
+        readWaiters = remaining
+    }
+}
+
 private struct ImmediateUsageClock: UsageClock {
     var now: Date {
         get async { Date(timeIntervalSince1970: 0) }
@@ -572,6 +761,14 @@ private func jsonLine(_ object: Any) throws -> Data {
 
 private func jsonObject(_ data: Data) throws -> [String: Any] {
     try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+}
+
+private func processExists(_ pid: pid_t) -> Bool {
+    errno = 0
+    if Darwin.kill(pid, 0) == 0 {
+        return true
+    }
+    return errno != ESRCH
 }
 
 private extension CodexAppServerUsageReadResult {

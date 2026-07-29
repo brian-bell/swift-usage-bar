@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import Security
 
@@ -167,6 +168,9 @@ private final class FoundationCodexAppServerProcessSession:
     CodexAppServerProcessSession,
     @unchecked Sendable
 {
+    private static let gracefulTerminationTimeout: TimeInterval = 0.25
+    private static let forcedTerminationTimeout: TimeInterval = 0.25
+
     private let process: Process
     private let input: FileHandle
     private let output: FileHandle
@@ -221,11 +225,23 @@ private final class FoundationCodexAppServerProcessSession:
         try? output.close()
         if process.isRunning {
             process.terminate()
+            if !waitForExit(timeout: Self.gracefulTerminationTimeout) {
+                _ = Darwin.kill(process.processIdentifier, SIGKILL)
+                _ = waitForExit(timeout: Self.forcedTerminationTimeout)
+            }
         }
     }
 
     deinit {
         terminate()
+    }
+
+    private func waitForExit(timeout: TimeInterval) -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while process.isRunning, ProcessInfo.processInfo.systemUptime < deadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        return !process.isRunning
     }
 
     private func readLineBlocking(maxBytes: Int) throws -> Data? {
@@ -289,6 +305,7 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
     private let maximumLineBytes: Int
 
     private var session: (any CodexAppServerProcessSession)?
+    private var sessionGeneration: UInt64 = 0
     private var isInitialized = false
     private var isShutDown = false
     private var nextRequestID = 1
@@ -316,8 +333,11 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
             return .stale(reason: .credentialUnavailable)
         }
 
+        var activeGeneration: UInt64?
         do {
-            let activeSession = try ensureSession()
+            let active = try ensureSession()
+            let activeSession = active.session
+            activeGeneration = active.generation
             if !isInitialized {
                 let initializeID = nextID()
                 try sendRequest(
@@ -338,6 +358,9 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
                     from: activeSession,
                     timeout: initializationTimeout
                 )
+                guard sessionGeneration == active.generation else {
+                    throw ReaderError.processFailure
+                }
                 try sendNotification(method: "initialized", to: activeSession)
                 isInitialized = true
             }
@@ -356,7 +379,7 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
             )
             return .fresh(try parser.parse(resultData))
         } catch let error as ReaderError {
-            closeSession()
+            closeSession(ifGeneration: activeGeneration)
             switch error {
             case .helperUnavailable, .rpcFailure:
                 return .stale(reason: .credentialUnavailable)
@@ -366,13 +389,13 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
                 return .stale(reason: .networkError)
             }
         } catch UsageParsingError.parseFailure {
-            closeSession()
+            closeSession(ifGeneration: activeGeneration)
             return .stale(reason: .parseFailure)
         } catch CodexAppServerProcessError.responseTooLarge {
-            closeSession()
+            closeSession(ifGeneration: activeGeneration)
             return .stale(reason: .parseFailure)
         } catch {
-            closeSession()
+            closeSession(ifGeneration: activeGeneration)
             return .stale(reason: .networkError)
         }
     }
@@ -386,9 +409,9 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
         closeSession()
     }
 
-    private func ensureSession() throws -> any CodexAppServerProcessSession {
+    private func ensureSession() throws -> ActiveSession {
         if let session, session.isRunning {
-            return session
+            return ActiveSession(session: session, generation: sessionGeneration)
         }
 
         closeSession()
@@ -406,7 +429,8 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
                 ]
             )
             session = launched
-            return launched
+            sessionGeneration &+= 1
+            return ActiveSession(session: launched, generation: sessionGeneration)
         } catch {
             throw ReaderError.processFailure
         }
@@ -534,10 +558,19 @@ public actor CodexAppServerUsageReader: CodexAppServerUsageReading {
         }
     }
 
-    private func closeSession() {
+    private func closeSession(ifGeneration expectedGeneration: UInt64? = nil) {
+        if let expectedGeneration, expectedGeneration != sessionGeneration {
+            return
+        }
         session?.terminate()
         session = nil
         isInitialized = false
+        sessionGeneration &+= 1
+    }
+
+    private struct ActiveSession {
+        let session: any CodexAppServerProcessSession
+        let generation: UInt64
     }
 
     private enum ReaderError: Error {
@@ -559,8 +592,7 @@ public struct CodexAppServerRateLimitParser: Sendable {
     public func parse(_ data: Data) throws -> ProviderUsage {
         do {
             let response = try JSONDecoder().decode(CodexAppServerRateLimitsResponse.self, from: data)
-            let snapshot = response.rateLimitsByLimitID?["codex"] ?? response.rateLimits
-            guard let weekly = snapshot?.weeklyWindow else {
+            guard let weekly = response.selectedSnapshot?.weeklyWindow else {
                 throw UsageParsingError.parseFailure
             }
 
@@ -578,12 +610,37 @@ public struct CodexAppServerRateLimitParser: Sendable {
 }
 
 private struct CodexAppServerRateLimitsResponse: Decodable {
-    let rateLimits: RateLimitSnapshot?
-    let rateLimitsByLimitID: [String: RateLimitSnapshot]?
+    let selectedSnapshot: RateLimitSnapshot?
 
     enum CodingKeys: String, CodingKey {
         case rateLimits
         case rateLimitsByLimitID = "rateLimitsByLimitId"
+    }
+
+    enum LimitID: String, CodingKey {
+        case codex
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.rateLimitsByLimitID),
+           try !container.decodeNil(forKey: .rateLimitsByLimitID) {
+            let limits = try container.nestedContainer(
+                keyedBy: LimitID.self,
+                forKey: .rateLimitsByLimitID
+            )
+            if limits.contains(.codex) {
+                selectedSnapshot = try limits.decodeIfPresent(
+                    RateLimitSnapshot.self,
+                    forKey: .codex
+                )
+                return
+            }
+        }
+        selectedSnapshot = try container.decodeIfPresent(
+            RateLimitSnapshot.self,
+            forKey: .rateLimits
+        )
     }
 }
 
