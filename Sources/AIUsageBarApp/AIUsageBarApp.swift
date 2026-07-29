@@ -32,13 +32,13 @@ struct AIUsageBarApp: App {
 }
 
 @MainActor
-private final class AIUsageBarAppDelegate: NSObject, NSApplicationDelegate {
+final class AIUsageBarAppDelegate: NSObject, NSApplicationDelegate {
     var beforeTermination: (() async -> Void)?
     private var isFinishingTermination = false
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !isFinishingTermination else {
-            return .terminateNow
+            return .terminateLater
         }
         isFinishingTermination = true
         Task {
