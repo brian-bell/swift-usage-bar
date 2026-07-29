@@ -106,7 +106,7 @@ public struct ProviderChainStepRow: Equatable, Identifiable, Sendable {
     /// 1-based position in the provider's fallback order.
     public let number: Int
     public let source: ProviderDataSource
-    /// The step's label, e.g. `ChatGPT API · Keychain token`.
+    /// The step's label, e.g. `ChatGPT API · Local Codex credential`.
     public let name: String
     /// The right-hand state text: `Used 2 min ago`, `Standing by`,
     /// `Session expired · 1 h ago`.
@@ -308,7 +308,10 @@ public extension ProviderDataSource {
                 // would send the user off debugging a network that was never
                 // involved.
                 return "Cache out of date"
-            case .claudeWebSession, .claudeOAuthAPI, .codexAPI, .openCodeGoChromeCookie:
+            case .codexAppServer:
+                return "Desktop helper unavailable"
+            case .claudeWebSession, .claudeOAuthAPI, .codexAPI,
+                 .openCodeGoChromeCookie:
                 return "Network error"
             }
         case .tokenExpired:
@@ -327,6 +330,8 @@ public extension ProviderDataSource {
                 // The cache file is absent (the statusline wrapper was never
                 // wired) or could not be read at all.
                 return "No cache file"
+            case .codexAppServer:
+                return "Desktop sign-in unavailable"
             case .claudeOAuthAPI, .codexAPI:
                 return "No credential found"
             }
@@ -345,7 +350,10 @@ private extension ProviderID {
                 All access is read-only.
                 """
         case .codex:
-            return "Codex reads the Codex CLI's token and tracks the weekly window only."
+            return """
+                The signed Codex desktop helper is tried only when the local Codex credential is \
+                unavailable. Both paths read the weekly limit only.
+                """
         case .openCodeGo:
             return nil
         }
@@ -367,10 +375,11 @@ private extension ProviderID {
             return prefix + "Sign in to claude.ai in Chrome, then choose Refresh Now from "
                 + "the menu bar."
         case (.codex, .tokenExpired):
-            return prefix + "Run the Codex CLI once to refresh its token, then choose "
+            return prefix + "Open Codex and refresh its local sign-in, then choose "
                 + "Refresh Now from the menu bar."
         case (.codex, .credentialUnavailable), (.codex, .sessionExpired):
-            return prefix + "Sign in with the Codex CLI, then choose Refresh Now from the "
+            return prefix + "Sign in to the Codex desktop app or Codex CLI, then choose "
+                + "Refresh Now from the "
                 + "menu bar."
         case (.openCodeGo, .sessionExpired), (.openCodeGo, .tokenExpired):
             return prefix + "Sign in to opencode.ai in Chrome, then choose Refresh Now "
@@ -429,7 +438,7 @@ private extension StaleReason {
             case .claude:
                 return "No Claude Code credential found"
             case .codex:
-                return "No Codex credential found"
+                return "No local Codex sign-in found"
             case .openCodeGo:
                 return "OpenCode usage unavailable"
             }

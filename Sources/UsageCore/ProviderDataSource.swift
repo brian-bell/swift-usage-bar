@@ -15,6 +15,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
     case claudeStatuslineCache
     /// Codex: `chatgpt.com` with the Keychain-held Codex CLI token.
     case codexAPI
+    /// Codex fallback: the signed Codex desktop helper's read-only rate-limit RPC.
+    case codexAppServer
     /// OpenCode Go: `opencode.ai` with the read-only Chrome cookie.
     case openCodeGoChromeCookie
 
@@ -22,7 +24,7 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
         switch self {
         case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache:
             return .claude
-        case .codexAPI:
+        case .codexAPI, .codexAppServer:
             return .codex
         case .openCodeGoChromeCookie:
             return .openCodeGo
@@ -39,7 +41,9 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
         case .claudeStatuslineCache:
             return "Statusline cache"
         case .codexAPI:
-            return "ChatGPT API (Keychain token)"
+            return "ChatGPT API (local Codex credential)"
+        case .codexAppServer:
+            return "Codex desktop app"
         case .openCodeGoChromeCookie:
             return "Chrome cookie"
         }
@@ -53,7 +57,9 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
         case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache:
             return displayName
         case .codexAPI:
-            return "ChatGPT API \u{00B7} Keychain token"
+            return "ChatGPT API \u{00B7} Local Codex credential"
+        case .codexAppServer:
+            return "Codex app-server \u{00B7} Desktop sign-in"
         case .openCodeGoChromeCookie:
             return "Chrome cookie \u{00B7} opencode.ai"
         }
@@ -69,7 +75,7 @@ public extension ProviderID {
         case .claude:
             return [.claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache]
         case .codex:
-            return [.codexAPI]
+            return [.codexAPI, .codexAppServer]
         case .openCodeGo:
             return [.openCodeGoChromeCookie]
         }

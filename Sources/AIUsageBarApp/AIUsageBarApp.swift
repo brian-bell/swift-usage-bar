@@ -1,12 +1,17 @@
+import AppKit
 import SwiftUI
 
 @main
 struct AIUsageBarApp: App {
+    @NSApplicationDelegateAdaptor(AIUsageBarAppDelegate.self) private var appDelegate
     @State private var model: UsageBarShellModel
 
     init() {
         let model = UsageBarShellModel.live()
         _model = State(initialValue: model)
+        appDelegate.beforeTermination = {
+            await model.stop()
+        }
         Task {
             await model.start()
         }
@@ -23,5 +28,23 @@ struct AIUsageBarApp: App {
         Settings {
             AppSettingsView(model: model)
         }
+    }
+}
+
+@MainActor
+final class AIUsageBarAppDelegate: NSObject, NSApplicationDelegate {
+    var beforeTermination: (() async -> Void)?
+    private var isFinishingTermination = false
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !isFinishingTermination else {
+            return .terminateLater
+        }
+        isFinishingTermination = true
+        Task {
+            await beforeTermination?()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 }

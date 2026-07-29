@@ -24,14 +24,14 @@ func codexCredentialReaderRequestsCodexCredentialFromStore() throws {
 }
 
 @Test
-func codexCredentialReaderReturnsTokenExpiredWhenStoreHasNoCredential() throws {
+func codexCredentialReaderReturnsCredentialUnavailableWhenStoreHasNoCredential() throws {
     let store = InMemoryCredentialStore(dataByCredential: [:])
     let reader = CodexCredentialReader(store: store)
 
     let result = try reader.read()
 
     #expect(store.readRequests == [.codex])
-    #expect(result == .stale(reason: .tokenExpired))
+    #expect(result == .stale(reason: .credentialUnavailable))
 }
 
 @Test

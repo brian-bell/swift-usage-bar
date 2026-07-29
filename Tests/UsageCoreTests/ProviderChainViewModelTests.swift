@@ -106,10 +106,10 @@ func chainStepWithoutAKnownAgeOmitsTheAgeSuffix() throws {
     #expect(section.steps[1].stateText == "Token expired")
 }
 
-// MARK: - Single-step providers
+// MARK: - Codex two-step chain and single-step OpenCode
 
 @Test
-func codexChainRendersOneStepWithItsOwnCaption() throws {
+func codexChainRendersTwoStepsWithDesktopFallbackStandingBy() throws {
     let section = try chainSection(
         for: .codex,
         states: [.codex: .fresh(chainUsage, asOf: chainNow)],
@@ -117,11 +117,17 @@ func codexChainRendersOneStepWithItsOwnCaption() throws {
         lastUpdatedAt: [.codex: chainNow.addingTimeInterval(-120)]
     )
 
-    #expect(section.steps.count == 1)
+    #expect(section.steps.count == 2)
     #expect(section.steps[0].number == 1)
-    #expect(section.steps[0].name == "ChatGPT API \u{00B7} Keychain token")
+    #expect(section.steps[0].name == "ChatGPT API \u{00B7} Local Codex credential")
     #expect(section.steps[0].stateText == "Used 2 min ago")
-    #expect(section.caption == "Codex reads the Codex CLI's token and tracks the weekly window only.")
+    #expect(section.steps[1].number == 2)
+    #expect(section.steps[1].name == "Codex app-server \u{00B7} Desktop sign-in")
+    #expect(section.steps[1].stateText == "Standing by")
+    #expect(section.caption == """
+        The signed Codex desktop helper is tried only when the local Codex credential is unavailable. \
+        Both paths read the weekly limit only.
+        """)
 }
 
 @Test
@@ -188,6 +194,8 @@ func chainStepStylingMapsToDotEmphasisAndMuting() throws {
     (.claudeStatuslineCache, .networkError, "Cache out of date"),
     (.claudeStatuslineCache, .parseFailure, "Unexpected response"),
     (.codexAPI, .credentialUnavailable, "No credential found"),
+    (.codexAppServer, .credentialUnavailable, "Desktop sign-in unavailable"),
+    (.codexAppServer, .networkError, "Desktop helper unavailable"),
     (.openCodeGoChromeCookie, .credentialUnavailable, "Usage unavailable"),
     (.openCodeGoChromeCookie, .workspaceSelectionRequired, "Choose a workspace"),
 ])
@@ -261,13 +269,13 @@ func freshProviderShowsNoRecoveryCallout() throws {
     (
         .codex,
         .tokenExpired,
-        "Showing last-known data. Run the Codex CLI once to refresh its token, then choose "
+        "Showing last-known data. Open Codex and refresh its local sign-in, then choose "
             + "Refresh Now from the menu bar."
     ),
     (
         .codex,
         .credentialUnavailable,
-        "Showing last-known data. Sign in with the Codex CLI, then choose Refresh Now from the "
+        "Showing last-known data. Sign in to the Codex desktop app or Codex CLI, then choose Refresh Now from the "
             + "menu bar."
     ),
     (

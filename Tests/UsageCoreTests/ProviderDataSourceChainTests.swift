@@ -15,7 +15,7 @@ func providerDataSourceChainListsEachProvidersSourcesInFallbackOrder() {
         .claudeOAuthAPI,
         .claudeStatuslineCache,
     ])
-    #expect(ProviderID.codex.dataSourceChain == [.codexAPI])
+    #expect(ProviderID.codex.dataSourceChain == [.codexAPI, .codexAppServer])
     #expect(ProviderID.openCodeGo.dataSourceChain == [.openCodeGoChromeCookie])
 }
 
