@@ -129,7 +129,7 @@ func menuBarTitleFormatterShowsPlaceholdersWhenProvidersHaveNoDataYet() {
 }
 
 @Test
-func menuBarTitleFormatterRendersFreshMiniMaxAsTwoWindowMxLabel() {
+func menuBarTitleFormatterRendersFreshMiniMaxAsTwoWindowDisplay() {
     // MiniMax is two-window like Claude. A fresh state surfaces the segment
     // value through `remainingDisplay(for:)` with both `fiveHour` and
     // `weekly` windows joined by `/` — pin that shape, since omitting
