@@ -139,7 +139,7 @@ func providerStatusShowsMiniMaxRecoveryCalloutAndChainCaption() throws {
     #expect(
         row.chain.recoveryCallout
             == "Showing last-known data. No MiniMax key found. Sign in to the MiniMax provider in "
-                + "OpenCode (`opencode auth login`) \u{2014} AIUsageBar borrows that key "
+                + "OpenCode (run: opencode auth login) \u{2014} AIUsageBar borrows that key "
                 + "read-only \u{2014} then choose Refresh Now from the menu bar."
     )
 }
