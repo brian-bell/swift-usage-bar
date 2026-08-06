@@ -18,6 +18,20 @@ func settingsStoreReturnsDefaultsWhenNothingHasBeenSaved() {
 }
 
 @Test
+func providerIDIsHiddenByDefaultReportsMembershipInTheSingleSourceOfTruth() {
+    // The four sites that special-case a default-hidden provider
+    // (MenuBarTitleFormatter, DropdownViewModel, SettingsStore,
+    // AppSettingsDraft) all read from this membership. Pin it directly so
+    // adding a fifth default-hidden provider — or un-hiding one — can't
+    // drift between sites silently.
+    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .miniMax])
+    #expect(!ProviderID.claude.isHiddenByDefault)
+    #expect(!ProviderID.codex.isHiddenByDefault)
+    #expect(ProviderID.openCodeGo.isHiddenByDefault)
+    #expect(ProviderID.miniMax.isHiddenByDefault)
+}
+
+@Test
 func settingsStoreRoundTripsPollInterval() {
     withIsolatedDefaults { defaults in
         SettingsStore(defaults: defaults).pollInterval = 300

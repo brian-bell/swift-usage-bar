@@ -38,8 +38,10 @@ public struct DropdownViewModel: Equatable, Sendable {
 
     /// Providers that ship hidden and don't render a placeholder row until they
     /// report at least once — both the menu bar title and the dropdown skip them
-    /// when they have no state, by design.
-    static let defaultHiddenProviders: Set<ProviderID> = [.openCodeGo, .miniMax]
+    /// when they have no state, by design. The membership lives on `ProviderID`
+    /// so every site that needs to special-case a default-hidden provider reads
+    /// the same source of truth.
+    static let defaultHiddenProviders: Set<ProviderID> = ProviderID.defaultHiddenProviders
 }
 
 public struct DropdownProviderRow: Equatable, Identifiable, Sendable {

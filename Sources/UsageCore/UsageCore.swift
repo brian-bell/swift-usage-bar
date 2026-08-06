@@ -70,6 +70,19 @@ public enum ProviderID: CaseIterable, Hashable, Sendable {
     case codex
     case openCodeGo
     case miniMax
+
+    /// Providers that ship hidden: their menu-bar row, dropdown entry, and
+    /// default Settings visibility all skip them until they are explicitly
+    /// enabled and have produced data. The single source of truth — every
+    /// site that needs to special-case a default-hidden provider reads from
+    /// here rather than maintaining its own list.
+    public static let defaultHiddenProviders: Set<ProviderID> = [.openCodeGo, .miniMax]
+
+    /// Whether this provider ships hidden. The opposite direction of
+    /// `isProviderVisible` for an unrecorded UserDefaults key.
+    public var isHiddenByDefault: Bool {
+        Self.defaultHiddenProviders.contains(self)
+    }
 }
 
 public enum StaleReason: Equatable, Sendable {
@@ -2108,7 +2121,7 @@ public enum MenuBarTitleFormatter {
     /// Providers that ship hidden and don't render a placeholder until they
     /// report at least once. The Settings tab lists them as `Off`; the menu bar
     /// title skips them entirely.
-    private static let defaultHiddenProviders: Set<ProviderID> = [.openCodeGo, .miniMax]
+    private static let defaultHiddenProviders: Set<ProviderID> = ProviderID.defaultHiddenProviders
 }
 
 private struct ClaudeStatuslineResponse: Decodable {

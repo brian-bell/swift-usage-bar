@@ -6,6 +6,15 @@ import UsageCore
 @Test
 @MainActor
 func providerIconAssetsLoadForAllProviders() throws {
+    // Pin which providers have an asset before loading — otherwise the loop
+    // would skip a regression where a real provider's resourceBaseName
+    // returns nil and the suite still passes vacuously.
+    #expect(ProviderID.allCases.map(ProviderIconAsset.hasAsset(for:)) == [
+        true,  // .claude
+        true,  // .codex
+        true,  // .openCodeGo
+        false, // .miniMax
+    ])
     for provider in ProviderID.allCases where ProviderIconAsset.hasAsset(for: provider) {
         let image = try #require(ProviderIconAsset.image(for: provider))
         #expect(image.size.width > 0)

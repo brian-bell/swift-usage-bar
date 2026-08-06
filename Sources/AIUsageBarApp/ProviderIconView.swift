@@ -112,7 +112,9 @@ struct ProviderIconView: View {
         case .openCodeGo:
             return "G"
         case .miniMax:
-            return "Mx"
+            // Single glyph so it fits the square icon frame at the call sites
+            // (`size × size`, no scaling). The menu-bar abbreviation stays `Mx`.
+            return "M"
         }
     }
 }

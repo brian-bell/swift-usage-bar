@@ -16,7 +16,7 @@ struct AppSettingsDraft: Equatable {
         pollInterval: 120,
         providerVisibility: Dictionary(
             uniqueKeysWithValues: ProviderID.allCases.map { provider in
-                (provider, provider != .openCodeGo && provider != .miniMax)
+                (provider, !provider.isHiddenByDefault)
             }
         ),
         thresholdPercent: 20,
