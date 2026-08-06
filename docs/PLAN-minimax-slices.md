@@ -35,7 +35,7 @@ fetch anything. Concretely:
 - `MenuBarTitleFormatter.segments`: an absent state returns `nil` for
   `.miniMax` (matches `.openCodeGo` — default-hidden providers don't render a
   placeholder before their first report).
-- `SettingsStore`: visibility key `settings.provider.minimax.visible`, default
+- `SettingsStore`: visibility key `settings.provider.miniMax.visible`, default
   `false`. Wire through `AppSettingsDraft` staged semantics.
 - `ProviderStatusViewModel`: row for MiniMax, hidden by default renders `Off`.
 - `AppSettingsView` / `AppSettingsDraft`: MiniMax toggle in Providers tab. No

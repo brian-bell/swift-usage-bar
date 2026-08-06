@@ -161,8 +161,8 @@ display-only inside the step.
    don't render a placeholder before their first report).
 3. `ProviderDataSource` / `ProviderDataSourceStep`: add `.minimaxTokenPlanAPI`
    with display/chain names.
-4. `SettingsStore`: visibility key `settings.provider.minimax.visible` (match
-   the existing key naming), **default false**.
+4. `SettingsStore`: visibility key `settings.provider.miniMax.visible` (match
+    the existing key naming), **default false**.
 5. Tests: formatter segments/rows with four visible providers (two-row
    partition invariant), default-hidden behavior, settings default, chain
    declaration order.
