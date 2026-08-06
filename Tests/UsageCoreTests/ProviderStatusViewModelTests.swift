@@ -114,6 +114,36 @@ func providerStatusUsesNeutralOpenCodeUnavailableGuidance() throws {
 }
 
 @Test
+func providerStatusShowsMiniMaxRecoveryCalloutAndChainCaption() throws {
+    // MiniMax's reachable-from-the-view-model strings: the disclosure caption
+    // explains the source, the recovery callout names the next concrete step,
+    // and the per-step failure phrase routes `.minimaxTokenPlanAPI` to
+    // "No credential found" via the same catch-all as the other HTTPS API
+    // sources. Slice 1 ships these strings even though no provider produces
+    // the stale state yet — pin the copy so it can't drift before Slice 3.
+    let model = ProviderStatusViewModel(
+        states: [.miniMax: .stale(last: nil, reason: .credentialUnavailable)],
+        chains: [.miniMax: [
+            ProviderDataSourceStep(.minimaxTokenPlanAPI, .failed(.credentialUnavailable)),
+        ]],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .miniMax })
+    #expect(row.methodLabel == "No MiniMax key found")
+    #expect(row.chain.caption == """
+        Reads only the OpenCode auth.json key for the MiniMax provider. All access is \
+        read-only.
+        """)
+    #expect(row.chain.steps.map(\.stateText) == ["No credential found"])
+    #expect(
+        row.chain.recoveryCallout
+            == "Showing last-known data. No MiniMax key found. Sign in to the MiniMax provider in "
+                + "OpenCode (`opencode auth login`) \u{2014} AIUsageBar borrows that key read-only."
+    )
+}
+
+@Test
 func providerStatusRendersOffForHiddenProvider() throws {
     let model = ProviderStatusViewModel(
         states: [.openCodeGo: .hidden],
@@ -239,6 +269,12 @@ func providerStatusClampsFutureRefreshTimestampsToJustNow() throws {
     (.openCodeGo, .credentialUnavailable, "OpenCode usage unavailable"),
     (.openCodeGo, .sessionExpired, "Chrome session expired"),
     (.openCodeGo, .workspaceSelectionRequired, "Choose a workspace in Settings"),
+    (.miniMax, .parseFailure, "Unexpected response format"),
+    (.miniMax, .networkError, "Network error"),
+    (.miniMax, .tokenExpired, "MiniMax key rejected"),
+    (.miniMax, .credentialUnavailable, "No MiniMax key found"),
+    (.miniMax, .sessionExpired, "MiniMax key rejected"),
+    (.miniMax, .workspaceSelectionRequired, "Workspace selection required"),
 ])
 func providerStatusMapsEveryStaleReasonToProviderSpecificPhrasing(
     provider: ProviderID,
