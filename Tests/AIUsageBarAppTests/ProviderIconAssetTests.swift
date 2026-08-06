@@ -22,3 +22,13 @@ func providerIconAssetsCanBeLoadedAtMenuBarPointSize() throws {
         #expect(image.size.height == 13)
     }
 }
+
+@Test
+@MainActor
+func providerIconAssetIsAbsentForMiniMax() {
+    // Slice 1 ships MiniMax without an SVG; the view falls back to its `Mx`
+    // text symbol. Pin the no-asset invariant so adding a stub doesn't
+    // silently change which providers render as fallback text.
+    #expect(!ProviderIconAsset.hasAsset(for: .miniMax))
+    #expect(ProviderIconAsset.image(for: .miniMax) == nil)
+}

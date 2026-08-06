@@ -80,7 +80,13 @@ func menuBarLabelImageRendersSingleProviderAtReadableMenuBarHeight() throws {
 @Test(arguments: ProviderID.allCases)
 @MainActor
 func menuBarLabelImageUsesReadableFontForSingleProvider(provider: ProviderID) throws {
-    let value = provider == .claude ? "62/81" : "90"
+    let value: String
+    switch provider {
+    case .claude, .miniMax:
+        value = "62/81"
+    case .codex, .openCodeGo:
+        value = "90"
+    }
     let segment = MenuBarTitleSegment(provider: provider, value: value, isStale: false)
     let image = try #require(MenuBarLabelImage.image(for: [segment]))
     let readableAttributes: [NSAttributedString.Key: Any] = [

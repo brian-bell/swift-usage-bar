@@ -129,12 +129,20 @@ func menuBarTitleFormatterShowsPlaceholdersWhenProvidersHaveNoDataYet() {
 }
 
 @Test
-func menuBarTitleFormatterOmitsDefaultHiddenProvidersWithNoDataYet() {
-    // MiniMax is default-hidden; with no data yet it doesn't render at all,
-    // unlike Claude and Codex which show placeholders until their first report.
-    let title = MenuBarTitleFormatter.format([:])
+func menuBarTitleFormatterRendersFreshMiniMaxAsTwoWindowMxLabel() {
+    // MiniMax is two-window like Claude, default-hidden until polled, and
+    // identifies itself with `Mx`. A fresh state surfaces all three at once:
+    // the symbol, the abbreviation shape, and the absent-state rule that lets
+    // it skip the placeholder row when hidden by its peers.
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .miniMax: .fresh(miniMaxUsage, asOf: Date(timeIntervalSince1970: 30)),
+    ])
 
-    #expect(plainText(title) == "* --/--  # --")
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .miniMax, value: "76/55", isStale: false),
+    ])
 }
 
 private let claudeUsage = ProviderUsage(
@@ -145,6 +153,11 @@ private let claudeUsage = ProviderUsage(
 private let codexUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 90, resetsAt: nil)
+)
+
+private let miniMaxUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: 76, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: 55, resetsAt: nil)
 )
 
 private func plainText(_ attributedString: AttributedString) -> String {
