@@ -10,18 +10,20 @@ func miniMaxProviderReturnsFreshUsageOnSuccess() async throws {
         data: fixture,
         receivedAt: receivedAt
     ))
+    let reader = FakeMiniMaxCredentialReader(result: .fresh(MiniMaxCredential(key: "sk-test")))
     let provider = MiniMaxUsageProvider(
-        credentialReader: FakeMiniMaxCredentialReader(result: .fresh(MiniMaxCredential(key: "sk-test"))),
+        credentialReader: reader,
         transport: transport
     )
 
-    let report = await provider.fetchReport(previous: nil, mode: .background)
-    let expected = try MiniMaxTokenPlanParser().parse(fixture).usage
+    let report = await provider.fetchReport(previous: nil, mode: .interactive)
+    let expected = try MiniMaxTokenPlanParser().parse(fixture)
 
     #expect(report.state == .fresh(expected, asOf: receivedAt))
     #expect(report.chain == [ProviderDataSourceStep(.minimaxTokenPlanAPI, .used)])
     #expect(report.source == .minimaxTokenPlanAPI)
     #expect(await transport.credentials == [MiniMaxCredential(key: "sk-test")])
+    #expect(reader.modes == [.interactive])
 }
 
 @Test
@@ -175,6 +177,11 @@ func miniMaxProviderReportsSingleStepFailedOnEveryStaleMapping() async throws {
             .credentialUnavailable
         ),
         (
+            FakeMiniMaxCredentialReader(error: TestError.boom),
+            FakeMiniMaxTransport(error: TestError.boom),
+            .credentialUnavailable
+        ),
+        (
             FakeMiniMaxCredentialReader(result: .fresh(MiniMaxCredential(key: "sk"))),
             FakeMiniMaxTransport(response: MiniMaxTokenPlanResponse(
                 data: try fixtureData("minimax-token-plan-auth-failure.json"),
@@ -263,9 +270,10 @@ private enum TestError: Error {
     case boom
 }
 
-private struct FakeMiniMaxCredentialReader: MiniMaxCredentialReading {
+private final class FakeMiniMaxCredentialReader: MiniMaxCredentialReading, @unchecked Sendable {
     let result: MiniMaxCredentialReadResult?
     let error: (any Error)?
+    private(set) var modes: [CredentialAccessMode] = []
 
     init(result: MiniMaxCredentialReadResult) {
         self.result = result
@@ -277,7 +285,8 @@ private struct FakeMiniMaxCredentialReader: MiniMaxCredentialReading {
         self.error = error
     }
 
-    func read(mode _: CredentialAccessMode) throws -> MiniMaxCredentialReadResult {
+    func read(mode: CredentialAccessMode) throws -> MiniMaxCredentialReadResult {
+        modes.append(mode)
         if let error {
             throw error
         }

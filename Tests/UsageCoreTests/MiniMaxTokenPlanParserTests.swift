@@ -4,7 +4,7 @@ import UsageCore
 
 @Test
 func miniMaxParserParsesSanitizedFixture() throws {
-    let usage = try MiniMaxTokenPlanParser().parse(fixtureData("minimax-token-plan.json")).usage
+    let usage = try MiniMaxTokenPlanParser().parse(fixtureData("minimax-token-plan.json"))
 
     #expect(usage.fiveHour.percentRemaining == 100)
     #expect(usage.weekly.percentRemaining == 99)
@@ -15,13 +15,9 @@ func miniMaxParserParsesSanitizedFixture() throws {
 
 @Test
 func miniMaxParserIgnoresVideoEntryAndSelectsGeneral() throws {
-    #expect(throws: UsageParsingError.parseFailure) {
-        try MiniMaxTokenPlanParser().parse(tokenPlanBody(entries: [videoEntry()]))
-    }
-
     let usage = try MiniMaxTokenPlanParser().parse(
         tokenPlanBody(entries: [generalEntry(), videoEntry()])
-    ).usage
+    )
 
     #expect(usage.fiveHour.percentRemaining == 100)
     #expect(usage.weekly.percentRemaining == 99)
@@ -29,7 +25,7 @@ func miniMaxParserIgnoresVideoEntryAndSelectsGeneral() throws {
 
 @Test
 func miniMaxParserThrowsAuthFailureOn1004() {
-    #expect(throws: MiniMaxTokenPlanParser.AuthFailure.statusCode(1004)) {
+    #expect(throws: MiniMaxTokenPlanParser.AuthFailure.rejectedKey) {
         try MiniMaxTokenPlanParser().parse(fixtureData("minimax-token-plan-auth-failure.json"))
     }
 }
@@ -48,7 +44,7 @@ func miniMaxParserConvertsEpochMillisecondsToResetsAt() throws {
             endTime: 1_786_046_400_000,
             weeklyEndTime: 1_786_320_000_000
         )])
-    ).usage
+    )
 
     #expect(epochSeconds(usage.fiveHour.resetsAt) == 1_786_046_400)
     #expect(epochSeconds(usage.weekly.resetsAt) == 1_786_320_000)
@@ -75,7 +71,7 @@ func miniMaxParserToleratesMalformedSiblingEntries() throws {
     }
     """.utf8)
 
-    let usage = try MiniMaxTokenPlanParser().parse(body).usage
+    let usage = try MiniMaxTokenPlanParser().parse(body)
 
     #expect(usage.fiveHour.percentRemaining == 100)
     #expect(usage.weekly.percentRemaining == 99)
@@ -98,7 +94,7 @@ func miniMaxParserRejectsPercentOutOfRange() {
 func miniMaxParserAcceptsUnknownResetWithValidPercent() throws {
     let usage = try MiniMaxTokenPlanParser().parse(
         tokenPlanBody(entries: [generalEntry(endTime: nil, weeklyEndTime: nil)])
-    ).usage
+    )
 
     #expect(usage.fiveHour.percentRemaining == 100)
     #expect(usage.fiveHour.resetsAt == nil)
@@ -110,6 +106,9 @@ func miniMaxParserAcceptsUnknownResetWithValidPercent() throws {
 func miniMaxParserFailsOnMissingGeneralEntry() {
     #expect(throws: UsageParsingError.parseFailure) {
         try MiniMaxTokenPlanParser().parse(tokenPlanBody(entries: [videoEntry()]))
+    }
+    #expect(throws: UsageParsingError.parseFailure) {
+        try MiniMaxTokenPlanParser().parse(tokenPlanBody(entries: []))
     }
 }
 
@@ -129,7 +128,7 @@ func miniMaxParserFailsOnUndecodableBody() {
 
 @Test
 func miniMaxParserFailsOnMissingPercentFields() {
-    let body = Data("""
+    let missingInterval = Data("""
     {
       "model_remains": [
         {
@@ -142,9 +141,25 @@ func miniMaxParserFailsOnMissingPercentFields() {
       "base_resp": { "status_code": 0 }
     }
     """.utf8)
+    let missingWeekly = Data("""
+    {
+      "model_remains": [
+        {
+          "model_name": "general",
+          "end_time": 1786046400000,
+          "current_interval_remaining_percent": 100,
+          "weekly_end_time": 1786320000000
+        }
+      ],
+      "base_resp": { "status_code": 0 }
+    }
+    """.utf8)
 
     #expect(throws: UsageParsingError.parseFailure) {
-        try MiniMaxTokenPlanParser().parse(body)
+        try MiniMaxTokenPlanParser().parse(missingInterval)
+    }
+    #expect(throws: UsageParsingError.parseFailure) {
+        try MiniMaxTokenPlanParser().parse(missingWeekly)
     }
 }
 

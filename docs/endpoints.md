@@ -71,7 +71,7 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 - Response shape (sanitized fixture: `Tests/Fixtures/minimax-token-plan.json`):
   `model_remains` is an array keyed by `model_name`. The coding/token plan is the `"general"` entry (its 5h interval is exactly 18,000,000 ms; its weekly window is exactly 7 days). The `"video"` entry is a separate daily video quota and is ignored.
   Each `general` entry's `current_interval_remaining_percent` / `current_weekly_remaining_percent` are **percent remaining**, used directly. `end_time` (ms) → fiveHour reset; `weekly_end_time` (ms) → weekly reset.
-- Approved narrow exception: AIUsageBar never refreshes the key — a machine whose OpenCode session is gone degrades to `.tokenExpired` by design.
+- Failure mapping: missing/unreadable `auth.json` or empty key → `.credentialUnavailable`; rejected key (`base_resp.status_code == 1004`) → `.tokenExpired`. AIUsageBar never refreshes the key either way.
 
 ### Rejected alternatives
 

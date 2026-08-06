@@ -85,16 +85,17 @@ public struct MiniMaxTokenPlanResponse: Sendable, Equatable {
 }
 
 public struct MiniMaxTokenPlanParser: Sendable {
+    /// The API rejected the subscription key (`base_resp.status_code == 1004`).
     public enum AuthFailure: Error, Equatable, Sendable {
-        case statusCode(Int)
+        case rejectedKey
     }
 
     public init() {}
 
-    /// Returns parsed usage. Throws a typed `AuthFailure` when the body
+    /// Returns parsed usage. Throws `AuthFailure.rejectedKey` when the body
     /// signals the key was rejected. Throws `UsageParsingError.parseFailure`
     /// for every other unparseable body.
-    public func parse(_ data: Data) throws -> (usage: ProviderUsage, authFailure: AuthFailure?) {
+    public func parse(_ data: Data) throws -> ProviderUsage {
         let response: Response
         do {
             response = try JSONDecoder().decode(Response.self, from: data)
@@ -103,7 +104,7 @@ public struct MiniMaxTokenPlanParser: Sendable {
         }
 
         if response.baseResp.statusCode == 1004 {
-            throw AuthFailure.statusCode(1004)
+            throw AuthFailure.rejectedKey
         }
         guard response.baseResp.statusCode == 0 else {
             throw UsageParsingError.parseFailure
@@ -125,10 +126,7 @@ public struct MiniMaxTokenPlanParser: Sendable {
             endTimeMilliseconds: general.weeklyEndTime
         )
 
-        return (
-            usage: ProviderUsage(fiveHour: fiveHour, weekly: weekly, monthly: nil),
-            authFailure: nil
-        )
+        return ProviderUsage(fiveHour: fiveHour, weekly: weekly, monthly: nil)
     }
 
     private static func window(
@@ -221,18 +219,15 @@ public struct MiniMaxUsageProvider: UsageProvider {
     private let credentialReader: any MiniMaxCredentialReading
     private let transport: any MiniMaxTransporting
     private let parser: MiniMaxTokenPlanParser
-    private let now: @Sendable () -> Date
 
     public init(
         credentialReader: any MiniMaxCredentialReading,
         transport: any MiniMaxTransporting,
-        parser: MiniMaxTokenPlanParser = MiniMaxTokenPlanParser(),
-        now: @escaping @Sendable () -> Date = Date.init
+        parser: MiniMaxTokenPlanParser = MiniMaxTokenPlanParser()
     ) {
         self.credentialReader = credentialReader
         self.transport = transport
         self.parser = parser
-        self.now = now
     }
 
     public func fetch(previous: ProviderUsage?, mode: CredentialAccessMode) async -> ProviderState {
@@ -267,9 +262,9 @@ public struct MiniMaxUsageProvider: UsageProvider {
         let state: ProviderState
         do {
             let response = try await transport.fetchTokenPlan(credential: credential)
-            let usage = try parser.parse(response.data).usage
+            let usage = try parser.parse(response.data)
             state = .fresh(usage, asOf: response.receivedAt)
-        } catch MiniMaxTokenPlanParser.AuthFailure.statusCode(1004) {
+        } catch MiniMaxTokenPlanParser.AuthFailure.rejectedKey {
             state = .stale(last: previous, reason: .tokenExpired)
         } catch UsageParsingError.parseFailure {
             state = .stale(last: previous, reason: .parseFailure)
