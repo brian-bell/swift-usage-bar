@@ -315,9 +315,23 @@ public extension ProviderDataSource {
                 return "Network error"
             }
         case .tokenExpired:
-            return "Token expired"
+            switch self {
+            case .minimaxTokenPlanAPI:
+                // An `sk-…` API key doesn't expire on the wire the way an
+                // OAuth token does — the server rejects it, so name the cause.
+                return "Key rejected"
+            case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache,
+                 .codexAPI, .codexAppServer, .openCodeGoChromeCookie:
+                return "Token expired"
+            }
         case .sessionExpired:
-            return "Session expired"
+            switch self {
+            case .minimaxTokenPlanAPI:
+                return "Key rejected"
+            case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache,
+                 .codexAPI, .codexAppServer, .openCodeGoChromeCookie:
+                return "Session expired"
+            }
         case .workspaceSelectionRequired:
             return "Choose a workspace"
         case .credentialUnavailable:
