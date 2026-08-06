@@ -146,6 +146,21 @@ func menuBarTitleFormatterRendersFreshMiniMaxAsTwoWindowDisplay() {
     ])
 }
 
+@Test
+func menuBarTitleFormatterRendersFreshMiniMaxAsMxSymbol() {
+    // The `format` path joins `symbol` and the segment value, so this pins
+    // the full menu-bar rendering for MiniMax end to end: the `Mx` symbol
+    // (from `ProviderID.symbol`), the two-window value, and the absence of
+    // a stale `~` prefix on fresh data.
+    let title = MenuBarTitleFormatter.format([
+        .claude: .hidden,
+        .codex: .hidden,
+        .miniMax: .fresh(miniMaxUsage, asOf: Date(timeIntervalSince1970: 30)),
+    ])
+
+    #expect(plainText(title) == "Mx 76/55")
+}
+
 private let claudeUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 62, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 81, resetsAt: nil)

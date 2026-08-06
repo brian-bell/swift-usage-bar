@@ -524,6 +524,11 @@ private static func resourceBaseName(for provider: ProviderID) -> String? {
 
 #### 6b. `fallbackSymbol` — line 97-106
 
+Single glyph, like every other provider in the existing `fallbackSymbol`
+list — the icon view renders it inside a `size × size` square frame, so a
+two-character `"Mx"` truncates. The menu-bar abbreviation (a different
+function, `MenuBarLabelImage.abbreviation(for:)`) keeps `"Mx"`.
+
 ```swift
 private var fallbackSymbol: String {
     switch provider {
@@ -534,7 +539,7 @@ private var fallbackSymbol: String {
     case .openCodeGo:
         return "G"
     case .miniMax:
-        return "Mx"
+        return "M"
     }
 }
 ```
