@@ -17,6 +17,14 @@ func providerDataSourceChainListsEachProvidersSourcesInFallbackOrder() {
     ])
     #expect(ProviderID.codex.dataSourceChain == [.codexAPI, .codexAppServer])
     #expect(ProviderID.openCodeGo.dataSourceChain == [.openCodeGoChromeCookie])
+    #expect(ProviderID.miniMax.dataSourceChain == [.minimaxTokenPlanAPI])
+}
+
+@Test
+func minimaxTokenPlanAPIDataSourceNamesMatchTheProviderStatusConvention() {
+    #expect(ProviderDataSource.minimaxTokenPlanAPI.provider == .miniMax)
+    #expect(ProviderDataSource.minimaxTokenPlanAPI.displayName == "MiniMax token plan API")
+    #expect(ProviderDataSource.minimaxTokenPlanAPI.chainStepName == "MiniMax token plan API (OpenCode key)")
 }
 
 @Test

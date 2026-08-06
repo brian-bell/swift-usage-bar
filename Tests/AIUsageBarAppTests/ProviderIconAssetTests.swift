@@ -6,7 +6,7 @@ import UsageCore
 @Test
 @MainActor
 func providerIconAssetsLoadForAllProviders() throws {
-    for provider in ProviderID.allCases {
+    for provider in ProviderID.allCases where ProviderIconAsset.hasAsset(for: provider) {
         let image = try #require(ProviderIconAsset.image(for: provider))
         #expect(image.size.width > 0)
         #expect(image.size.height > 0)
@@ -16,7 +16,7 @@ func providerIconAssetsLoadForAllProviders() throws {
 @Test
 @MainActor
 func providerIconAssetsCanBeLoadedAtMenuBarPointSize() throws {
-    for provider in ProviderID.allCases {
+    for provider in ProviderID.allCases where ProviderIconAsset.hasAsset(for: provider) {
         let image = try #require(ProviderIconAsset.image(for: provider, pointSize: 13))
         #expect(image.size.width == 13)
         #expect(image.size.height == 13)

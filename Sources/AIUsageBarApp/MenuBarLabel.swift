@@ -122,6 +122,8 @@ enum MenuBarLabelImage {
             return "Cx"
         case .openCodeGo:
             return "Go"
+        case .miniMax:
+            return "Mx"
         }
     }
 }

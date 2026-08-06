@@ -128,6 +128,15 @@ func menuBarTitleFormatterShowsPlaceholdersWhenProvidersHaveNoDataYet() {
     #expect(plainText(title) == "* --/--  # --")
 }
 
+@Test
+func menuBarTitleFormatterOmitsDefaultHiddenProvidersWithNoDataYet() {
+    // MiniMax is default-hidden; with no data yet it doesn't render at all,
+    // unlike Claude and Codex which show placeholders until their first report.
+    let title = MenuBarTitleFormatter.format([:])
+
+    #expect(plainText(title) == "* --/--  # --")
+}
+
 private let claudeUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 62, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 81, resetsAt: nil)

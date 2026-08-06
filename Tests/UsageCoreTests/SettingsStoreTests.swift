@@ -11,6 +11,7 @@ func settingsStoreReturnsDefaultsWhenNothingHasBeenSaved() {
         #expect(store.isProviderVisible(.claude))
         #expect(store.isProviderVisible(.codex))
         #expect(!store.isProviderVisible(.openCodeGo))
+        #expect(!store.isProviderVisible(.miniMax))
         #expect(store.thresholdPercent == 20)
         #expect(!store.launchAtLoginEnabled)
     }
@@ -35,6 +36,17 @@ func settingsStoreRoundTripsProviderVisibility() {
         let reloaded = SettingsStore(defaults: defaults)
         #expect(!reloaded.isProviderVisible(.claude))
         #expect(reloaded.isProviderVisible(.codex))
+    }
+}
+
+@Test
+func settingsStoreRoundTripsMiniMaxVisibility() {
+    withIsolatedDefaults { defaults in
+        let store = SettingsStore(defaults: defaults)
+        store.setProvider(.miniMax, visible: true)
+
+        let reloaded = SettingsStore(defaults: defaults)
+        #expect(reloaded.isProviderVisible(.miniMax))
     }
 }
 

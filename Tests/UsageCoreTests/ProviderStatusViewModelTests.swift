@@ -135,7 +135,7 @@ func providerStatusCoversEveryProviderInStableOrder() {
     let model = ProviderStatusViewModel(states: [:], dataSources: [:], lastUpdatedAt: [:], now: statusNow)
 
     #expect(model.rows.map(\.provider) == ProviderID.allCases)
-    #expect(model.rows.map(\.providerName) == ["Claude", "Codex", "OpenCode Go"])
+    #expect(model.rows.map(\.providerName) == ["Claude", "Codex", "OpenCode Go", "MiniMax"])
     #expect(model.rows.map(\.id) == ProviderID.allCases)
 }
 

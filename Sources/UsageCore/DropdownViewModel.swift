@@ -12,7 +12,7 @@ public struct DropdownViewModel: Equatable, Sendable {
         locale: Locale = .current
     ) {
         let rows = ProviderID.allCases.compactMap { provider -> DropdownProviderRow? in
-            if provider == .openCodeGo, states[provider] == nil {
+            if Self.defaultHiddenProviders.contains(provider), states[provider] == nil {
                 return nil
             }
             let state = states[provider] ?? .stale(last: nil, reason: .networkError)
@@ -35,6 +35,11 @@ public struct DropdownViewModel: Equatable, Sendable {
             .max()
             .map { formatUpdatedLabel(updatedAt: $0, now: now) }
     }
+
+    /// Providers that ship hidden and don't render a placeholder row until they
+    /// report at least once — both the menu bar title and the dropdown skip them
+    /// when they have no state, by design.
+    static let defaultHiddenProviders: Set<ProviderID> = [.openCodeGo, .miniMax]
 }
 
 public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
@@ -250,6 +255,8 @@ private extension ProviderID {
             return "Codex"
         case .openCodeGo:
             return "OpenCode Go"
+        case .miniMax:
+            return "MiniMax"
         }
     }
 
@@ -260,6 +267,8 @@ private extension ProviderID {
         case .codex:
             return false
         case .openCodeGo:
+            return true
+        case .miniMax:
             return true
         }
     }

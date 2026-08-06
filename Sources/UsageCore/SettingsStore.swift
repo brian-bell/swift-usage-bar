@@ -92,7 +92,7 @@ public final class SettingsStore: @unchecked Sendable {
     public func isProviderVisible(_ provider: ProviderID) -> Bool {
         let key = Keys.providerVisibility(provider)
         guard defaults.object(forKey: key) != nil else {
-            return provider != .openCodeGo
+            return provider != .openCodeGo && provider != .miniMax
         }
 
         return defaults.bool(forKey: key)
@@ -123,6 +123,8 @@ private extension ProviderID {
             return "codex"
         case .openCodeGo:
             return "openCodeGo"
+        case .miniMax:
+            return "miniMax"
         }
     }
 }

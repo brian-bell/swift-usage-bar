@@ -8,6 +8,7 @@ func dropdownRowsUseStableProviderOrderAndOmitHiddenProviders() throws {
         states: [
             .codex: .fresh(codexUsage, asOf: referenceNow),
             .claude: .hidden,
+            .miniMax: .hidden,
         ],
         now: referenceNow,
         calendar: deterministicCalendar(),
@@ -255,6 +256,7 @@ func dropdownSummaryIsNilWhenAllProvidersAreHidden() {
         states: [
             .claude: .hidden,
             .codex: .hidden,
+            .miniMax: .hidden,
         ],
         lastUpdatedAt: [
             .claude: referenceNow,

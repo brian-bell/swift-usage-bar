@@ -311,7 +311,7 @@ public extension ProviderDataSource {
             case .codexAppServer:
                 return "Desktop helper unavailable"
             case .claudeWebSession, .claudeOAuthAPI, .codexAPI,
-                 .openCodeGoChromeCookie:
+                 .openCodeGoChromeCookie, .minimaxTokenPlanAPI:
                 return "Network error"
             }
         case .tokenExpired:
@@ -332,7 +332,7 @@ public extension ProviderDataSource {
                 return "No cache file"
             case .codexAppServer:
                 return "Desktop sign-in unavailable"
-            case .claudeOAuthAPI, .codexAPI:
+            case .claudeOAuthAPI, .codexAPI, .minimaxTokenPlanAPI:
                 return "No credential found"
             }
         }
@@ -356,6 +356,11 @@ private extension ProviderID {
                 """
         case .openCodeGo:
             return nil
+        case .miniMax:
+            return """
+                Reads only the OpenCode auth.json key for the MiniMax provider. All access is \
+                read-only.
+                """
         }
     }
 
@@ -390,6 +395,16 @@ private extension ProviderID {
         case (.openCodeGo, .workspaceSelectionRequired):
             return prefix + "Several workspaces matched. Set a workspace ID below, then "
                 + "choose Refresh Now from the menu bar."
+        case (.miniMax, .credentialUnavailable):
+            return prefix + "No MiniMax key found. Sign in to the MiniMax provider in "
+                + "OpenCode (`opencode auth login`) \u{2014} AIUsageBar borrows that key "
+                + "read-only."
+        case (.miniMax, .tokenExpired):
+            return prefix + "The MiniMax key was rejected. Re-authenticate the MiniMax "
+                + "provider in OpenCode."
+        case (.miniMax, .sessionExpired):
+            return prefix + "Re-authenticate the MiniMax provider in OpenCode, then choose "
+                + "Refresh Now from the menu bar."
         case (_, .networkError):
             return prefix + "Check your network connection, then choose Refresh Now from "
                 + "the menu bar."
@@ -410,6 +425,8 @@ private extension ProviderID {
             return "Codex"
         case .openCodeGo:
             return "OpenCode Go"
+        case .miniMax:
+            return "MiniMax"
         }
     }
 }
@@ -432,6 +449,8 @@ private extension StaleReason {
                 return "Keychain token expired"
             case .openCodeGo:
                 return "Session token expired"
+            case .miniMax:
+                return "MiniMax key rejected"
             }
         case .credentialUnavailable:
             switch provider {
@@ -441,6 +460,8 @@ private extension StaleReason {
                 return "No local Codex sign-in found"
             case .openCodeGo:
                 return "OpenCode usage unavailable"
+            case .miniMax:
+                return "No MiniMax key found"
             }
         case .sessionExpired:
             switch provider {
@@ -450,12 +471,14 @@ private extension StaleReason {
                 return "Session expired"
             case .openCodeGo:
                 return "Chrome session expired"
+            case .miniMax:
+                return "MiniMax key rejected"
             }
         case .workspaceSelectionRequired:
             switch provider {
             case .openCodeGo:
                 return "Choose a workspace in Settings"
-            case .claude, .codex:
+            case .claude, .codex, .miniMax:
                 return "Workspace selection required"
             }
         }

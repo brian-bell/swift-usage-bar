@@ -7,6 +7,13 @@ private final class BundleToken {}
 enum ProviderIconAsset {
     private static let resourceBundleName = "AIUsageBar_AIUsageBarApp.bundle"
 
+    /// Whether a provider has a published SVG icon. Providers without an asset
+    /// (default-hidden providers like MiniMax until a future slice adds one)
+    /// fall back to the `fallbackSymbol` text in `ProviderIconView`.
+    static func hasAsset(for provider: ProviderID) -> Bool {
+        resourceBaseName(for: provider) != nil
+    }
+
     static func image(for provider: ProviderID, pointSize: CGFloat? = nil) -> NSImage? {
         guard
             let bundle = resourceBundle(),
@@ -73,6 +80,8 @@ enum ProviderIconAsset {
             return "ProviderIcon-codex"
         case .openCodeGo:
             return "ProviderIcon-opencode-go"
+        case .miniMax:
+            return nil
         }
     }
 }
@@ -102,6 +111,8 @@ struct ProviderIconView: View {
             return "#"
         case .openCodeGo:
             return "G"
+        case .miniMax:
+            return "Mx"
         }
     }
 }

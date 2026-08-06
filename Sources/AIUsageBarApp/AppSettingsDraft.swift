@@ -15,7 +15,9 @@ struct AppSettingsDraft: Equatable {
     static let placeholder = AppSettingsDraft(
         pollInterval: 120,
         providerVisibility: Dictionary(
-            uniqueKeysWithValues: ProviderID.allCases.map { ($0, $0 != .openCodeGo) }
+            uniqueKeysWithValues: ProviderID.allCases.map { provider in
+                (provider, provider != .openCodeGo && provider != .miniMax)
+            }
         ),
         thresholdPercent: 20,
         openCodeGoWorkspace: "",
