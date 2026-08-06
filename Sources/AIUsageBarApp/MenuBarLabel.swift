@@ -6,13 +6,21 @@ struct MenuBarLabelView: View {
     let segments: [MenuBarTitleSegment]
 
     var body: some View {
-        if let image = MenuBarLabelImage.image(for: segments) {
-            Image(nsImage: image)
-                .renderingMode(.template)
-                .frame(width: image.size.width, height: image.size.height)
-        } else {
-            Text("AI Usage")
+        Group {
+            if let image = MenuBarLabelImage.image(for: segments) {
+                Image(nsImage: image)
+                    .renderingMode(.template)
+                    .frame(width: image.size.width, height: image.size.height)
+            } else {
+                Text("AI Usage")
+            }
         }
+        // Single combined element: empty state is detected via accessibilityValue
+        // `"AI Usage"`, not a second identifier (children are ignored).
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier(AccessibilityID.menuBarLabel)
+        .accessibilityLabel("AI usage")
+        .accessibilityValue(MenuBarLabelImage.accessibilityValue(for: segments))
     }
 }
 
@@ -108,6 +116,16 @@ enum MenuBarLabelImage {
     static func rowLabel(for segment: MenuBarTitleSegment) -> String {
         let prefix = segment.isStale ? "~" : ""
         return "\(abbreviation(for: segment.provider)) \(prefix)\(segment.value)"
+    }
+
+    /// Flattened display-row summary for VoiceOver / UI tests (no OCR).
+    /// Empty segments match the visible `"AI Usage"` fallback; otherwise joins
+    /// layout row texts left-to-right, top-then-bottom, with `" | "`.
+    static func accessibilityValue(for segments: [MenuBarTitleSegment]) -> String {
+        guard let layout = layout(for: segments) else {
+            return "AI Usage"
+        }
+        return layout.rows.map(\.text).joined(separator: " | ")
     }
 
     private static func attributes(for segmentCount: Int) -> [NSAttributedString.Key: Any] {

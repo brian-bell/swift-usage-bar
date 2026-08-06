@@ -5,6 +5,50 @@ import UsageCore
 @testable import AIUsageBarApp
 
 @Test
+func accessibilityValueIsAIUsageWhenSegmentsAreEmpty() {
+    #expect(MenuBarLabelImage.accessibilityValue(for: []) == "AI Usage")
+}
+
+@Test
+func accessibilityValueJoinsSingleProviderRowLabel() {
+    let segments = [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
+    ]
+    #expect(MenuBarLabelImage.accessibilityValue(for: segments) == "Cl 62/81")
+}
+
+@Test
+func accessibilityValueJoinsTwoProvidersWithPipe() {
+    let segments = [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
+    ]
+    #expect(MenuBarLabelImage.accessibilityValue(for: segments) == "Cl 62/81 | Cx 90")
+}
+
+@Test
+func accessibilityValuePreservesStaleTildePrefix() {
+    let segments = [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: true),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
+    ]
+    #expect(MenuBarLabelImage.accessibilityValue(for: segments) == "Cl ~62/81 | Cx 90")
+}
+
+@Test
+func accessibilityValueFlattensThreeProviderPartitionInDisplayOrder() {
+    let segments = [
+        MenuBarTitleSegment(provider: .claude, value: "100/100", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "100", isStale: true),
+        MenuBarTitleSegment(provider: .openCodeGo, value: "100/--/100", isStale: false),
+    ]
+    #expect(
+        MenuBarLabelImage.accessibilityValue(for: segments)
+            == "Cl 100/100  Cx ~100 | Go 100/--/100"
+    )
+}
+
+@Test
 func rowLabelPrefixesProviderAbbreviation() {
     #expect(
         MenuBarLabelImage.rowLabel(

@@ -101,6 +101,14 @@ All seams are protocols with injectable fakes; production adapters are thin leav
 - Formatters are pure functions: `MenuBarTitleFormatter`, `CountdownFormatter` (relative under 24 h, weekday+time from 1 day up to 7 days out, calendar-day count + time beyond 7 days — e.g. `resets in 22 days 10:52 PM`, since a weekday name alone can't say which week a monthly reset lands in — "resetting..." when past), `tone(for:)` (normal / warning below threshold / critical below 5%, driven by five-hour, weekly, and optional monthly windows).
 - `SettingsStore` — UserDefaults keys under `settings.*`: poll interval, threshold percent, per-provider visibility, launch-at-login flag, and optional non-secret OpenCode workspace ID. OpenCode Go and MiniMax visibility default to false; Claude and Codex remain true.
 
+## UI test harness
+
+Hosted SwiftUI / accessibility UI tests are planned in `docs/ui-test-harness.md`.
+Phase prep and conventions: `docs/ui-test-harness-phase-0.md`.
+UI tests must use fake `UsageBarShellModel` wiring from
+`Tests/AIUsageBarAppTests/Support/` — never `UsageBarShellModel.live()`.
+Accessibility identifiers live in `AccessibilityID` (app target).
+
 ## Conventions and gotchas
 
 - **TDD** (red–green–refactor) with Swift Testing; every behavior in `UsageCore` has a test. Views contain no logic — they render `AppState`/view models and call intents on the shell model.

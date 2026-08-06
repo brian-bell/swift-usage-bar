@@ -47,6 +47,7 @@ struct AppSettingsView: View {
                 Button("Cancel") {
                     dismiss()
                 }
+                .accessibilityIdentifier(AccessibilityID.settingsCancel)
                 .keyboardShortcut(.cancelAction)
 
                 Button("OK") {
@@ -60,6 +61,7 @@ struct AppSettingsView: View {
                         dismiss()
                     }
                 }
+                .accessibilityIdentifier(AccessibilityID.settingsOK)
                 .keyboardShortcut(.defaultAction)
             }
             .padding(12)
@@ -97,6 +99,7 @@ private struct GeneralSettingsPane: View {
                     }
                     .labelsHidden()
                     .fixedSize()
+                    .accessibilityIdentifier(AccessibilityID.settingsPollInterval)
                 }
 
                 SettingsCaption("Also refreshes on wake and with Refresh Now.")
@@ -108,6 +111,7 @@ private struct GeneralSettingsPane: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
+                        .accessibilityIdentifier(AccessibilityID.settingsLaunchAtLogin)
                 }
 
                 if let launchAtLoginError {
@@ -116,9 +120,11 @@ private struct GeneralSettingsPane: View {
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier(AccessibilityID.settingsLaunchAtLoginError)
                 }
             }
         }
+        .accessibilityIdentifier(AccessibilityID.settingsTabGeneral)
     }
 }
 
@@ -160,6 +166,7 @@ private struct ProvidersSettingsPane: View {
                 }
             }
         }
+        .accessibilityIdentifier(AccessibilityID.settingsTabProviders)
     }
 }
 
@@ -182,6 +189,7 @@ private struct ProviderSettingsRow: View {
                 if isVisible {
                     ProviderDisclosureChevron(
                         isExpanded: $isExpanded,
+                        provider: status.provider,
                         providerName: status.providerName
                     )
                 } else {
@@ -203,6 +211,7 @@ private struct ProviderSettingsRow: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
+                    .accessibilityIdentifier(AccessibilityID.settingsProviderToggle(status.provider))
             }
 
             if isVisible, isExpanded {
@@ -218,6 +227,7 @@ private struct ProviderSettingsRow: View {
 /// and name instead of owning the whole row.
 private struct ProviderDisclosureChevron: View {
     @Binding var isExpanded: Bool
+    let provider: ProviderID
     let providerName: String
 
     var body: some View {
@@ -236,6 +246,7 @@ private struct ProviderDisclosureChevron: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Show \(providerName) data sources")
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+        .accessibilityIdentifier(AccessibilityID.settingsProviderDisclosure(provider))
     }
 }
 
@@ -256,6 +267,7 @@ private struct ProviderStatusLineView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(status.providerName) status: \(status.text)")
+        .accessibilityIdentifier(AccessibilityID.settingsProviderStatus(status.provider))
     }
 }
 
@@ -277,7 +289,7 @@ private struct ProviderChainView: View {
                         Divider()
                     }
 
-                    ProviderChainStepView(step: step)
+                    ProviderChainStepView(step: step, provider: chain.provider)
                         .padding(.vertical, 5)
                 }
             }
@@ -294,7 +306,7 @@ private struct ProviderChainView: View {
             }
 
             if let callout = chain.recoveryCallout {
-                RecoveryCalloutView(text: callout)
+                RecoveryCalloutView(text: callout, provider: chain.provider)
             }
 
             if chain.showsWorkspaceField {
@@ -304,6 +316,7 @@ private struct ProviderChainView: View {
                         .controlSize(.small)
                         .frame(width: 190)
                         .accessibilityLabel(chain.workspaceFieldAccessibilityLabel)
+                        .accessibilityIdentifier(AccessibilityID.settingsProviderWorkspace(chain.provider))
                 }
 
                 if let workspaceCaption = chain.workspaceCaption {
@@ -316,6 +329,7 @@ private struct ProviderChainView: View {
 
 private struct ProviderChainStepView: View {
     let step: ProviderChainStepRow
+    let provider: ProviderID
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -343,12 +357,14 @@ private struct ProviderChainStepView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Step \(step.number), \(step.name): \(step.stateText)")
+        .accessibilityIdentifier(AccessibilityID.settingsProviderChain(provider, step: step.number))
     }
 }
 
 /// Amber-tinted guidance box shown inside a stale provider's disclosure.
 private struct RecoveryCalloutView: View {
     let text: String
+    let provider: ProviderID
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -364,6 +380,7 @@ private struct RecoveryCalloutView: View {
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(text)
+        .accessibilityIdentifier(AccessibilityID.settingsProviderCallout(provider))
     }
 }
 
@@ -428,6 +445,7 @@ private struct NotificationsSettingsPane: View {
                             step: 1
                         )
                         .labelsHidden()
+                        .accessibilityIdentifier(AccessibilityID.settingsThreshold)
                         Text("% remaining")
                     }
                 }
@@ -435,6 +453,7 @@ private struct NotificationsSettingsPane: View {
                 SettingsCaption("One alert per usage window each reset cycle. Stale data never alerts.")
             }
         }
+        .accessibilityIdentifier(AccessibilityID.settingsTabNotifications)
     }
 }
 
