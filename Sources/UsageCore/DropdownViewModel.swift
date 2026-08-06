@@ -103,7 +103,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
             self.statusTone = tone(for: usage)
         case let .stale(last: usage?, reason: reason):
             self.isStale = true
-            self.staleMessage = "Stale: \(reason.dropdownMessage)"
+            self.staleMessage = "Stale: \(reason.dropdownMessage(for: provider))"
             self.fiveHour = DropdownUsageWindowRow.fiveHour(
                 for: usage.fiveHour,
                 now: now,
@@ -132,7 +132,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
             self.statusTone = tone(for: usage)
         case let .stale(last: nil, reason: reason):
             self.isStale = true
-            self.staleMessage = "Stale: \(reason.dropdownMessage)"
+            self.staleMessage = "Stale: \(reason.dropdownMessage(for: provider))"
             self.fiveHour = provider.showsFiveHourWindow
                 ? DropdownUsageWindowRow.placeholder(title: "5h")
                 : nil
@@ -277,7 +277,11 @@ private extension ProviderID {
 }
 
 private extension StaleReason {
-    var dropdownMessage: String {
+    /// One-line stale hint rendered inside a provider's dropdown row. Takes
+    /// the provider so the message names the failing subsystem — without
+    /// this, MiniMax would inherit OpenCode-specific wording like "sign in
+    /// again in Chrome" and tell the user to fix the wrong service.
+    func dropdownMessage(for provider: ProviderID) -> String {
         switch self {
         case .parseFailure:
             return "parse failure"
@@ -288,9 +292,23 @@ private extension StaleReason {
         case .credentialUnavailable:
             return "credential unavailable"
         case .workspaceSelectionRequired:
-            return "select an OpenCode Go workspace in Settings"
+            switch provider {
+            case .openCodeGo:
+                return "select an OpenCode Go workspace in Settings"
+            case .claude, .codex, .miniMax:
+                return "select a workspace in Settings"
+            }
         case .sessionExpired:
-            return "OpenCode session expired; sign in again in Chrome"
+            switch provider {
+            case .openCodeGo:
+                return "OpenCode session expired; sign in again in Chrome"
+            case .claude:
+                return "claude.ai session expired; sign in again in Chrome"
+            case .codex:
+                return "Codex session expired; sign in again in the Codex app"
+            case .miniMax:
+                return "MiniMax key rejected; re-authenticate in OpenCode"
+            }
         }
     }
 }

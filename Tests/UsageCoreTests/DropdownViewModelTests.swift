@@ -213,22 +213,32 @@ func dropdownRowsOmitFiveHourPlaceholderForStaleCodexWithoutData() throws {
 }
 
 @Test(arguments: [
-    (StaleReason.parseFailure, "Stale: parse failure"),
-    (StaleReason.networkError, "Stale: network error"),
-    (StaleReason.tokenExpired, "Stale: token expired"),
-    (StaleReason.credentialUnavailable, "Stale: credential unavailable"),
-    (StaleReason.workspaceSelectionRequired, "Stale: select an OpenCode Go workspace in Settings"),
-    (StaleReason.sessionExpired, "Stale: OpenCode session expired; sign in again in Chrome"),
+    (ProviderID.claude, StaleReason.parseFailure, "Stale: parse failure"),
+    (.claude, .networkError, "Stale: network error"),
+    (.claude, .tokenExpired, "Stale: token expired"),
+    (.claude, .credentialUnavailable, "Stale: credential unavailable"),
+    (.claude, .sessionExpired, "Stale: claude.ai session expired; sign in again in Chrome"),
+    (.claude, .workspaceSelectionRequired, "Stale: select a workspace in Settings"),
+    (.codex, .sessionExpired, "Stale: Codex session expired; sign in again in the Codex app"),
+    (.codex, .workspaceSelectionRequired, "Stale: select a workspace in Settings"),
+    (.openCodeGo, .sessionExpired, "Stale: OpenCode session expired; sign in again in Chrome"),
+    (.openCodeGo, .workspaceSelectionRequired, "Stale: select an OpenCode Go workspace in Settings"),
+    (.miniMax, .sessionExpired, "Stale: MiniMax key rejected; re-authenticate in OpenCode"),
+    (.miniMax, .workspaceSelectionRequired, "Stale: select a workspace in Settings"),
 ])
-func dropdownStaleMessageMatchesStaleReason(reason: StaleReason, expectedMessage: String) throws {
+func dropdownStaleMessageNamesTheFailingProvider(
+    provider: ProviderID,
+    reason: StaleReason,
+    expectedMessage: String
+) throws {
     let model = DropdownViewModel(
-        states: [.claude: .stale(last: nil, reason: reason)],
+        states: [provider: .stale(last: nil, reason: reason)],
         now: referenceNow,
         calendar: deterministicCalendar(),
         locale: Locale(identifier: "en_US_POSIX")
     )
 
-    let row = try #require(model.rows.first { $0.provider == .claude })
+    let row = try #require(model.rows.first { $0.provider == provider })
     #expect(row.staleMessage == expectedMessage)
 }
 

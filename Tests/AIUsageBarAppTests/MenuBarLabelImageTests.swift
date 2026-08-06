@@ -110,6 +110,31 @@ func menuBarLabelImageIsNilWhenAllProvidersAreHidden() {
 }
 
 @Test
+@MainActor
+func menuBarLabelImageStacksFourProvidersVertically() throws {
+    // The first time all four providers can be visible simultaneously,
+    // MenuBarLabelImage.layout must still produce exactly two rows and a
+    // width that fits the row with the widest partition candidate. The
+    // exact split (which providers go top vs. bottom) is chosen by the
+    // minimizing-widest-row algorithm; the height invariant is what proves
+    // the algorithm stayed in the two-row case for 3+ segments.
+    let segments = [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeGo, value: "88/74/92", isStale: false),
+        MenuBarTitleSegment(provider: .miniMax, value: "76/55", isStale: false),
+    ]
+    let image = try #require(MenuBarLabelImage.image(for: segments))
+    let layout = try #require(MenuBarLabelImage.layout(for: segments))
+
+    #expect(image.isTemplate)
+    #expect(image.size.height == MenuBarLabelImage.rowHeight * 2)
+    #expect(image.size.height <= 22)
+    #expect(layout.rows.count == 2)
+    #expect(image.size.width == ceil(layout.size.width))
+}
+
+@Test
 func menuBarLabelLayoutPlacesFirstSegmentInTopRow() throws {
     let layout = try #require(MenuBarLabelImage.layout(for: [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
