@@ -390,10 +390,10 @@ Insert before the existing `(_, .networkError)` catch-all:
         case (.miniMax, .credentialUnavailable):
             return prefix + "No MiniMax key found. Sign in to the MiniMax provider in "
                 + "OpenCode (`opencode auth login`) \u{2014} AIUsageBar borrows that key "
-                + "read-only."
+                + "read-only \u{2014} then choose Refresh Now from the menu bar."
         case (.miniMax, .tokenExpired):
             return prefix + "The MiniMax key was rejected. Re-authenticate the MiniMax "
-                + "provider in OpenCode."
+                + "provider in OpenCode, then choose Refresh Now from the menu bar."
         case (.miniMax, .sessionExpired):
             return prefix + "Re-authenticate the MiniMax provider in OpenCode, then choose "
                 + "Refresh Now from the menu bar."

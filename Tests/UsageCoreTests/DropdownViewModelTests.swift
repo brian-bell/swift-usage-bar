@@ -20,6 +20,26 @@ func dropdownRowsUseStableProviderOrderAndOmitHiddenProviders() throws {
 }
 
 @Test
+func dropdownRowsShowTwoWindowsForFreshMiniMax() throws {
+    // Pin MiniMax's dropdown rendering shape: it identifies as "MiniMax",
+    // exposes a 5h row (like Claude, unlike Codex's weekly-only), and does
+    // not show a Monthly row (the row init special-cases `provider ==
+    // .openCodeGo` for that). A regression in any of these branches would
+    // silently drop or duplicate content.
+    let model = DropdownViewModel(
+        states: [.miniMax: .fresh(miniMaxUsage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .miniMax })
+    #expect(row.providerName == "MiniMax")
+    #expect(row.fiveHour != nil)
+    #expect(row.monthly == nil)
+}
+
+@Test
 func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
     let usage = ProviderUsage(
         fiveHour: UsageWindow(
@@ -295,6 +315,11 @@ private let claudeUsage = ProviderUsage(
 private let codexUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 90, resetsAt: referenceNow.addingTimeInterval(6 * 24 * 60 * 60))
+)
+
+private let miniMaxUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: 76, resetsAt: referenceNow.addingTimeInterval(2 * 60 * 60)),
+    weekly: UsageWindow(percentRemaining: 55, resetsAt: referenceNow.addingTimeInterval(5 * 24 * 60 * 60))
 )
 
 private func deterministicCalendar() -> Calendar {

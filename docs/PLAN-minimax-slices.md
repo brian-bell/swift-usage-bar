@@ -145,9 +145,11 @@ status UI".
     say `Network error`, unlike the statusline cache).
   - Recovery callouts per the plan: `.credentialUnavailable` →
     "No MiniMax key found. Sign in to the MiniMax provider in OpenCode
-    (`opencode auth login`) — AIUsageBar borrows that key read-only.";
+    (`opencode auth login`) — AIUsageBar borrows that key read-only —
+    then choose Refresh Now from the menu bar.";
     `.tokenExpired` → "The MiniMax key was rejected. Re-authenticate the
-    MiniMax provider in OpenCode."; `.networkError` / `.parseFailure` →
+    MiniMax provider in OpenCode, then choose Refresh Now from the menu
+    bar."; `.networkError` / `.parseFailure` →
     generic phrasing consistent with the other providers.
   - Auto-expand-when-stale already generalizes — verify.
 - `MenuBarTitleFormatter`: four-visible-providers two-row partition test (the
