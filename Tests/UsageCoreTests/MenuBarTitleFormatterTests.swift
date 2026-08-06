@@ -161,6 +161,35 @@ func menuBarTitleFormatterRendersFreshMiniMaxAsMxSymbol() {
     #expect(plainText(title) == "Mx 76/55")
 }
 
+@Test
+func menuBarTitleFormatterEmitsFourSegmentsInProviderOrderWhenAllVisible() {
+    // The first time all four providers can be visible simultaneously the
+    // formatter must produce four segments in `ProviderID.allCases` order
+    // (Claude, Codex, OpenCode Go, MiniMax) with each provider's own
+    // display shape (two-window / weekly-only / three-window / two-window).
+    // The image-partition algorithm is tested separately in
+    // `MenuBarLabelImageTests`; this pins the formatter that feeds it.
+    let openCodeGoUsage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 74, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 92, resetsAt: nil)
+    )
+
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .fresh(claudeUsage, asOf: Date(timeIntervalSince1970: 10)),
+        .codex: .fresh(codexUsage, asOf: Date(timeIntervalSince1970: 20)),
+        .openCodeGo: .fresh(openCodeGoUsage, asOf: Date(timeIntervalSince1970: 30)),
+        .miniMax: .fresh(miniMaxUsage, asOf: Date(timeIntervalSince1970: 40)),
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeGo, value: "88/74/92", isStale: false),
+        MenuBarTitleSegment(provider: .miniMax, value: "76/55", isStale: false),
+    ])
+}
+
 private let claudeUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 62, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 81, resetsAt: nil)

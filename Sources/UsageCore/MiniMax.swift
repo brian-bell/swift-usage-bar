@@ -215,6 +215,44 @@ public protocol MiniMaxTransporting: Sendable {
     func fetchTokenPlan(credential: MiniMaxCredential) async throws -> MiniMaxTokenPlanResponse
 }
 
+public struct MiniMaxHTTPTransport: MiniMaxTransporting {
+    public static let endpoint = URL(string: "https://api.minimax.io/v1/token_plan/remains")!
+
+    private let sender: any HTTPTransport
+    private let now: @Sendable () -> Date
+
+    public init(
+        sender: any HTTPTransport = URLSessionHTTPTransport(),
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.sender = sender
+        self.now = now
+    }
+
+    public func fetchTokenPlan(credential: MiniMaxCredential) async throws -> MiniMaxTokenPlanResponse {
+        let (data, response) = try await sender.send(Self.request(for: credential))
+        // Non-2xx is a transport-level failure. Auth rejection for this
+        // endpoint is HTTP 200 + `base_resp.status_code == 1004` (see
+        // docs/endpoints.md); the parser owns that mapping. Do not map
+        // 401 → `.tokenExpired` here — MiniMax's evidenced auth failure
+        // is body-shaped, and reusing Claude/Codex's status-code helper
+        // would invent a second auth path without evidence.
+        guard (200..<300).contains(response.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return MiniMaxTokenPlanResponse(data: data, receivedAt: now())
+    }
+
+    private static func request(for credential: MiniMaxCredential) -> URLRequest {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(credential.key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("AIUsageBar/\(UsageCore.version)", forHTTPHeaderField: "User-Agent")
+        return request
+    }
+}
+
 public struct MiniMaxUsageProvider: UsageProvider {
     private let credentialReader: any MiniMaxCredentialReading
     private let transport: any MiniMaxTransporting

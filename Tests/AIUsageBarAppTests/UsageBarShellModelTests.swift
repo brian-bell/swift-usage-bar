@@ -539,6 +539,42 @@ func stagedVisibilityDoesNotResurrectTheChainRecordedBeforeAProviderWasTurnedOff
     }
 }
 
+@Test
+@MainActor
+func stagedVisibilityDoesNotResurrectMiniMaxChainWhenStagedBackOn() throws {
+    // Same invariant as the codex case above, but for MiniMax (single-step
+    // chain). Without this, enabling MiniMax in Settings and not yet polling
+    // would render a green "Used 3 h ago" step under a row that says
+    // `Checking…`.
+    try withIsolatedDefaults { defaults in
+        let appState = AppState()
+        let model = shellModel(appState: appState, settingsStore: SettingsStore(defaults: defaults))
+        let miniMaxUsage = ProviderUsage(
+            fiveHour: UsageWindow(percentRemaining: 76, resetsAt: nil),
+            weekly: UsageWindow(percentRemaining: 55, resetsAt: nil)
+        )
+
+        appState.applyRefreshResult(
+            provider: .miniMax,
+            state: .fresh(miniMaxUsage, asOf: referenceNow.addingTimeInterval(-3 * 60 * 60)),
+            completedAt: referenceNow.addingTimeInterval(-3 * 60 * 60),
+            source: .minimaxTokenPlanAPI,
+            chain: [ProviderDataSourceStep(.minimaxTokenPlanAPI, .used)]
+        )
+
+        model.setProvider(.miniMax, visible: false)
+
+        let rows = model.providerStatusViewModel(stagedVisibility: [.miniMax: true]).rows
+        let row = try #require(rows.first { $0.provider == .miniMax })
+        #expect(row.indicator == .checking)
+        #expect(row.stateLabel == "Checking\u{2026}")
+        #expect(row.ageLabel == nil)
+        #expect(row.text == "Checking\u{2026}")
+        #expect(row.chain.steps.map(\.stateText) == ["Standing by"])
+        #expect(row.chain.steps.map(\.indicator) == [nil])
+    }
+}
+
 private let referenceNow = Date(timeIntervalSince1970: 1_767_268_800)
 
 private let claudeUsage = ProviderUsage(

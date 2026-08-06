@@ -270,6 +270,48 @@ private enum TestError: Error {
     case boom
 }
 
+@Test
+func miniMaxProviderFreshPathThroughRealHTTPTransportAdapter() async throws {
+    // Adapter wiring smoke: the real `MiniMaxHTTPTransport` (driven by a
+    // recording `HTTPTransport` fake) plugged into `MiniMaxUsageProvider`
+    // produces fresh usage + single-step chain + `.minimaxTokenPlanAPI`
+    // source. The exhaustive failure matrix above uses the actor-shaped
+    // `FakeMiniMaxTransport`; this one pins that the real adapter is wired
+    // up correctly end to end.
+    let receivedAt = Date(timeIntervalSince1970: 1_786_000_000)
+    let fixture = try fixtureData("minimax-token-plan.json")
+    let url = try #require(URL(string: "https://api.minimax.io/v1/token_plan/remains"))
+    let response = try #require(
+        HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)
+    )
+    let sender = RecordingHTTPTransport(response: (fixture, response))
+    let transport = MiniMaxHTTPTransport(sender: sender, now: { receivedAt })
+    let reader = FakeMiniMaxCredentialReader(result: .fresh(MiniMaxCredential(key: "sk-test")))
+
+    let provider = MiniMaxUsageProvider(credentialReader: reader, transport: transport)
+    let report = await provider.fetchReport(previous: nil, mode: .interactive)
+
+    let expected = try MiniMaxTokenPlanParser().parse(fixture)
+    #expect(report.state == .fresh(expected, asOf: receivedAt))
+    #expect(report.chain == [ProviderDataSourceStep(.minimaxTokenPlanAPI, .used)])
+    #expect(report.source == .minimaxTokenPlanAPI)
+    #expect(await sender.requests.count == 1)
+}
+
+private final class RecordingHTTPTransport: HTTPTransport, @unchecked Sendable {
+    private let response: (Data, HTTPURLResponse)
+    private(set) var requests: [URLRequest] = []
+
+    init(response: (Data, HTTPURLResponse)) {
+        self.response = response
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        requests.append(request)
+        return response
+    }
+}
+
 private final class FakeMiniMaxCredentialReader: MiniMaxCredentialReading, @unchecked Sendable {
     let result: MiniMaxCredentialReadResult?
     let error: (any Error)?

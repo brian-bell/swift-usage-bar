@@ -145,6 +145,125 @@ func providerStatusShowsMiniMaxRecoveryCalloutAndChainCaption() throws {
 }
 
 @Test
+func providerStatusShowsMiniMaxLiveChain() throws {
+    // Fresh MiniMax populates the one-line status with the source the
+    // provider actually used (`.minimaxTokenPlanAPI` → "MiniMax token plan
+    // API"), the disclosure below it shows a single Used step with a green
+    // dot and no recovery callout, and the OpenCode-key caption explains the
+    // source. The chain is a single step because MiniMax's
+    // `dataSourceChain` is `[.minimaxTokenPlanAPI]`.
+    let model = ProviderStatusViewModel(
+        states: [.miniMax: .fresh(statusUsage, asOf: statusNow)],
+        dataSources: [.miniMax: .minimaxTokenPlanAPI],
+        chains: [.miniMax: [
+            ProviderDataSourceStep(.minimaxTokenPlanAPI, .used),
+        ]],
+        lastUpdatedAt: [.miniMax: statusNow.addingTimeInterval(-120)],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .miniMax })
+    #expect(row.indicator == .live)
+    #expect(row.stateLabel == "Live")
+    #expect(row.methodLabel == "MiniMax token plan API")
+    #expect(row.ageLabel == "updated 2 min ago")
+    #expect(row.text == "Live \u{00B7} MiniMax token plan API \u{00B7} updated 2 min ago")
+    #expect(row.chain.steps.map(\.stateText) == ["Used 2 min ago"])
+    #expect(row.chain.steps.map(\.indicator) == [.live])
+    #expect(row.chain.recoveryCallout == nil)
+    #expect(row.chain.caption == """
+        Reads only the OpenCode auth.json key for the MiniMax provider. All access is \
+        read-only.
+        """)
+}
+
+@Test
+func providerStatusShowsMiniMaxTokenExpiredRecoveryCallout() throws {
+    // `.tokenExpired` (the body-shaped `base_resp.status_code == 1004`)
+    // surfaces a "MiniMax key rejected" method, a "Key rejected" chain-step
+    // phrase (the failure is not a generic Token expired), and the
+    // MiniMax-specific recovery callout that names the next concrete step.
+    let model = ProviderStatusViewModel(
+        states: [.miniMax: .stale(last: statusUsage, reason: .tokenExpired)],
+        chains: [.miniMax: [
+            ProviderDataSourceStep(.minimaxTokenPlanAPI, .failed(.tokenExpired)),
+        ]],
+        lastUpdatedAt: [.miniMax: statusNow.addingTimeInterval(-600)],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .miniMax })
+    #expect(row.methodLabel == "MiniMax key rejected")
+    #expect(row.chain.steps.map(\.stateText) == ["Key rejected \u{00B7} 10 min ago"])
+    #expect(row.chain.steps.map(\.indicator) == [.stale])
+    #expect(
+        row.chain.recoveryCallout
+            == "Showing last-known data. The MiniMax key was rejected. Re-authenticate the MiniMax "
+                + "provider in OpenCode, then choose Refresh Now from the menu bar."
+    )
+}
+
+@Test(arguments: [
+    (StaleReason.networkError, "Showing last-known data. Check your network connection, then choose Refresh Now from the menu bar."),
+    (StaleReason.parseFailure, "Showing last-known data. The service returned an unexpected response; this usually clears on its own."),
+])
+func providerStatusShowsMiniMaxNetworkAndParseRecoveryCallouts(
+    reason: StaleReason,
+    expectedCallout: String
+) throws {
+    // Network/parse failures route through the generic catch-all in
+    // `recoveryCallout(for:)` — proved here for MiniMax so the provider
+    // can't quietly inherit OpenCode/Chrome-specific wording.
+    let model = ProviderStatusViewModel(
+        states: [.miniMax: .stale(last: statusUsage, reason: reason)],
+        chains: [.miniMax: [
+            ProviderDataSourceStep(.minimaxTokenPlanAPI, .failed(reason)),
+        ]],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .miniMax })
+    #expect(row.chain.recoveryCallout == expectedCallout)
+}
+
+@Test
+func providerStatusAutoExpandsStaleMiniMax() throws {
+    // The auto-expand-when-stale rule is provider-agnostic, but MiniMax
+    // only became a real provider in Slice 3 — pin one case here so the
+    // OpenCode-GO-only parametrized matrix in `ProviderChainViewModelTests`
+    // doesn't silently drop the new provider.
+    let model = ProviderStatusViewModel(
+        states: [.miniMax: .stale(last: statusUsage, reason: .tokenExpired)],
+        chains: [.miniMax: [
+            ProviderDataSourceStep(.minimaxTokenPlanAPI, .failed(.tokenExpired)),
+        ]],
+        now: statusNow
+    )
+
+    #expect(model.expandedProviders(remembering: []).contains(.miniMax))
+}
+
+@Test
+func providerStatusDoesNotAutoExpandFreshMiniMax() throws {
+    // Belongs in the same companion test as the stale case: a fresh
+    // MiniMax must not auto-expand, and a hidden one must not either.
+    let freshModel = ProviderStatusViewModel(
+        states: [.miniMax: .fresh(statusUsage, asOf: statusNow)],
+        chains: [.miniMax: [
+            ProviderDataSourceStep(.minimaxTokenPlanAPI, .used),
+        ]],
+        now: statusNow
+    )
+    #expect(!freshModel.expandedProviders(remembering: []).contains(.miniMax))
+
+    let hiddenModel = ProviderStatusViewModel(
+        states: [.miniMax: .hidden],
+        now: statusNow
+    )
+    #expect(!hiddenModel.expandedProviders(remembering: []).contains(.miniMax))
+}
+
+@Test
 func providerStatusRendersOffForHiddenProvider() throws {
     let model = ProviderStatusViewModel(
         states: [.openCodeGo: .hidden],
