@@ -128,6 +128,39 @@ func menuBarTitleFormatterShowsPlaceholdersWhenProvidersHaveNoDataYet() {
     #expect(plainText(title) == "* --/--  # --")
 }
 
+@Test
+func menuBarTitleFormatterRendersFreshMiniMaxAsTwoWindowDisplay() {
+    // MiniMax is two-window like Claude. A fresh state surfaces the segment
+    // value through `remainingDisplay(for:)` with both `fiveHour` and
+    // `weekly` windows joined by `/` — pin that shape, since omitting
+    // `.miniMax` from `remainingDisplay(for:)` would silently fall back to
+    // `"--/--"`.
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .miniMax: .fresh(miniMaxUsage, asOf: Date(timeIntervalSince1970: 30)),
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .miniMax, value: "76/55", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterRendersFreshMiniMaxAsMxSymbol() {
+    // The `format` path joins `symbol` and the segment value, so this pins
+    // the full menu-bar rendering for MiniMax end to end: the `Mx` symbol
+    // (from `ProviderID.symbol`), the two-window value, and the absence of
+    // a stale `~` prefix on fresh data.
+    let title = MenuBarTitleFormatter.format([
+        .claude: .hidden,
+        .codex: .hidden,
+        .miniMax: .fresh(miniMaxUsage, asOf: Date(timeIntervalSince1970: 30)),
+    ])
+
+    #expect(plainText(title) == "Mx 76/55")
+}
+
 private let claudeUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 62, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 81, resetsAt: nil)
@@ -136,6 +169,11 @@ private let claudeUsage = ProviderUsage(
 private let codexUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 90, resetsAt: nil)
+)
+
+private let miniMaxUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: 76, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: 55, resetsAt: nil)
 )
 
 private func plainText(_ attributedString: AttributedString) -> String {

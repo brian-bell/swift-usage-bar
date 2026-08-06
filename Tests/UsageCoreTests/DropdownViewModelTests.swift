@@ -8,6 +8,7 @@ func dropdownRowsUseStableProviderOrderAndOmitHiddenProviders() throws {
         states: [
             .codex: .fresh(codexUsage, asOf: referenceNow),
             .claude: .hidden,
+            .miniMax: .hidden,
         ],
         now: referenceNow,
         calendar: deterministicCalendar(),
@@ -16,6 +17,26 @@ func dropdownRowsUseStableProviderOrderAndOmitHiddenProviders() throws {
 
     #expect(model.rows.map(\.provider) == [.codex])
     #expect(model.rows.map(\.providerName) == ["Codex"])
+}
+
+@Test
+func dropdownRowsShowTwoWindowsForFreshMiniMax() throws {
+    // Pin MiniMax's dropdown rendering shape: it identifies as "MiniMax",
+    // exposes a 5h row (like Claude, unlike Codex's weekly-only), and does
+    // not show a Monthly row (the row init special-cases `provider ==
+    // .openCodeGo` for that). A regression in any of these branches would
+    // silently drop or duplicate content.
+    let model = DropdownViewModel(
+        states: [.miniMax: .fresh(miniMaxUsage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .miniMax })
+    #expect(row.providerName == "MiniMax")
+    #expect(row.fiveHour != nil)
+    #expect(row.monthly == nil)
 }
 
 @Test
@@ -192,22 +213,35 @@ func dropdownRowsOmitFiveHourPlaceholderForStaleCodexWithoutData() throws {
 }
 
 @Test(arguments: [
-    (StaleReason.parseFailure, "Stale: parse failure"),
-    (StaleReason.networkError, "Stale: network error"),
-    (StaleReason.tokenExpired, "Stale: token expired"),
-    (StaleReason.credentialUnavailable, "Stale: credential unavailable"),
-    (StaleReason.workspaceSelectionRequired, "Stale: select an OpenCode Go workspace in Settings"),
-    (StaleReason.sessionExpired, "Stale: OpenCode session expired; sign in again in Chrome"),
+    (ProviderID.claude, StaleReason.parseFailure, "Stale: parse failure"),
+    (.claude, .networkError, "Stale: network error"),
+    (.claude, .tokenExpired, "Stale: token expired"),
+    (.claude, .credentialUnavailable, "Stale: credential unavailable"),
+    (.claude, .sessionExpired, "Stale: claude.ai session expired; sign in again in Chrome"),
+    (.claude, .workspaceSelectionRequired, "Stale: workspace selection required"),
+    (.codex, .tokenExpired, "Stale: token expired"),
+    (.codex, .sessionExpired, "Stale: Codex session expired; sign in again in the Codex app"),
+    (.codex, .workspaceSelectionRequired, "Stale: workspace selection required"),
+    (.openCodeGo, .tokenExpired, "Stale: token expired"),
+    (.openCodeGo, .sessionExpired, "Stale: OpenCode session expired; sign in again in Chrome"),
+    (.openCodeGo, .workspaceSelectionRequired, "Stale: select an OpenCode Go workspace in Settings"),
+    (.miniMax, .tokenExpired, "Stale: MiniMax key rejected; re-authenticate in OpenCode"),
+    (.miniMax, .sessionExpired, "Stale: MiniMax key rejected; re-authenticate in OpenCode"),
+    (.miniMax, .workspaceSelectionRequired, "Stale: workspace selection required"),
 ])
-func dropdownStaleMessageMatchesStaleReason(reason: StaleReason, expectedMessage: String) throws {
+func dropdownStaleMessageNamesTheFailingProvider(
+    provider: ProviderID,
+    reason: StaleReason,
+    expectedMessage: String
+) throws {
     let model = DropdownViewModel(
-        states: [.claude: .stale(last: nil, reason: reason)],
+        states: [provider: .stale(last: nil, reason: reason)],
         now: referenceNow,
         calendar: deterministicCalendar(),
         locale: Locale(identifier: "en_US_POSIX")
     )
 
-    let row = try #require(model.rows.first { $0.provider == .claude })
+    let row = try #require(model.rows.first { $0.provider == provider })
     #expect(row.staleMessage == expectedMessage)
 }
 
@@ -255,6 +289,7 @@ func dropdownSummaryIsNilWhenAllProvidersAreHidden() {
         states: [
             .claude: .hidden,
             .codex: .hidden,
+            .miniMax: .hidden,
         ],
         lastUpdatedAt: [
             .claude: referenceNow,
@@ -293,6 +328,11 @@ private let claudeUsage = ProviderUsage(
 private let codexUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 90, resetsAt: referenceNow.addingTimeInterval(6 * 24 * 60 * 60))
+)
+
+private let miniMaxUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: 76, resetsAt: referenceNow.addingTimeInterval(2 * 60 * 60)),
+    weekly: UsageWindow(percentRemaining: 55, resetsAt: referenceNow.addingTimeInterval(5 * 24 * 60 * 60))
 )
 
 private func deterministicCalendar() -> Calendar {

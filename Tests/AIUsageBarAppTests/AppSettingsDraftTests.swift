@@ -197,10 +197,11 @@ struct AppSettingsDraftProvidersTabTests {
 
     @Test
     @MainActor
-    func placeholderHidesOpenCodeGoOnly() {
+    func placeholderHidesOpenCodeGoAndMiniMax() {
         #expect(AppSettingsDraft.placeholder.visibility(for: .claude))
         #expect(AppSettingsDraft.placeholder.visibility(for: .codex))
         #expect(!AppSettingsDraft.placeholder.visibility(for: .openCodeGo))
+        #expect(!AppSettingsDraft.placeholder.visibility(for: .miniMax))
     }
 
     @Test

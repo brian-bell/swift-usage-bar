@@ -19,6 +19,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
     case codexAppServer
     /// OpenCode Go: `opencode.ai` with the read-only Chrome cookie.
     case openCodeGoChromeCookie
+    /// MiniMax: token plan API authenticated by an OpenCode auth.json key.
+    case minimaxTokenPlanAPI
 
     public var provider: ProviderID {
         switch self {
@@ -28,6 +30,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return .codex
         case .openCodeGoChromeCookie:
             return .openCodeGo
+        case .minimaxTokenPlanAPI:
+            return .miniMax
         }
     }
 
@@ -46,6 +50,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "Codex desktop app"
         case .openCodeGoChromeCookie:
             return "Chrome cookie"
+        case .minimaxTokenPlanAPI:
+            return "MiniMax token plan API"
         }
     }
 
@@ -62,6 +68,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "Codex app-server \u{00B7} Desktop sign-in"
         case .openCodeGoChromeCookie:
             return "Chrome cookie \u{00B7} opencode.ai"
+        case .minimaxTokenPlanAPI:
+            return "MiniMax token plan API (OpenCode key)"
         }
     }
 }
@@ -78,6 +86,8 @@ public extension ProviderID {
             return [.codexAPI, .codexAppServer]
         case .openCodeGo:
             return [.openCodeGoChromeCookie]
+        case .miniMax:
+            return [.minimaxTokenPlanAPI]
         }
     }
 }

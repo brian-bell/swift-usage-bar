@@ -11,9 +11,24 @@ func settingsStoreReturnsDefaultsWhenNothingHasBeenSaved() {
         #expect(store.isProviderVisible(.claude))
         #expect(store.isProviderVisible(.codex))
         #expect(!store.isProviderVisible(.openCodeGo))
+        #expect(!store.isProviderVisible(.miniMax))
         #expect(store.thresholdPercent == 20)
         #expect(!store.launchAtLoginEnabled)
     }
+}
+
+@Test
+func providerIDIsHiddenByDefaultReportsMembershipInTheSingleSourceOfTruth() {
+    // The four sites that special-case a default-hidden provider
+    // (MenuBarTitleFormatter, DropdownViewModel, SettingsStore,
+    // AppSettingsDraft) all read from this membership. Pin it directly so
+    // adding a fifth default-hidden provider — or un-hiding one — can't
+    // drift between sites silently.
+    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .miniMax])
+    #expect(!ProviderID.claude.isHiddenByDefault)
+    #expect(!ProviderID.codex.isHiddenByDefault)
+    #expect(ProviderID.openCodeGo.isHiddenByDefault)
+    #expect(ProviderID.miniMax.isHiddenByDefault)
 }
 
 @Test
@@ -35,6 +50,17 @@ func settingsStoreRoundTripsProviderVisibility() {
         let reloaded = SettingsStore(defaults: defaults)
         #expect(!reloaded.isProviderVisible(.claude))
         #expect(reloaded.isProviderVisible(.codex))
+    }
+}
+
+@Test
+func settingsStoreRoundTripsMiniMaxVisibility() {
+    withIsolatedDefaults { defaults in
+        let store = SettingsStore(defaults: defaults)
+        store.setProvider(.miniMax, visible: true)
+
+        let reloaded = SettingsStore(defaults: defaults)
+        #expect(reloaded.isProviderVisible(.miniMax))
     }
 }
 

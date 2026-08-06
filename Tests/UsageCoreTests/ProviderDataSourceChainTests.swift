@@ -17,6 +17,14 @@ func providerDataSourceChainListsEachProvidersSourcesInFallbackOrder() {
     ])
     #expect(ProviderID.codex.dataSourceChain == [.codexAPI, .codexAppServer])
     #expect(ProviderID.openCodeGo.dataSourceChain == [.openCodeGoChromeCookie])
+    #expect(ProviderID.miniMax.dataSourceChain == [.minimaxTokenPlanAPI])
+}
+
+@Test
+func minimaxTokenPlanAPIDataSourceNamesMatchTheProviderStatusConvention() {
+    #expect(ProviderDataSource.minimaxTokenPlanAPI.provider == .miniMax)
+    #expect(ProviderDataSource.minimaxTokenPlanAPI.displayName == "MiniMax token plan API")
+    #expect(ProviderDataSource.minimaxTokenPlanAPI.chainStepName == "MiniMax token plan API (OpenCode key)")
 }
 
 @Test
@@ -280,6 +288,30 @@ func openCodeGoChainReportsItsSingleStepFailureReason() async {
         ProviderDataSourceStep(.openCodeGoChromeCookie, .failed(.credentialUnavailable)),
     ])
     #expect(report.source == nil)
+}
+
+@Test
+func minimaxTokenPlanAPIChainStepPhraseRoutesPerSource() {
+    // An `sk-…` API key doesn't expire on the wire — the server rejects it.
+    // The chain step must reflect that, not the generic "Token expired" /
+    // "Session expired" wording that fits the OAuth/cookie providers.
+    #expect(
+        ProviderDataSource.minimaxTokenPlanAPI.chainFailureSummary(for: .tokenExpired)
+            == "Key rejected"
+    )
+    #expect(
+        ProviderDataSource.minimaxTokenPlanAPI.chainFailureSummary(for: .sessionExpired)
+            == "Key rejected"
+    )
+    // The other HTTPS API sources keep their generic wording.
+    #expect(
+        ProviderDataSource.codexAPI.chainFailureSummary(for: .tokenExpired)
+            == "Token expired"
+    )
+    #expect(
+        ProviderDataSource.openCodeGoChromeCookie.chainFailureSummary(for: .sessionExpired)
+            == "Session expired"
+    )
 }
 
 // MARK: - Statusline-cache step wording, driven by the real reader

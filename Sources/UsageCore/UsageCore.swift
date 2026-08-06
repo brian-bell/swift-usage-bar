@@ -69,6 +69,20 @@ public enum ProviderID: CaseIterable, Hashable, Sendable {
     case claude
     case codex
     case openCodeGo
+    case miniMax
+
+    /// Providers that ship hidden: their menu-bar row, dropdown entry, and
+    /// default Settings visibility all skip them until they are explicitly
+    /// enabled and have produced data. The single source of truth — every
+    /// site that needs to special-case a default-hidden provider reads from
+    /// here rather than maintaining its own list.
+    public static let defaultHiddenProviders: Set<ProviderID> = [.openCodeGo, .miniMax]
+
+    /// Whether this provider ships hidden. The opposite direction of
+    /// `isProviderVisible` for an unrecorded UserDefaults key.
+    public var isHiddenByDefault: Bool {
+        Self.defaultHiddenProviders.contains(self)
+    }
 }
 
 public enum StaleReason: Equatable, Sendable {
@@ -131,6 +145,8 @@ private extension ProviderID {
             return "Codex"
         case .openCodeGo:
             return "OpenCode Go"
+        case .miniMax:
+            return "MiniMax"
         }
     }
 }
@@ -2058,7 +2074,7 @@ public enum MenuBarTitleFormatter {
     public static func segments(_ states: [ProviderID: ProviderState]) -> [MenuBarTitleSegment] {
         ProviderID.allCases.compactMap { provider -> MenuBarTitleSegment? in
             guard let state = states[provider] else {
-                if provider == .openCodeGo {
+                if Self.defaultHiddenProviders.contains(provider) {
                     return nil
                 }
                 return MenuBarTitleSegment(
@@ -2101,6 +2117,11 @@ public enum MenuBarTitleFormatter {
 
         return AttributedString(segments.joined(separator: "  "))
     }
+
+    /// Providers that ship hidden and don't render a placeholder until they
+    /// report at least once. The Settings tab lists them as `Off`; the menu bar
+    /// title skips them entirely.
+    private static let defaultHiddenProviders: Set<ProviderID> = ProviderID.defaultHiddenProviders
 }
 
 private struct ClaudeStatuslineResponse: Decodable {
@@ -2438,6 +2459,8 @@ private extension ProviderUsage {
             return weekly.percentRemaining.map(String.init) ?? "--"
         case .openCodeGo:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")/\(monthly?.percentRemaining.map(String.init) ?? "--")"
+        case .miniMax:
+            return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
         }
     }
 }
@@ -2450,6 +2473,8 @@ private func remainingPlaceholder(for provider: ProviderID) -> String {
         return "--"
     case .openCodeGo:
         return "--/--/--"
+    case .miniMax:
+        return "--/--"
     }
 }
 
@@ -2457,11 +2482,13 @@ private extension ProviderID {
     var symbol: String {
         switch self {
         case .claude:
-            "*"
+            return "*"
         case .codex:
-            "#"
+            return "#"
         case .openCodeGo:
-            "G"
+            return "G"
+        case .miniMax:
+            return "Mx"
         }
     }
 }

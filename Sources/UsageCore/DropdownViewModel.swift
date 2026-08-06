@@ -12,7 +12,7 @@ public struct DropdownViewModel: Equatable, Sendable {
         locale: Locale = .current
     ) {
         let rows = ProviderID.allCases.compactMap { provider -> DropdownProviderRow? in
-            if provider == .openCodeGo, states[provider] == nil {
+            if Self.defaultHiddenProviders.contains(provider), states[provider] == nil {
                 return nil
             }
             let state = states[provider] ?? .stale(last: nil, reason: .networkError)
@@ -35,6 +35,13 @@ public struct DropdownViewModel: Equatable, Sendable {
             .max()
             .map { formatUpdatedLabel(updatedAt: $0, now: now) }
     }
+
+    /// Providers that ship hidden and don't render a placeholder row until they
+    /// report at least once — both the menu bar title and the dropdown skip them
+    /// when they have no state, by design. The membership lives on `ProviderID`
+    /// so every site that needs to special-case a default-hidden provider reads
+    /// the same source of truth.
+    static let defaultHiddenProviders: Set<ProviderID> = ProviderID.defaultHiddenProviders
 }
 
 public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
@@ -96,7 +103,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
             self.statusTone = tone(for: usage)
         case let .stale(last: usage?, reason: reason):
             self.isStale = true
-            self.staleMessage = "Stale: \(reason.dropdownMessage)"
+            self.staleMessage = "Stale: \(reason.dropdownMessage(for: provider))"
             self.fiveHour = DropdownUsageWindowRow.fiveHour(
                 for: usage.fiveHour,
                 now: now,
@@ -125,7 +132,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
             self.statusTone = tone(for: usage)
         case let .stale(last: nil, reason: reason):
             self.isStale = true
-            self.staleMessage = "Stale: \(reason.dropdownMessage)"
+            self.staleMessage = "Stale: \(reason.dropdownMessage(for: provider))"
             self.fiveHour = provider.showsFiveHourWindow
                 ? DropdownUsageWindowRow.placeholder(title: "5h")
                 : nil
@@ -250,6 +257,8 @@ private extension ProviderID {
             return "Codex"
         case .openCodeGo:
             return "OpenCode Go"
+        case .miniMax:
+            return "MiniMax"
         }
     }
 
@@ -261,25 +270,62 @@ private extension ProviderID {
             return false
         case .openCodeGo:
             return true
+        case .miniMax:
+            return true
         }
     }
 }
 
 private extension StaleReason {
-    var dropdownMessage: String {
+    /// One-line stale hint rendered inside a provider's dropdown row. Takes
+    /// the provider so the message names the failing subsystem — without
+    /// this, MiniMax would inherit OpenCode-specific wording like "sign in
+    /// again in Chrome" and tell the user to fix the wrong service.
+    func dropdownMessage(for provider: ProviderID) -> String {
         switch self {
         case .parseFailure:
             return "parse failure"
         case .networkError:
             return "network error"
         case .tokenExpired:
-            return "token expired"
+            switch provider {
+            case .miniMax:
+                // The MiniMax API reports a rejected key as
+                // `base_resp.status_code == 1004` (docs/PLAN-minimax.md),
+                // which Slice 2 will map to `.tokenExpired`. The dropdown
+                // must say so; the generic "token expired" makes it look
+                // like an OAuth/Keychain expiry.
+                return "MiniMax key rejected; re-authenticate in OpenCode"
+            case .claude, .codex, .openCodeGo:
+                return "token expired"
+            }
         case .credentialUnavailable:
             return "credential unavailable"
         case .workspaceSelectionRequired:
-            return "select an OpenCode Go workspace in Settings"
+            switch provider {
+            case .openCodeGo:
+                return "select an OpenCode Go workspace in Settings"
+            case .claude, .codex, .miniMax:
+                // Unreachable in practice (no other provider surfaces this
+                // reason today), but the alternative would be to point
+                // Claude/Codex/MiniMax at a Settings field that only
+                // exists for OpenCode Go.
+                return "workspace selection required"
+            }
         case .sessionExpired:
-            return "OpenCode session expired; sign in again in Chrome"
+            switch provider {
+            case .openCodeGo:
+                return "OpenCode session expired; sign in again in Chrome"
+            case .claude:
+                return "claude.ai session expired; sign in again in Chrome"
+            case .codex:
+                return "Codex session expired; sign in again in the Codex app"
+            case .miniMax:
+                // Unreachable today (MiniMax never surfaces `.sessionExpired`
+                // per its failure mapping) but kept consistent with the row
+                // and chain-step wording should the mapping widen.
+                return "MiniMax key rejected; re-authenticate in OpenCode"
+            }
         }
     }
 }
