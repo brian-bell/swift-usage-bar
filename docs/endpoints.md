@@ -72,6 +72,7 @@ Phase 0 source checks and live-call results for the read-only usage providers.
   `model_remains` is an array keyed by `model_name`. The coding/token plan is the `"general"` entry (its 5h interval is exactly 18,000,000 ms; its weekly window is exactly 7 days). The `"video"` entry is a separate daily video quota and is ignored.
   Each `general` entry's `current_interval_remaining_percent` / `current_weekly_remaining_percent` are **percent remaining**, used directly. `end_time` (ms) → fiveHour reset; `weekly_end_time` (ms) → weekly reset.
 - Failure mapping: missing/unreadable `auth.json` or empty key → `.credentialUnavailable`; rejected key (`base_resp.status_code == 1004`) → `.tokenExpired`. AIUsageBar never refreshes the key either way.
+- Transport: shared `HTTPTransport` (`URLSessionHTTPTransport` in production) via `MiniMaxHTTPTransport`. Single GET, Bearer auth, `Content-Type: application/json`, `User-Agent: AIUsageBar/<version>`. Non-2xx throws `URLError(.badServerResponse)` and the provider surfaces `.networkError`. Auth rejection is body-shaped (HTTP 200 + `base_resp.status_code == 1004`) and is owned by the parser, not the transport. No cookie jar, no custom redirect filter, no host allow-list beyond the fixed endpoint URL.
 
 ### Rejected alternatives
 

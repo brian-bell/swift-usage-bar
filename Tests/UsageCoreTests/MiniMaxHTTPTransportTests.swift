@@ -21,7 +21,9 @@ func miniMaxHTTPTransportGETsFixedEndpointWithBearerAndJSONContentType() async t
     // This endpoint is a plain API key — no Cloudflare, no browser session,
     // no mobile-style headers. Asserting the absence keeps the contract
     // honest: a future "let's also send Origin/Referer" change has to
-    // update these tests.
+    // update these tests. (The Sec-Fetch-* family is implied by the
+    // absence of those — adding Cookie and Origin already would send
+    // means adding Sec-Fetch-* is the next likely step.)
     #expect(request.value(forHTTPHeaderField: "Cookie") == nil)
     #expect(request.value(forHTTPHeaderField: "Origin") == nil)
     #expect(request.value(forHTTPHeaderField: "Referer") == nil)
