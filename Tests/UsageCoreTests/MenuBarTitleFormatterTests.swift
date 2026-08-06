@@ -130,10 +130,11 @@ func menuBarTitleFormatterShowsPlaceholdersWhenProvidersHaveNoDataYet() {
 
 @Test
 func menuBarTitleFormatterRendersFreshMiniMaxAsTwoWindowMxLabel() {
-    // MiniMax is two-window like Claude, default-hidden until polled, and
-    // identifies itself with `Mx`. A fresh state surfaces all three at once:
-    // the symbol, the abbreviation shape, and the absent-state rule that lets
-    // it skip the placeholder row when hidden by its peers.
+    // MiniMax is two-window like Claude. A fresh state surfaces the segment
+    // value through `remainingDisplay(for:)` with both `fiveHour` and
+    // `weekly` windows joined by `/` — pin that shape, since omitting
+    // `.miniMax` from `remainingDisplay(for:)` would silently fall back to
+    // `"--/--"`.
     let segments = MenuBarTitleFormatter.segments([
         .claude: .hidden,
         .codex: .hidden,
