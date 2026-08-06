@@ -7,6 +7,31 @@ import UsageCore
 
 @Test
 @MainActor
+func shellModelFactoryUsesIsolatedDefaultsByDefault() {
+    let first = shellModel()
+    let second = shellModel()
+
+    first.setProvider(.claude, visible: false)
+    second.setProvider(.codex, visible: false)
+
+    #expect(!first.isProviderVisible(.claude))
+    #expect(first.isProviderVisible(.codex))
+    #expect(second.isProviderVisible(.claude))
+    #expect(!second.isProviderVisible(.codex))
+}
+
+@Test
+func recordingUsageControllerExposesRecordedPollIntervals() async {
+    let usageController = RecordingUsageController()
+
+    await usageController.setPollingInterval(300)
+    await usageController.setPollingInterval(600)
+
+    #expect(await usageController.recordedIntervals() == [300, 600])
+}
+
+@Test
+@MainActor
 func shellModelMenuBarSegmentsUseCoreFormatter() {
     let appState = AppState(providerStates: [
         .codex: .fresh(codexUsage, asOf: referenceNow),
@@ -537,119 +562,4 @@ func stagedVisibilityDoesNotResurrectTheChainRecordedBeforeAProviderWasTurnedOff
         #expect(row.chain.steps.map(\.stateText) == ["Standing by", "Standing by"])
         #expect(row.chain.steps.map(\.indicator) == [nil, nil])
     }
-}
-
-private let referenceNow = Date(timeIntervalSince1970: 1_767_268_800)
-
-private let claudeUsage = ProviderUsage(
-    fiveHour: UsageWindow(percentRemaining: 62, resetsAt: referenceNow.addingTimeInterval(2 * 60 * 60)),
-    weekly: UsageWindow(percentRemaining: 81, resetsAt: referenceNow.addingTimeInterval(5 * 24 * 60 * 60))
-)
-
-private let codexUsage = ProviderUsage(
-    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
-    weekly: UsageWindow(percentRemaining: 90, resetsAt: referenceNow.addingTimeInterval(6 * 24 * 60 * 60))
-)
-
-@MainActor
-private func shellModel(
-    appState: AppState = AppState(),
-    settingsStore: SettingsStore = SettingsStore(defaults: .standard),
-    usageController: any UsageControlling = RecordingUsageController(),
-    launchAtLoginManager: any LaunchAtLoginManaging = RecordingLaunchAtLoginManager()
-) -> UsageBarShellModel {
-    UsageBarShellModel(
-        appState: appState,
-        settingsStore: settingsStore,
-        usageController: usageController,
-        launchAtLoginManager: launchAtLoginManager,
-        now: { referenceNow }
-    )
-}
-
-private actor RecordingUsageController: UsageControlling {
-    private var refreshCalls = 0
-    private var intervals: [TimeInterval] = []
-
-    func start() async {}
-
-    func stop() async {}
-
-    func refreshNow() async {
-        refreshCalls += 1
-    }
-
-    func setPollingInterval(_ interval: TimeInterval) async {
-        intervals.append(interval)
-    }
-
-    func refreshCallCount() -> Int {
-        refreshCalls
-    }
-}
-
-private final class RecordingLaunchAtLoginManager: LaunchAtLoginManaging {
-    private let error: (any Error)?
-    private let statusAfterSet: LaunchAtLoginStatus?
-    var requests: [Bool] = []
-    var status: LaunchAtLoginStatus
-
-    init(
-        status: LaunchAtLoginStatus = .disabled,
-        error: (any Error)? = nil,
-        statusAfterSet: LaunchAtLoginStatus? = nil
-    ) {
-        self.status = status
-        self.error = error
-        self.statusAfterSet = statusAfterSet
-    }
-
-    func setEnabled(_ enabled: Bool) throws {
-        if status == .requiresApproval, enabled {
-            throw LaunchAtLoginError.requiresApproval
-        }
-
-        if let error {
-            throw error
-        }
-
-        requests.append(enabled)
-        if let statusAfterSet {
-            status = statusAfterSet
-        } else {
-            status = enabled ? .enabled : .disabled
-        }
-    }
-}
-
-private enum LaunchAtLoginTestError: Error {
-    case failed
-}
-
-private final class ObservationChangeRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recordedCount = 0
-
-    var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return recordedCount
-    }
-
-    func record() {
-        lock.lock()
-        recordedCount += 1
-        lock.unlock()
-    }
-}
-
-private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
-    let suiteName = "UsageBarShellModelTests.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suiteName)!
-    defaults.removePersistentDomain(forName: suiteName)
-    defer {
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    try body(defaults)
 }

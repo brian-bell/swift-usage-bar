@@ -20,12 +20,14 @@ struct MenuBarContentView: View {
                         await model.refreshNow()
                     }
                 }
+                .accessibilityIdentifier(AccessibilityID.menuBarRefresh)
 
                 Spacer()
 
                 Text(lastUpdatedText)
                     .foregroundStyle(.secondary)
                     .font(.caption)
+                    .accessibilityIdentifier(AccessibilityID.menuBarUpdated)
             }
 
             Divider()
@@ -39,6 +41,7 @@ struct MenuBarContentView: View {
                 .buttonStyle(.borderless)
                 .help("Settings")
                 .accessibilityLabel("Settings")
+                .accessibilityIdentifier(AccessibilityID.menuBarSettings)
                 .keyboardShortcut(",", modifiers: .command)
 
                 Spacer()
@@ -46,6 +49,7 @@ struct MenuBarContentView: View {
                 Button("Quit") {
                     NSApplication.shared.terminate(nil)
                 }
+                .accessibilityIdentifier(AccessibilityID.menuBarQuit)
                 .keyboardShortcut("q", modifiers: .command)
             }
         }
@@ -73,23 +77,41 @@ private struct ProviderUsageRowView: View {
                 ProviderIconView(provider: row.provider, size: 16)
                 Text(row.providerName)
                     .font(.headline)
+                    .accessibilityIdentifier(AccessibilityID.menuBarProvider(row.provider))
                 Spacer()
                 if let staleMessage = row.staleMessage {
                     Text(staleMessage)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .accessibilityIdentifier(AccessibilityID.menuBarProviderStale(row.provider))
                 }
             }
 
             if let fiveHour = row.fiveHour {
-                UsageWindowRowView(row: fiveHour)
+                UsageWindowRowView(
+                    row: fiveHour,
+                    provider: row.provider,
+                    window: .fiveHour
+                )
             }
-            UsageWindowRowView(row: row.weekly)
+            UsageWindowRowView(
+                row: row.weekly,
+                provider: row.provider,
+                window: .weekly
+            )
             if let monthly = row.monthly {
-                UsageWindowRowView(row: monthly)
+                UsageWindowRowView(
+                    row: monthly,
+                    provider: row.provider,
+                    window: .monthly
+                )
             }
             if let fable = row.fable {
-                UsageWindowRowView(row: fable)
+                UsageWindowRowView(
+                    row: fable,
+                    provider: row.provider,
+                    window: .fable
+                )
             }
         }
         .foregroundStyle(row.isStale ? .secondary : .primary)
@@ -98,22 +120,29 @@ private struct ProviderUsageRowView: View {
 
 private struct UsageWindowRowView: View {
     let row: DropdownUsageWindowRow
+    let provider: ProviderID
+    let window: AccessibilityID.WindowKey
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(row.title)
                     .frame(width: 52, alignment: .leading)
+                    .accessibilityIdentifier(AccessibilityID.menuBarWindow(provider, window))
                 Text(row.percentLabel)
                     .monospacedDigit()
+                    .accessibilityIdentifier(AccessibilityID.menuBarWindowPercent(provider, window))
                 Spacer()
                 Text(row.countdownLabel)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier(AccessibilityID.menuBarWindowCountdown(provider, window))
             }
             .font(.caption)
 
             ProgressView(value: row.barFraction)
                 .progressViewStyle(.linear)
+                .accessibilityIdentifier(AccessibilityID.menuBarWindowBar(provider, window))
+                .accessibilityValue(row.percentLabel)
         }
     }
 }
