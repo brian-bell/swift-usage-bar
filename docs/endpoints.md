@@ -62,3 +62,19 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 - Signed-out behavior: an unauthenticated request to a real workspace Go URL returned HTTP 302 to `/auth/authorize` on 2026-07-22. The sanitized contract fixture is `Tests/Fixtures/opencode-go-signed-out.html`; authentication redirects or login HTML map to `.sessionExpired`.
 - Transport: an ephemeral `URLSession` with shared cookie storage disabled. Authentication is attached manually only after validating an HTTPS URL whose host is exactly `opencode.ai`. Host-changing redirects are rejected and never receive the cookie. Every request has a finite timeout.
 - Reference implementation: CodexBar's current `OpenCodeGoUsageFetcher` confirms the hybrid workspace `_server` plus Go-page flow, but its generic key aliases, nested JSON heuristics, balance fallback, local SQLite estimation, stored/manual cookies, and extra browsers are deliberately outside this contract.
+
+## MiniMax (coding/token plan)
+
+- Auth source: read-only access to `${XDG_DATA_HOME:-~/.local/share}/opencode/auth.json`, key `minimax-coding-plan`, field `key` (a 125-char opaque `sk-…` token; no JWT segments, so no local expiry pre-check is possible). The reader ignores the entry's `type` field (OpenCode bookkeeping) and only requires a non-empty `key`. The file is read once per fetch; never written, never logged.
+- Endpoint: `GET https://api.minimax.io/v1/token_plan/remains` with `Authorization: Bearer <key>` and `Content-Type: application/json`. The `www.minimax.io` host serves the same payload; the app uses `api.minimax.io`. China-region hosts (`api.minimaxi.com`) are deliberately unsupported.
+- Auth-failure semantics: HTTP 200 + `base_resp.status_code == 1004` (login fail) means the key was rejected → maps to `.tokenExpired`. HTTP status alone cannot distinguish success from auth failure — the body must be inspected.
+- Response shape (sanitized fixture: `Tests/Fixtures/minimax-token-plan.json`):
+  `model_remains` is an array keyed by `model_name`. The coding/token plan is the `"general"` entry (its 5h interval is exactly 18,000,000 ms; its weekly window is exactly 7 days). The `"video"` entry is a separate daily video quota and is ignored.
+  Each `general` entry's `current_interval_remaining_percent` / `current_weekly_remaining_percent` are **percent remaining**, used directly. `end_time` (ms) → fiveHour reset; `weekly_end_time` (ms) → weekly reset.
+- Failure mapping: missing/unreadable `auth.json` or empty key → `.credentialUnavailable`; rejected key (`base_resp.status_code == 1004`) → `.tokenExpired`. AIUsageBar never refreshes the key either way.
+
+### Rejected alternatives
+
+- `https://api.minimax.io/v1/api/openplatform/coding_plan/remains` — requires a browser cookie session (returns 1004 with an API key per MiniMax-AI/MiniMax-M2#88). Not used.
+- China-region hosts (`api.minimaxi.com`) — no evidence, no user. Not used.
+- Reading the key from env vars, `~/.claude/settings.json`, the macOS Keychain, or browser cookies — no evidence supports a single source beyond `~/.local/share/opencode/auth.json`.
