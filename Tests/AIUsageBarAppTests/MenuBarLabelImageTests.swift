@@ -111,19 +111,32 @@ func menuBarLabelImageIsNilWhenAllProvidersAreHidden() {
 
 @Test
 @MainActor
-func menuBarLabelImageStacksFourProvidersVertically() throws {
+func menuBarLabelImagePartitionsFourProvidersAcrossTwoRows() throws {
     // The first time all four providers can be visible simultaneously,
-    // MenuBarLabelImage.layout must still produce exactly two rows and a
-    // width that fits the row with the widest partition candidate. The
-    // exact split (which providers go top vs. bottom) is chosen by the
-    // minimizing-widest-row algorithm; the height invariant is what proves
-    // the algorithm stayed in the two-row case for 3+ segments.
+    // MenuBarLabelImage.layout must still produce exactly two rows whose
+    // widest row is no wider than the widest row of any other contiguous
+    // split (in original order). Pin the partition invariant — a
+    // regression in the comparator (e.g. inverting `lhsWidth < rhsWidth`)
+    // would pick a needlessly wide split and still pass a height-only test.
     let segments = [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
         MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
         MenuBarTitleSegment(provider: .openCodeGo, value: "88/74/92", isStale: false),
         MenuBarTitleSegment(provider: .miniMax, value: "76/55", isStale: false),
     ]
+    let labels = segments.map(MenuBarLabelImage.rowLabel(for:))
+    let rowAttributes = MenuBarLabelImage.rowAttributes
+    func width(of text: String) -> CGFloat {
+        (text as NSString).size(withAttributes: rowAttributes).width
+    }
+
+    let candidateSplits: [(top: String, bottom: String, max: CGFloat)] =
+        (1..<labels.count).map { split in
+            let top = labels[..<split].joined(separator: "  ")
+            let bottom = labels[split...].joined(separator: "  ")
+            return (top, bottom, max(width(of: top), width(of: bottom)))
+        }
+
     let image = try #require(MenuBarLabelImage.image(for: segments))
     let layout = try #require(MenuBarLabelImage.layout(for: segments))
 
@@ -131,7 +144,18 @@ func menuBarLabelImageStacksFourProvidersVertically() throws {
     #expect(image.size.height == MenuBarLabelImage.rowHeight * 2)
     #expect(image.size.height <= 22)
     #expect(layout.rows.count == 2)
-    #expect(image.size.width == ceil(layout.size.width))
+    // The two rendered rows must concatenate to the segment labels in
+    // original order — the partition must preserve order.
+    #expect(
+        layout.rows.map(\.text).joined(separator: "  ")
+            == labels.joined(separator: "  ")
+    )
+    // The chosen split's widest row is no wider than any other candidate's.
+    let chosen = layout.rows.map(\.text)
+    let chosenMax = chosen.map(width).max() ?? 0
+    for candidate in candidateSplits {
+        #expect(chosenMax <= candidate.max)
+    }
 }
 
 @Test
