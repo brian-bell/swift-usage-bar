@@ -79,7 +79,9 @@ func miniMaxParserToleratesMalformedSiblingEntries() throws {
 
 @Test
 func miniMaxParserRejectsPercentOutOfRange() {
-    let cases: [Double] = [150, -5, .nan, .infinity]
+    // Only finite out-of-range values: NaN/Infinity cannot be encoded as JSON
+    // numbers, so interpolating them would only re-test undecodable bodies.
+    let cases: [Double] = [150, -5]
 
     for percent in cases {
         #expect(throws: UsageParsingError.parseFailure) {
