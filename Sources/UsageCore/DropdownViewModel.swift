@@ -288,7 +288,17 @@ private extension StaleReason {
         case .networkError:
             return "network error"
         case .tokenExpired:
-            return "token expired"
+            switch provider {
+            case .miniMax:
+                // The MiniMax API reports a rejected key as
+                // `base_resp.status_code == 1004` (docs/PLAN-minimax.md),
+                // which Slice 2 will map to `.tokenExpired`. The dropdown
+                // must say so; the generic "token expired" makes it look
+                // like an OAuth/Keychain expiry.
+                return "MiniMax key rejected; re-authenticate in OpenCode"
+            case .claude, .codex, .openCodeGo:
+                return "token expired"
+            }
         case .credentialUnavailable:
             return "credential unavailable"
         case .workspaceSelectionRequired:
@@ -296,7 +306,11 @@ private extension StaleReason {
             case .openCodeGo:
                 return "select an OpenCode Go workspace in Settings"
             case .claude, .codex, .miniMax:
-                return "select a workspace in Settings"
+                // Unreachable in practice (no other provider surfaces this
+                // reason today), but the alternative would be to point
+                // Claude/Codex/MiniMax at a Settings field that only
+                // exists for OpenCode Go.
+                return "workspace selection required"
             }
         case .sessionExpired:
             switch provider {
@@ -307,6 +321,9 @@ private extension StaleReason {
             case .codex:
                 return "Codex session expired; sign in again in the Codex app"
             case .miniMax:
+                // Unreachable today (MiniMax never surfaces `.sessionExpired`
+                // per its failure mapping) but kept consistent with the row
+                // and chain-step wording should the mapping widen.
                 return "MiniMax key rejected; re-authenticate in OpenCode"
             }
         }
