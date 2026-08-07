@@ -19,6 +19,25 @@ func openCodeGoParserParsesCapturedThreeWindowFixtureFromOneResponseTime() throw
 }
 
 @Test
+func openCodeGoParserParsesCapturedFixtureWithBillingRecordBeforeGoWindows() throws {
+    // 2026-08-07 capture: the page's Seroval stream also carries the workspace
+    // billing record, whose plain-number `monthlyUsage:` can precede the go
+    // window object of the same name (resolution order is nondeterministic).
+    let now = Date(timeIntervalSince1970: 2_000_000_000)
+    let usage = try OpenCodeGoUsageParser().parse(
+        fixtureData("opencode-go-usage-billing.html"),
+        now: now
+    )
+
+    #expect(usage.fiveHour.percentRemaining == 0)
+    #expect(usage.weekly.percentRemaining == 11)
+    #expect(usage.monthly?.percentRemaining == 18)
+    #expect(usage.fiveHour.resetsAt == now.addingTimeInterval(16_437))
+    #expect(usage.weekly.resetsAt == now.addingTimeInterval(181_584))
+    #expect(usage.monthly?.resetsAt == now.addingTimeInterval(796_729))
+}
+
+@Test
 func openCodeGoWorkspaceParserReadsAllDistinctCapturedWorkspaceIDs() throws {
     let ids = try OpenCodeGoWorkspaceParser().parse(fixtureData("opencode-go-workspaces.js"))
 
