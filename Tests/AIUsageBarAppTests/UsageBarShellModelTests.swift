@@ -561,5 +561,155 @@ func stagedVisibilityDoesNotResurrectTheChainRecordedBeforeAProviderWasTurnedOff
         #expect(row.text == "Checking\u{2026}")
         #expect(row.chain.steps.map(\.stateText) == ["Standing by", "Standing by"])
         #expect(row.chain.steps.map(\.indicator) == [nil, nil])
+}
+
+@Test
+@MainActor
+func stagedVisibilityDoesNotResurrectMiniMaxChainWhenStagedBackOn() throws {
+    // Same invariant as the codex case above, but for MiniMax (single-step
+    // chain). Without this, enabling MiniMax in Settings and not yet polling
+    // would render a green "Used 3 h ago" step under a row that says
+    // `Checking…`.
+    try withIsolatedDefaults { defaults in
+        let appState = AppState()
+        let model = shellModel(appState: appState, settingsStore: SettingsStore(defaults: defaults))
+        let miniMaxUsage = ProviderUsage(
+            fiveHour: UsageWindow(percentRemaining: 76, resetsAt: nil),
+            weekly: UsageWindow(percentRemaining: 55, resetsAt: nil)
+        )
+
+        appState.applyRefreshResult(
+            provider: .miniMax,
+            state: .fresh(miniMaxUsage, asOf: referenceNow.addingTimeInterval(-3 * 60 * 60)),
+            completedAt: referenceNow.addingTimeInterval(-3 * 60 * 60),
+            source: .minimaxTokenPlanAPI,
+            chain: [ProviderDataSourceStep(.minimaxTokenPlanAPI, .used)]
+        )
+
+        model.setProvider(.miniMax, visible: false)
+
+        let rows = model.providerStatusViewModel(stagedVisibility: [.miniMax: true]).rows
+        let row = try #require(rows.first { $0.provider == .miniMax })
+        #expect(row.indicator == .checking)
+        #expect(row.stateLabel == "Checking\u{2026}")
+        #expect(row.ageLabel == nil)
+        #expect(row.text == "Checking\u{2026}")
+        #expect(row.chain.steps.map(\.stateText) == ["Standing by"])
+        #expect(row.chain.steps.map(\.indicator) == [nil])
     }
+}
+
+private let referenceNow = Date(timeIntervalSince1970: 1_767_268_800)
+
+private let claudeUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: 62, resetsAt: referenceNow.addingTimeInterval(2 * 60 * 60)),
+    weekly: UsageWindow(percentRemaining: 81, resetsAt: referenceNow.addingTimeInterval(5 * 24 * 60 * 60))
+)
+
+private let codexUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: 90, resetsAt: referenceNow.addingTimeInterval(6 * 24 * 60 * 60))
+)
+
+@MainActor
+private func shellModel(
+    appState: AppState = AppState(),
+    settingsStore: SettingsStore = SettingsStore(defaults: .standard),
+    usageController: any UsageControlling = RecordingUsageController(),
+    launchAtLoginManager: any LaunchAtLoginManaging = RecordingLaunchAtLoginManager()
+) -> UsageBarShellModel {
+    UsageBarShellModel(
+        appState: appState,
+        settingsStore: settingsStore,
+        usageController: usageController,
+        launchAtLoginManager: launchAtLoginManager,
+        now: { referenceNow }
+    )
+}
+
+private actor RecordingUsageController: UsageControlling {
+    private var refreshCalls = 0
+    private var intervals: [TimeInterval] = []
+
+    func start() async {}
+
+    func stop() async {}
+
+    func refreshNow() async {
+        refreshCalls += 1
+    }
+
+    func setPollingInterval(_ interval: TimeInterval) async {
+        intervals.append(interval)
+    }
+
+    func refreshCallCount() -> Int {
+        refreshCalls
+    }
+}
+
+private final class RecordingLaunchAtLoginManager: LaunchAtLoginManaging {
+    private let error: (any Error)?
+    private let statusAfterSet: LaunchAtLoginStatus?
+    var requests: [Bool] = []
+    var status: LaunchAtLoginStatus
+
+    init(
+        status: LaunchAtLoginStatus = .disabled,
+        error: (any Error)? = nil,
+        statusAfterSet: LaunchAtLoginStatus? = nil
+    ) {
+        self.status = status
+        self.error = error
+        self.statusAfterSet = statusAfterSet
+    }
+
+    func setEnabled(_ enabled: Bool) throws {
+        if status == .requiresApproval, enabled {
+            throw LaunchAtLoginError.requiresApproval
+        }
+
+        if let error {
+            throw error
+        }
+
+        requests.append(enabled)
+        if let statusAfterSet {
+            status = statusAfterSet
+        } else {
+            status = enabled ? .enabled : .disabled
+        }
+    }
+}
+
+private enum LaunchAtLoginTestError: Error {
+    case failed
+}
+
+private final class ObservationChangeRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedCount = 0
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedCount
+    }
+
+    func record() {
+        lock.lock()
+        recordedCount += 1
+        lock.unlock()
+    }
+}
+
+private func withIsolatedDefaults(_ body: (UserDefaults) throws -> Void) rethrows {
+    let suiteName = "UsageBarShellModelTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    try body(defaults)
 }

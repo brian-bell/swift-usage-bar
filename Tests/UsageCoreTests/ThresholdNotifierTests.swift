@@ -17,6 +17,62 @@ func usageThresholdNotificationHasDeterministicDisplayText() {
 }
 
 @Test
+func usageThresholdNotificationDisplayTextForMiniMax() {
+    // MiniMax's `notificationDisplayName` ("MiniMax") flows through the same
+    // title/body template the other providers use — pin the wiring so the
+    // Slice 3 provider does not silently fall back to a generic label.
+    let notification = UsageThresholdNotification(
+        provider: .miniMax,
+        window: .fiveHour,
+        percentRemaining: 18,
+        threshold: 20,
+        resetsAt: Date(timeIntervalSince1970: 1_783_008_000)
+    )
+
+    #expect(notification.title == "MiniMax five-hour usage below 20%")
+    #expect(notification.body == "18% remaining before this window resets.")
+}
+
+@Test
+func thresholdNotifierSendsForMiniMaxWindow() async {
+    // The generic `ThresholdNotifier` path picks up `ProviderID.miniMax`
+    // via `notificationDisplayName` without any special-case — prove it
+    // fires exactly once with the right (provider, window, percent,
+    // threshold) tuple when a MiniMax 5h window crosses below the
+    // threshold in the same reset cycle.
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let fiveHourReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let weeklyReset = Date(timeIntervalSince1970: 1_783_555_200)
+
+    let previous = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 25, resetsAt: fiveHourReset),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: weeklyReset)
+    )
+    let current = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 18, resetsAt: fiveHourReset),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: weeklyReset)
+    )
+
+    await notifier.evaluate(
+        previous: previous,
+        current: current,
+        provider: .miniMax,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .miniMax,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: fiveHourReset
+        ),
+    ])
+}
+
+@Test
 func thresholdNotifierSendsWhenWindowCrossesBelowThreshold() async {
     let sender = RecordingNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)

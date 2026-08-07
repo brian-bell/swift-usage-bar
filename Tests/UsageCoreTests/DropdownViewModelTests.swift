@@ -40,6 +40,44 @@ func dropdownRowsShowTwoWindowsForFreshMiniMax() throws {
 }
 
 @Test
+func dropdownRowsExposeMiniMaxFiveHourAndWeeklyCountdowns() throws {
+    // US2 end-to-end at the view-model layer: a fresh MiniMax surfaces
+    // percent labels + countdowns for both windows through the same code
+    // path Claude uses, with the `5h`/`Weekly` titles and weekday-form
+    // countdowns the dropdown renders. No guidance/stale rows because the
+    // state is fresh.
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(
+            percentRemaining: 76,
+            resetsAt: referenceNow.addingTimeInterval(90 * 60)
+        ),
+        weekly: UsageWindow(
+            percentRemaining: 55,
+            resetsAt: referenceNow.addingTimeInterval(3 * 24 * 60 * 60)
+        )
+    )
+
+    let model = DropdownViewModel(
+        states: [.miniMax: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .miniMax })
+    let fiveHour = try #require(row.fiveHour)
+    #expect(fiveHour.title == "5h")
+    #expect(fiveHour.percentLabel == "76% remaining")
+    #expect(fiveHour.countdownLabel == "resets in 1h 30m")
+    #expect(row.weekly.title == "Weekly")
+    #expect(row.weekly.percentLabel == "55% remaining")
+    // referenceNow is 2026-01-01 (Thursday); +3 days is Sunday.
+    #expect(row.weekly.countdownLabel == "resets Sun 12:00 PM")
+    #expect(row.staleMessage == nil)
+    #expect(row.updatedLabel == nil)
+}
+
+@Test
 func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
     let usage = ProviderUsage(
         fiveHour: UsageWindow(

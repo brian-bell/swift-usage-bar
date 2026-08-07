@@ -268,6 +268,10 @@ extension UsageBarShellModel {
                 transport: OpenCodeGoHTTPTransport(),
                 workspaceOverride: { settingsStore.openCodeGoWorkspaceID }
             ),
+            .miniMax: MiniMaxUsageProvider(
+                credentialReader: OpenCodeAuthFileCredentialReader(),
+                transport: MiniMaxHTTPTransport()
+            ),
         ]
     }
 
