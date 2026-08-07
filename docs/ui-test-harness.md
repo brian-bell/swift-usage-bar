@@ -42,7 +42,7 @@ Host root views in `NSHostingView` on the main actor, seed a fake `UsageBarShell
 
 1. **Test host helpers** in `Tests/AIUsageBarAppTests/Support/`:
    - `UITestHost` — creates `NSHostingView(rootView:)`, sizes to production constants (dropdown 320, Settings 500), forces layout.
-   - `AXQuery` — walk `NSAccessibility` children by identifier/label/role; `exists`, `value`, `press`, `setValue`.
+   - `AXQuery` — walk AX children by identifier/label/role; `exists`, `value` (reads only in slice 1 — in-process press/click is not runner-safe; see slice-1 doc).
    - `shellModel(...)` factory (extract/share from existing shell tests).
    - Fixture builders: `AppState` matrices (fresh/stale/hidden/checking × providers × windows).
 
@@ -253,14 +253,16 @@ UI tests **consume** fixed `AppState` + recording controllers; they do not fetch
 
 ## Suggested first PR slice (after Phase 0)
 
-Smallest vertical slice that proves the harness:
+Smallest vertical slice that proves the harness (**landed, reads-only**):
 
-1. AX identifiers on dropdown Refresh / Settings / Quit
-2. `UITestHost` + `AXQuery`
-3. One `MenuBarContentView` test: two fresh providers → row names + Refresh records call
-4. One `AppSettingsView` test: open Providers → Claude status line from seeded state → Cancel
+1. AX identifiers on dropdown Refresh / Settings / Quit *(done in Phase 0)*
+2. `UITestHost` + `AXQuery` (reads only — no in-process press/click)
+3. One `MenuBarContentView` test: two fresh providers → row/window/footer AX nodes
+4. One `AppSettingsView` test: General pane bound to a non-default seeded store + footer
 
-That validates hosting + AX + fake shell before investing in the full matrix and snapshots.
+Synthetic clicks are not runner-safe in-process; interaction stays model-level
+until L3/L4 or a process-per-test runner. Detail:
+[`docs/ui-test-harness-slice-1.md`](ui-test-harness-slice-1.md).
 
 ---
 

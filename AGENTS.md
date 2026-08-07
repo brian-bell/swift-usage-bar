@@ -103,11 +103,15 @@ All seams are protocols with injectable fakes; production adapters are thin leav
 
 ## UI test harness
 
-Hosted SwiftUI / accessibility UI tests are planned in `docs/ui-test-harness.md`.
-Phase prep and conventions: `docs/ui-test-harness-phase-0.md`.
-UI tests must use fake `UsageBarShellModel` wiring from
-`Tests/AIUsageBarAppTests/Support/` — never `UsageBarShellModel.live()`.
-Accessibility identifiers live in `AccessibilityID` (app target).
+Hosted SwiftUI / accessibility UI tests: `docs/ui-test-harness.md`
+(slice 1 detail: `docs/ui-test-harness-slice-1.md`; Phase 0:
+`docs/ui-test-harness-phase-0.md`). Slice 1 is **reads-only** AX of hosted
+roots (`HostedUITests`); synthetic clicks are not runner-safe in-process.
+`scripts/run-swift-tests` runs the hosted suite in a separate process from
+the rest (NSApplication singleton). UI tests must use fake
+`UsageBarShellModel` wiring from `Tests/AIUsageBarAppTests/Support/` — never
+`UsageBarShellModel.live()`. Accessibility identifiers live in
+`AccessibilityID` (app target).
 
 ## Conventions and gotchas
 

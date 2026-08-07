@@ -13,10 +13,24 @@ test_log="$tmpdir/swift-test.log"
 # On a CommandLineTools-only toolchain `swift test` compiles and links the
 # suites but exits 0 without executing them (there is no test runner).
 # Capture the output and require evidence that a test run actually happened.
-swift test --enable-swift-testing 2>&1 | tee "$test_log"
+#
+# Hosted UI tests (suite "Hosted UI") run in a separate invocation below:
+# they call NSApplication.shared.finishLaunching() for same-process AX, and
+# ApplicationTerminationTests instantiate a second NSApplication subclass —
+# two NSApplication instances in one process trap in AppKit.
+swift test --enable-swift-testing --skip 'HostedUITests' 2>&1 | tee "$test_log"
 
 if ! grep -qE 'Test run with [0-9]+ tests' "$test_log"; then
     printf 'swift test did not execute any tests (CommandLineTools-only toolchain?).\n' >&2
     printf 'Select full Xcode: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer\n' >&2
+    exit 1
+fi
+
+# Hosted SwiftUI + AX tests (reads-only; see docs/ui-test-harness-slice-1.md).
+hosted_log="$tmpdir/swift-test-hosted.log"
+swift test --enable-swift-testing --filter 'HostedUITests' 2>&1 | tee "$hosted_log"
+
+if ! grep -qE 'Test run with [0-9]+ tests' "$hosted_log"; then
+    printf 'Hosted UI tests did not execute.\n' >&2
     exit 1
 fi

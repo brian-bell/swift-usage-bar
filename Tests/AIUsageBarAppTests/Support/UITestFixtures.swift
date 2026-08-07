@@ -65,6 +65,50 @@ func freshState(
     ])
 }
 
+/// Claude + Codex live with ages suitable for "updated 2 min ago" status lines.
+@MainActor
+func liveProvidersState(
+    asOf: Date = uiTestNow,
+    lastSuccess: Date = uiTestNow.addingTimeInterval(-120)
+) -> AppState {
+    AppState(
+        providerStates: [
+            .claude: .fresh(uiTestClaudeUsage, asOf: asOf),
+            .codex: .fresh(uiTestCodexUsage, asOf: asOf),
+            .openCodeGo: .hidden,
+            .miniMax: .hidden,
+        ],
+        lastSuccessfulRefreshes: [
+            .claude: lastSuccess,
+            .codex: lastSuccess,
+        ],
+        lastDataSources: [
+            .claude: .claudeWebSession,
+            .codex: .codexAPI,
+        ]
+    )
+}
+
+/// Bounded poll for hosted UI tests. Runs on the test's background thread and
+/// simply re-checks `condition` with a short sleep between attempts — the
+/// hosted view's main run loop stays free, so SwiftUI state and AX updates
+/// converge on their own. This is poll-until, not sleep-then-assert: tests
+/// still fail immediately when the condition never holds.
+func pollUntil(
+    timeout: TimeInterval = 5,
+    interval: TimeInterval = 0.01,
+    _ condition: () -> Bool
+) -> Bool {
+    let deadline = Date(timeIntervalSinceNow: timeout)
+    while Date() < deadline {
+        if condition() {
+            return true
+        }
+        Thread.sleep(forTimeInterval: interval)
+    }
+    return condition()
+}
+
 @MainActor
 func staleState(
     provider: ProviderID,
