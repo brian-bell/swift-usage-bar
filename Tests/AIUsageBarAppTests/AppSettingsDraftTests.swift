@@ -13,12 +13,12 @@ struct AppSettingsDraftGeneralTabTests {
     @Test
     @MainActor
     func captureReadsPollIntervalAndLaunchAtLogin() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             settingsStore.pollInterval = 600
-            let model = draftTestModel(
+            let model = shellModel(
                 settingsStore: settingsStore,
-                launchAtLoginManager: DraftTestLaunchAtLoginManager(status: .enabled)
+                launchAtLoginManager: RecordingLaunchAtLoginManager(status: .enabled)
             )
 
             let draft = AppSettingsDraft.capture(from: model)
@@ -31,10 +31,10 @@ struct AppSettingsDraftGeneralTabTests {
     @Test(arguments: [TimeInterval(60), 120, 300, 600])
     @MainActor
     func applyCommitsEachSelectablePollInterval(_ interval: TimeInterval) {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             settingsStore.pollInterval = 1
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             var draft = AppSettingsDraft.capture(from: model)
             draft.pollInterval = interval
@@ -48,9 +48,9 @@ struct AppSettingsDraftGeneralTabTests {
     @Test
     @MainActor
     func applyLeavesUnchangedPollIntervalUntouched() {
-        withSettingsDefaults { defaults in
-            let model = draftTestModel(settingsStore: SettingsStore(defaults: defaults))
-            let changes = DraftChangeRecorder()
+        withIsolatedDefaults { defaults in
+            let model = shellModel(settingsStore: SettingsStore(defaults: defaults))
+            let changes = ObservationChangeRecorder()
 
             let draft = AppSettingsDraft.capture(from: model)
             withObservationTracking {
@@ -67,9 +67,9 @@ struct AppSettingsDraftGeneralTabTests {
     @Test
     @MainActor
     func applyReturnsTrueWhenLaunchAtLoginChangedSoTheDialogStaysOpen() {
-        withSettingsDefaults { defaults in
-            let launchManager = DraftTestLaunchAtLoginManager()
-            let model = draftTestModel(
+        withIsolatedDefaults { defaults in
+            let launchManager = RecordingLaunchAtLoginManager()
+            let model = shellModel(
                 settingsStore: SettingsStore(defaults: defaults),
                 launchAtLoginManager: launchManager
             )
@@ -85,9 +85,9 @@ struct AppSettingsDraftGeneralTabTests {
     @Test
     @MainActor
     func applyReturnsFalseWhenLaunchAtLoginIsUnchanged() {
-        withSettingsDefaults { defaults in
-            let launchManager = DraftTestLaunchAtLoginManager()
-            let model = draftTestModel(
+        withIsolatedDefaults { defaults in
+            let launchManager = RecordingLaunchAtLoginManager()
+            let model = shellModel(
                 settingsStore: SettingsStore(defaults: defaults),
                 launchAtLoginManager: launchManager
             )
@@ -103,9 +103,9 @@ struct AppSettingsDraftGeneralTabTests {
     @Test
     @MainActor
     func failedLaunchAtLoginChangeSurfacesErrorAndRecaptureResyncsTheToggle() {
-        withSettingsDefaults { defaults in
-            let launchManager = DraftTestLaunchAtLoginManager(error: DraftTestLaunchError.failed)
-            let model = draftTestModel(
+        withIsolatedDefaults { defaults in
+            let launchManager = RecordingLaunchAtLoginManager(error: LaunchAtLoginTestError.failed)
+            let model = shellModel(
                 settingsStore: SettingsStore(defaults: defaults),
                 launchAtLoginManager: launchManager
             )
@@ -129,12 +129,12 @@ struct AppSettingsDraftProvidersTabTests {
     @Test
     @MainActor
     func captureReadsEveryProviderVisibility() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             settingsStore.setProvider(.claude, visible: false)
             settingsStore.setProvider(.codex, visible: true)
             settingsStore.setProvider(.openCodeGo, visible: true)
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             let draft = AppSettingsDraft.capture(from: model)
 
@@ -147,13 +147,13 @@ struct AppSettingsDraftProvidersTabTests {
     @Test(arguments: ProviderID.allCases)
     @MainActor
     func applyTogglesVisibilityForOneProviderWithoutDisturbingTheOthers(_ provider: ProviderID) {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             for candidate in ProviderID.allCases {
                 settingsStore.setProvider(candidate, visible: true)
             }
             let appState = AppState()
-            let model = draftTestModel(appState: appState, settingsStore: settingsStore)
+            let model = shellModel(appState: appState, settingsStore: settingsStore)
 
             var draft = AppSettingsDraft.capture(from: model)
             draft.providerVisibility[provider] = false
@@ -172,10 +172,10 @@ struct AppSettingsDraftProvidersTabTests {
     @Test
     @MainActor
     func applyRestoresAHiddenProvider() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             settingsStore.setProvider(.openCodeGo, visible: false)
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             var draft = AppSettingsDraft.capture(from: model)
             draft.providerVisibility[.openCodeGo] = true
@@ -207,8 +207,8 @@ struct AppSettingsDraftProvidersTabTests {
     @Test
     @MainActor
     func captureRendersAnUnsetWorkspaceAsAnEmptyField() {
-        withSettingsDefaults { defaults in
-            let model = draftTestModel(settingsStore: SettingsStore(defaults: defaults))
+        withIsolatedDefaults { defaults in
+            let model = shellModel(settingsStore: SettingsStore(defaults: defaults))
 
             #expect(AppSettingsDraft.capture(from: model).openCodeGoWorkspace.isEmpty)
         }
@@ -217,10 +217,10 @@ struct AppSettingsDraftProvidersTabTests {
     @Test
     @MainActor
     func captureRendersAStoredWorkspaceID() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             settingsStore.openCodeGoWorkspaceID = "wrk_01KSTORED0001"
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             #expect(AppSettingsDraft.capture(from: model).openCodeGoWorkspace == "wrk_01KSTORED0001")
         }
@@ -229,9 +229,9 @@ struct AppSettingsDraftProvidersTabTests {
     @Test
     @MainActor
     func applyNormalizesABareWorkspaceID() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             var draft = AppSettingsDraft.capture(from: model)
             draft.openCodeGoWorkspace = "  wrk_01KEXAMPLE123  "
@@ -245,9 +245,9 @@ struct AppSettingsDraftProvidersTabTests {
     @Test
     @MainActor
     func applyNormalizesAFullWorkspaceURL() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             var draft = AppSettingsDraft.capture(from: model)
             draft.openCodeGoWorkspace = "https://opencode.ai/workspace/wrk_01KEXAMPLE123/go"
@@ -261,10 +261,10 @@ struct AppSettingsDraftProvidersTabTests {
     @Test
     @MainActor
     func applyClearsTheWorkspaceWhenTheFieldIsEmptied() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             settingsStore.openCodeGoWorkspaceID = "wrk_01KSTORED0001"
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             var draft = AppSettingsDraft.capture(from: model)
             draft.openCodeGoWorkspace = ""
@@ -278,10 +278,10 @@ struct AppSettingsDraftProvidersTabTests {
     @Test
     @MainActor
     func applyClearsTheWorkspaceWhenTheFieldIsUnusable() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             settingsStore.openCodeGoWorkspaceID = "wrk_01KSTORED0001"
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             var draft = AppSettingsDraft.capture(from: model)
             draft.openCodeGoWorkspace = "not-a-workspace"
@@ -295,11 +295,11 @@ struct AppSettingsDraftProvidersTabTests {
     @Test
     @MainActor
     func applyLeavesAnEquivalentWorkspaceEditUntouched() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             settingsStore.openCodeGoWorkspaceID = "wrk_01KEXAMPLE123"
-            let model = draftTestModel(settingsStore: settingsStore)
-            let changes = DraftChangeRecorder()
+            let model = shellModel(settingsStore: settingsStore)
+            let changes = ObservationChangeRecorder()
 
             var draft = AppSettingsDraft.capture(from: model)
             // Same workspace, expressed as a URL: normalization makes this a no-op.
@@ -322,10 +322,10 @@ struct AppSettingsDraftNotificationsTabTests {
     @Test
     @MainActor
     func captureReadsTheThresholdPercent() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             settingsStore.thresholdPercent = 42
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             #expect(AppSettingsDraft.capture(from: model).thresholdPercent == 42)
         }
@@ -334,9 +334,9 @@ struct AppSettingsDraftNotificationsTabTests {
     @Test(arguments: [1, 20, 100])
     @MainActor
     func applyCommitsThresholdsAcrossTheStepperRange(_ threshold: Int) {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
 
             var draft = AppSettingsDraft.capture(from: model)
             draft.thresholdPercent = threshold
@@ -350,9 +350,9 @@ struct AppSettingsDraftNotificationsTabTests {
     @Test
     @MainActor
     func applyLeavesAnUnchangedThresholdUntouched() {
-        withSettingsDefaults { defaults in
-            let model = draftTestModel(settingsStore: SettingsStore(defaults: defaults))
-            let changes = DraftChangeRecorder()
+        withIsolatedDefaults { defaults in
+            let model = shellModel(settingsStore: SettingsStore(defaults: defaults))
+            let changes = ObservationChangeRecorder()
 
             let draft = AppSettingsDraft.capture(from: model)
             withObservationTracking {
@@ -372,10 +372,10 @@ struct AppSettingsDraftAllTabsTests {
     @Test
     @MainActor
     func oneApplyCommitsEditsMadeOnEveryTab() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
-            let launchManager = DraftTestLaunchAtLoginManager()
-            let model = draftTestModel(
+            let launchManager = RecordingLaunchAtLoginManager()
+            let model = shellModel(
                 settingsStore: settingsStore,
                 launchAtLoginManager: launchManager
             )
@@ -399,9 +399,9 @@ struct AppSettingsDraftAllTabsTests {
     @Test
     @MainActor
     func discardingTheDraftLeavesEveryTabsSettingsUnchanged() {
-        withSettingsDefaults { defaults in
+        withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
-            let model = draftTestModel(settingsStore: settingsStore)
+            let model = shellModel(settingsStore: settingsStore)
             let captured = AppSettingsDraft.capture(from: model)
 
             var draft = captured
@@ -415,82 +415,4 @@ struct AppSettingsDraftAllTabsTests {
             #expect(AppSettingsDraft.capture(from: model) == captured)
         }
     }
-}
-
-// MARK: - Test support
-
-private let draftTestNow = Date(timeIntervalSince1970: 1_767_268_800)
-
-@MainActor
-private func draftTestModel(
-    appState: AppState = AppState(),
-    settingsStore: SettingsStore,
-    launchAtLoginManager: any LaunchAtLoginManaging = DraftTestLaunchAtLoginManager()
-) -> UsageBarShellModel {
-    UsageBarShellModel(
-        appState: appState,
-        settingsStore: settingsStore,
-        usageController: DraftTestUsageController(),
-        launchAtLoginManager: launchAtLoginManager,
-        now: { draftTestNow }
-    )
-}
-
-private struct DraftTestUsageController: UsageControlling {
-    func start() async {}
-    func stop() async {}
-    func refreshNow() async {}
-    func setPollingInterval(_ interval: TimeInterval) async {}
-}
-
-private final class DraftTestLaunchAtLoginManager: LaunchAtLoginManaging {
-    private let error: (any Error)?
-    var requests: [Bool] = []
-    var status: LaunchAtLoginStatus
-
-    init(status: LaunchAtLoginStatus = .disabled, error: (any Error)? = nil) {
-        self.status = status
-        self.error = error
-    }
-
-    func setEnabled(_ enabled: Bool) throws {
-        if let error {
-            throw error
-        }
-
-        requests.append(enabled)
-        status = enabled ? .enabled : .disabled
-    }
-}
-
-private enum DraftTestLaunchError: Error {
-    case failed
-}
-
-private final class DraftChangeRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recordedCount = 0
-
-    var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return recordedCount
-    }
-
-    func record() {
-        lock.lock()
-        recordedCount += 1
-        lock.unlock()
-    }
-}
-
-private func withSettingsDefaults(_ body: (UserDefaults) -> Void) {
-    let suiteName = "AppSettingsDraftTests.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suiteName)!
-    defaults.removePersistentDomain(forName: suiteName)
-    defer {
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    body(defaults)
 }

@@ -7,6 +7,31 @@ import UsageCore
 
 @Test
 @MainActor
+func shellModelFactoryUsesIsolatedDefaultsByDefault() {
+    let first = shellModel()
+    let second = shellModel()
+
+    first.setProvider(.claude, visible: false)
+    second.setProvider(.codex, visible: false)
+
+    #expect(!first.isProviderVisible(.claude))
+    #expect(first.isProviderVisible(.codex))
+    #expect(second.isProviderVisible(.claude))
+    #expect(!second.isProviderVisible(.codex))
+}
+
+@Test
+func recordingUsageControllerExposesRecordedPollIntervals() async {
+    let usageController = RecordingUsageController()
+
+    await usageController.setPollingInterval(300)
+    await usageController.setPollingInterval(600)
+
+    #expect(await usageController.recordedIntervals() == [300, 600])
+}
+
+@Test
+@MainActor
 func shellModelMenuBarSegmentsUseCoreFormatter() {
     let appState = AppState(providerStates: [
         .codex: .fresh(codexUsage, asOf: referenceNow),
@@ -536,7 +561,6 @@ func stagedVisibilityDoesNotResurrectTheChainRecordedBeforeAProviderWasTurnedOff
         #expect(row.text == "Checking\u{2026}")
         #expect(row.chain.steps.map(\.stateText) == ["Standing by", "Standing by"])
         #expect(row.chain.steps.map(\.indicator) == [nil, nil])
-    }
 }
 
 @Test
