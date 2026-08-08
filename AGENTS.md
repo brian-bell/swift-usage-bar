@@ -9,13 +9,13 @@ the code disagree, the code and its tests win.
 
 ## What this is
 
-**AIUsageBar**: a native macOS menu bar app (SwiftUI `MenuBarExtra`, macOS 14+,
-Swift 6) showing **percent remaining** for Claude, Codex, OpenCode Go, and
+**AIUsageBar**: a native macOS menu bar app (SwiftUI `MenuBarExtra`, macOS
+14+) showing **percent remaining** for Claude, Codex, OpenCode Go, and
 MiniMax. Providers borrow existing local state read-only (Keychain, Chrome
 cookies, OpenCode's `auth.json`, a statusline cache file) and degrade to a
 greyed "stale" state instead of erroring. Per-provider retrieval order and
 fallbacks: `ProviderID.dataSourceChain` in
-`Sources/UsageCore/ProviderDataSource.swift` plus `docs/endpoints.md`.
+`Sources/UsageCore/ProviderDataSource.swift` and `docs/endpoints.md`.
 
 ## Build, test, run
 
@@ -31,16 +31,16 @@ strict concurrency must stay clean.
 | `scripts/setup-statusline` | Wire the statusline cache wrapper into Claude Code settings |
 | `scripts/make-signing-cert` | Local signing identity for machines without an Apple Development one |
 
-Signing: when rebuilding the user's login app, run plain `scripts/bundle.sh`
-and confirm `codesign -dvvv` shows a `TeamIdentifier` and no `Signature=adhoc`.
-Identity selection and the keychain-prompt consequences of each identity kind
-are documented in `scripts/bundle.sh` and `scripts/make-signing-cert`.
+Signing: when rebuilding the installed app, run plain `scripts/bundle.sh` and
+confirm `codesign -dvvv` shows a `TeamIdentifier` and no `Signature=adhoc`.
+Identity selection and its keychain-prompt consequences are documented in
+`scripts/bundle.sh` and `scripts/make-signing-cert`.
 
 ## Layout
 
-- `Sources/UsageCore/` — ALL logic: domain models, providers, parsers, poller,
-  notifier, formatters, view models, settings store. UI-free, fully
-  unit-tested. Every seam is a protocol with injectable fakes.
+- `Sources/UsageCore/` — all logic: domain models, providers, parsers, poller,
+  notifier, formatters, view models, settings store. UI-free; every seam is a
+  protocol with injectable fakes.
 - `Sources/AIUsageBarApp/` — thin SwiftUI shell + system adapters. Views
   contain no logic; they render state and call intents on the shell model.
 - `Tests/UsageCoreTests/`, `Tests/AIUsageBarAppTests/` — Swift Testing
@@ -62,9 +62,9 @@ fake shell-model wiring from `Tests/AIUsageBarAppTests/Support/`, never
 - Background polls must never present a prompt; only a manual Refresh-now may
   (`CredentialAccessMode` threads this from poller to credential readers).
 - **TDD** with Swift Testing; every `UsageCore` behavior has a test.
-- Parser and credential-source changes must be backed by a sanitized observed
-  fixture in `Tests/Fixtures/`. No speculative fallbacks, alias keys, extra
-  hosts or regions, or browsers beyond Chrome without a new product decision
-  (rejected alternatives are recorded in `docs/endpoints.md`).
+- Parser and credential-source changes must be backed by a sanitized fixture
+  in `Tests/Fixtures/` captured from a real payload. No speculative fallbacks,
+  alias keys, extra hosts or regions, or browsers beyond Chrome without a new
+  product decision (rejected alternatives are recorded in `docs/endpoints.md`).
 - Never commit real credentials or unsanitized captures.
 - Feature branches only; never commit or push directly to `main`.
