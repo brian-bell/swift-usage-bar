@@ -79,5 +79,10 @@ struct HostedUITests {
         // confirming the formatted dollar value pins the formatter too.
         #expect(ax.firstValue(containing: "$42.50") != nil)
         #expect(ax.firstValue(containing: "$2.96 of $50 used this month") != nil)
+        // Pin the per-text AX ids so a SwiftUI modifier refactor that drops
+        // an identifier doesn't leave the values visible but break future
+        // AX-based assertions.
+        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeGo)).amount"))
+        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeGo)).caption"))
     }
 }

@@ -425,6 +425,42 @@ func dropdownCreditsRowRendersZeroBalanceAsZeroDollars() {
 }
 
 @Test
+func dropdownCreditsRowRoundsBalanceToTwoDecimals() {
+    // NumberFormatter with min=max=2 rounds halfUp. A future refactor that
+    // swaps the formatter (e.g. for `String(format:)` or `formatted(_:)`)
+    // could change the rounding rule — this test pins the spec.
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 99.999,
+            monthlyUsedUSD: nil,
+            monthlyLimitUSD: nil
+        ),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(row.amountLabel == "$100.00")
+}
+
+@Test
+func dropdownCreditsRowUsesLocaleDecimalSeparator() {
+    // Decimal style + "$" prefix keeps the dollar sign universal while
+    // delegating the decimal separator to the locale. The original
+    // currency-style formatter was rejected because it inserted a
+    // non-breaking space; this pin locks in the locale path so a future
+    // "simplification" can't silently regress it.
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 42.50,
+            monthlyUsedUSD: nil,
+            monthlyLimitUSD: nil
+        ),
+        locale: Locale(identifier: "de_DE")
+    )
+
+    #expect(row.amountLabel == "$42,50")
+}
+
+@Test
 func dropdownProviderRowExposesCreditsForFreshOpenCodeGoUsage() throws {
     let usage = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),

@@ -170,6 +170,13 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
 /// presentational — no scaling, no progress bar, no threshold participation.
 /// Title and amountLabel always exist; captionLabel is omitted when there
 /// is no monthly limit (or no monthly usage to compare against the limit).
+///
+/// Caption formatting is deliberately asymmetric: the "used" side goes
+/// through `formatCurrency` (locale-aware decimal separator, e.g. "$2,96"
+/// in `de_DE`), but the "of $Y" limit side uses raw `Int` interpolation —
+/// limits are small whole dollars in practice (today's cap is $50) so a
+/// grouping-separator surprise at $1,000+ would be more confusing than
+/// helpful.
 public struct DropdownCreditsRow: Equatable, Sendable {
     public let title: String
     public let amountLabel: String
