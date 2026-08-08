@@ -301,6 +301,8 @@ private extension ProviderID {
             return "Codex"
         case .openCodeGo:
             return "OpenCode Go"
+        case .openCodeCredits:
+            return "OpenCode Credits"
         case .miniMax:
             return "MiniMax"
         }
@@ -314,6 +316,8 @@ private extension ProviderID {
             return false
         case .openCodeGo:
             return true
+        case .openCodeCredits:
+            return false
         case .miniMax:
             return true
         }
@@ -340,15 +344,24 @@ private extension StaleReason {
                 // must say so; the generic "token expired" makes it look
                 // like an OAuth/Keychain expiry.
                 return "MiniMax key rejected; re-authenticate in OpenCode"
-            case .claude, .codex, .openCodeGo:
+            case .claude, .codex, .openCodeGo, .openCodeCredits:
                 return "token expired"
             }
         case .credentialUnavailable:
-            return "credential unavailable"
+            switch provider {
+            case .openCodeCredits:
+                // For credits, "no credential" is most often "no billing
+                // configured on the workspace" — the cookie itself was fine.
+                return "no credits balance found"
+            case .claude, .codex, .openCodeGo, .miniMax:
+                return "credential unavailable"
+            }
         case .workspaceSelectionRequired:
             switch provider {
             case .openCodeGo:
                 return "select an OpenCode Go workspace in Settings"
+            case .openCodeCredits:
+                return "select an OpenCode workspace in Settings"
             case .claude, .codex, .miniMax:
                 // Unreachable in practice (no other provider surfaces this
                 // reason today), but the alternative would be to point
@@ -358,7 +371,7 @@ private extension StaleReason {
             }
         case .sessionExpired:
             switch provider {
-            case .openCodeGo:
+            case .openCodeGo, .openCodeCredits:
                 return "OpenCode session expired; sign in again in Chrome"
             case .claude:
                 return "claude.ai session expired; sign in again in Chrome"

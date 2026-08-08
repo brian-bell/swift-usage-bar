@@ -11,6 +11,7 @@ func settingsStoreReturnsDefaultsWhenNothingHasBeenSaved() {
         #expect(store.isProviderVisible(.claude))
         #expect(store.isProviderVisible(.codex))
         #expect(!store.isProviderVisible(.openCodeGo))
+        #expect(!store.isProviderVisible(.openCodeCredits))
         #expect(!store.isProviderVisible(.miniMax))
         #expect(store.thresholdPercent == 20)
         #expect(!store.launchAtLoginEnabled)
@@ -24,11 +25,31 @@ func providerIDIsHiddenByDefaultReportsMembershipInTheSingleSourceOfTruth() {
     // AppSettingsDraft) all read from this membership. Pin it directly so
     // adding a fifth default-hidden provider — or un-hiding one — can't
     // drift between sites silently.
-    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .miniMax])
+    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .openCodeCredits, .miniMax])
     #expect(!ProviderID.claude.isHiddenByDefault)
     #expect(!ProviderID.codex.isHiddenByDefault)
     #expect(ProviderID.openCodeGo.isHiddenByDefault)
+    #expect(ProviderID.openCodeCredits.isHiddenByDefault)
     #expect(ProviderID.miniMax.isHiddenByDefault)
+}
+
+@Test
+func settingsStoreKeepsOpenCodeGoAndCreditsVisibilityIndependent() {
+    // The two OpenCode providers read the same workspace but toggle
+    // separately: flipping one must never move the other.
+    withIsolatedDefaults { defaults in
+        let store = SettingsStore(defaults: defaults)
+        store.setProvider(.openCodeGo, visible: true)
+
+        #expect(!SettingsStore(defaults: defaults).isProviderVisible(.openCodeCredits))
+
+        store.setProvider(.openCodeCredits, visible: true)
+        store.setProvider(.openCodeGo, visible: false)
+
+        let reloaded = SettingsStore(defaults: defaults)
+        #expect(reloaded.isProviderVisible(.openCodeCredits))
+        #expect(!reloaded.isProviderVisible(.openCodeGo))
+    }
 }
 
 @Test

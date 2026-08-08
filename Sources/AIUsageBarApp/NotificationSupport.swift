@@ -169,6 +169,8 @@ private extension ProviderID {
             return "codex"
         case .openCodeGo:
             return "opencode-go"
+        case .openCodeCredits:
+            return "opencode-credits"
         case .miniMax:
             return "minimax"
         }

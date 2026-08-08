@@ -78,7 +78,8 @@ enum ProviderIconAsset {
             return "ProviderIcon-claude"
         case .codex:
             return "ProviderIcon-codex"
-        case .openCodeGo:
+        case .openCodeGo, .openCodeCredits:
+            // Credits shares the OpenCode mark; the row title disambiguates.
             return "ProviderIcon-opencode-go"
         case .miniMax:
             return nil
@@ -111,6 +112,8 @@ struct ProviderIconView: View {
             return "#"
         case .openCodeGo:
             return "G"
+        case .openCodeCredits:
+            return "$"
         case .miniMax:
             // Single glyph so it fits the square icon frame at the call sites
             // (`size × size`, no scaling). The menu-bar abbreviation stays `Mx`.

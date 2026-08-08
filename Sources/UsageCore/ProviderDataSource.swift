@@ -19,6 +19,9 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
     case codexAppServer
     /// OpenCode Go: `opencode.ai` with the read-only Chrome cookie.
     case openCodeGoChromeCookie
+    /// OpenCode Credits: the same page and cookie, read for the billing
+    /// record's balance instead of the Go windows.
+    case openCodeCreditsChromeCookie
     /// MiniMax: token plan API authenticated by an OpenCode auth.json key.
     case minimaxTokenPlanAPI
 
@@ -30,6 +33,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return .codex
         case .openCodeGoChromeCookie:
             return .openCodeGo
+        case .openCodeCreditsChromeCookie:
+            return .openCodeCredits
         case .minimaxTokenPlanAPI:
             return .miniMax
         }
@@ -48,7 +53,7 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "ChatGPT API (local Codex credential)"
         case .codexAppServer:
             return "Codex desktop app"
-        case .openCodeGoChromeCookie:
+        case .openCodeGoChromeCookie, .openCodeCreditsChromeCookie:
             return "Chrome cookie"
         case .minimaxTokenPlanAPI:
             return "MiniMax token plan API"
@@ -66,7 +71,7 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "ChatGPT API \u{00B7} Local Codex credential"
         case .codexAppServer:
             return "Codex app-server \u{00B7} Desktop sign-in"
-        case .openCodeGoChromeCookie:
+        case .openCodeGoChromeCookie, .openCodeCreditsChromeCookie:
             return "Chrome cookie \u{00B7} opencode.ai"
         case .minimaxTokenPlanAPI:
             return "MiniMax token plan API (OpenCode key)"
@@ -86,6 +91,8 @@ public extension ProviderID {
             return [.codexAPI, .codexAppServer]
         case .openCodeGo:
             return [.openCodeGoChromeCookie]
+        case .openCodeCredits:
+            return [.openCodeCreditsChromeCookie]
         case .miniMax:
             return [.minimaxTokenPlanAPI]
         }

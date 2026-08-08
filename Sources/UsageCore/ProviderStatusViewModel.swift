@@ -216,12 +216,18 @@ public struct ProviderChainSection: Equatable, Identifiable, Sendable {
             self.recoveryCallout = nil
         }
 
-        self.showsWorkspaceField = provider == .openCodeGo
-        if provider == .openCodeGo {
+        // Both OpenCode providers share the one workspace setting, and each
+        // disclosure must offer it — enabling only Credits would otherwise
+        // strand the field inside a hidden Go disclosure.
+        self.showsWorkspaceField = provider == .openCodeGo || provider == .openCodeCredits
+        if showsWorkspaceField {
             let trimmed = workspaceID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            self.workspaceCaption = trimmed.isEmpty
+            let discovery = trimmed.isEmpty
                 ? "Currently auto-discovered. Set an ID to skip discovery."
                 : "Using the workspace ID you set; discovery is skipped."
+            self.workspaceCaption = provider == .openCodeCredits
+                ? discovery + " Shared with OpenCode Go."
+                : discovery
         } else {
             self.workspaceCaption = nil
         }
@@ -311,7 +317,8 @@ public extension ProviderDataSource {
             case .codexAppServer:
                 return "Desktop helper unavailable"
             case .claudeWebSession, .claudeOAuthAPI, .codexAPI,
-                 .openCodeGoChromeCookie, .minimaxTokenPlanAPI:
+                 .openCodeGoChromeCookie, .openCodeCreditsChromeCookie,
+                 .minimaxTokenPlanAPI:
                 return "Network error"
             }
         case .tokenExpired:
@@ -321,7 +328,8 @@ public extension ProviderDataSource {
                 // OAuth token does — the server rejects it, so name the cause.
                 return "Key rejected"
             case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache,
-                 .codexAPI, .codexAppServer, .openCodeGoChromeCookie:
+                 .codexAPI, .codexAppServer, .openCodeGoChromeCookie,
+                 .openCodeCreditsChromeCookie:
                 return "Token expired"
             }
         case .sessionExpired:
@@ -329,7 +337,8 @@ public extension ProviderDataSource {
             case .minimaxTokenPlanAPI:
                 return "Key rejected"
             case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache,
-                 .codexAPI, .codexAppServer, .openCodeGoChromeCookie:
+                 .codexAPI, .codexAppServer, .openCodeGoChromeCookie,
+                 .openCodeCreditsChromeCookie:
                 return "Session expired"
             }
         case .workspaceSelectionRequired:
@@ -340,6 +349,10 @@ public extension ProviderDataSource {
                 return "No Chrome cookie"
             case .openCodeGoChromeCookie:
                 return "Usage unavailable"
+            case .openCodeCreditsChromeCookie:
+                // Covers both "no cookie" and "billing not configured on the
+                // workspace" — either way there is no balance to read.
+                return "No credits balance"
             case .claudeStatuslineCache:
                 // The cache file is absent (the statusline wrapper was never
                 // wired) or could not be read at all.
@@ -370,6 +383,11 @@ private extension ProviderID {
                 """
         case .openCodeGo:
             return nil
+        case .openCodeCredits:
+            return """
+                Reads the workspace credit balance from opencode.ai with the same read-only \
+                Chrome cookie as OpenCode Go. Only the balance and monthly spend are read.
+                """
         case .miniMax:
             return """
                 Reads only the OpenCode auth.json key for the MiniMax provider. All access is \
@@ -400,13 +418,18 @@ private extension ProviderID {
             return prefix + "Sign in to the Codex desktop app or Codex CLI, then choose "
                 + "Refresh Now from the "
                 + "menu bar."
-        case (.openCodeGo, .sessionExpired), (.openCodeGo, .tokenExpired):
+        case (.openCodeGo, .sessionExpired), (.openCodeGo, .tokenExpired),
+             (.openCodeCredits, .sessionExpired), (.openCodeCredits, .tokenExpired):
             return prefix + "Sign in to opencode.ai in Chrome, then choose Refresh Now "
                 + "from the menu bar."
         case (.openCodeGo, .credentialUnavailable):
             return prefix + "Check your opencode.ai sign-in and workspace access in Chrome, "
                 + "then choose Refresh Now from the menu bar."
-        case (.openCodeGo, .workspaceSelectionRequired):
+        case (.openCodeCredits, .credentialUnavailable):
+            return prefix + "No credits balance found. Check your opencode.ai sign-in in "
+                + "Chrome and that billing is configured on the workspace, then choose "
+                + "Refresh Now from the menu bar."
+        case (.openCodeGo, .workspaceSelectionRequired), (.openCodeCredits, .workspaceSelectionRequired):
             return prefix + "Several workspaces matched. Set a workspace ID below, then "
                 + "choose Refresh Now from the menu bar."
         case (.miniMax, .credentialUnavailable):
@@ -439,6 +462,8 @@ private extension ProviderID {
             return "Codex"
         case .openCodeGo:
             return "OpenCode Go"
+        case .openCodeCredits:
+            return "OpenCode Credits"
         case .miniMax:
             return "MiniMax"
         }
@@ -461,7 +486,7 @@ private extension StaleReason {
                 return "OAuth token expired"
             case .codex:
                 return "Keychain token expired"
-            case .openCodeGo:
+            case .openCodeGo, .openCodeCredits:
                 return "Session token expired"
             case .miniMax:
                 return "MiniMax key rejected"
@@ -474,6 +499,8 @@ private extension StaleReason {
                 return "No local Codex sign-in found"
             case .openCodeGo:
                 return "OpenCode usage unavailable"
+            case .openCodeCredits:
+                return "No credits balance found"
             case .miniMax:
                 return "No MiniMax key found"
             }
@@ -483,14 +510,14 @@ private extension StaleReason {
                 return "claude.ai session expired"
             case .codex:
                 return "Session expired"
-            case .openCodeGo:
+            case .openCodeGo, .openCodeCredits:
                 return "Chrome session expired"
             case .miniMax:
                 return "MiniMax key rejected"
             }
         case .workspaceSelectionRequired:
             switch provider {
-            case .openCodeGo:
+            case .openCodeGo, .openCodeCredits:
                 return "Choose a workspace in Settings"
             case .claude, .codex, .miniMax:
                 return "Workspace selection required"

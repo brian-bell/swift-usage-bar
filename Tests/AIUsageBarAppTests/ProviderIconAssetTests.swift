@@ -13,6 +13,7 @@ func providerIconAssetsLoadForAllProviders() throws {
         true,  // .claude
         true,  // .codex
         true,  // .openCodeGo
+        true,  // .openCodeCredits — shares the OpenCode mark
         false, // .miniMax
     ])
     for provider in ProviderID.allCases where ProviderIconAsset.hasAsset(for: provider) {

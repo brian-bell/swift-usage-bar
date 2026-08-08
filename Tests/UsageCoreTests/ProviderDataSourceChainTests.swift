@@ -17,7 +17,18 @@ func providerDataSourceChainListsEachProvidersSourcesInFallbackOrder() {
     ])
     #expect(ProviderID.codex.dataSourceChain == [.codexAPI, .codexAppServer])
     #expect(ProviderID.openCodeGo.dataSourceChain == [.openCodeGoChromeCookie])
+    #expect(ProviderID.openCodeCredits.dataSourceChain == [.openCodeCreditsChromeCookie])
     #expect(ProviderID.miniMax.dataSourceChain == [.minimaxTokenPlanAPI])
+}
+
+@Test
+func openCodeCreditsChromeCookieDataSourceNamesMatchTheProviderStatusConvention() {
+    #expect(ProviderDataSource.openCodeCreditsChromeCookie.provider == .openCodeCredits)
+    #expect(ProviderDataSource.openCodeCreditsChromeCookie.displayName == "Chrome cookie")
+    #expect(
+        ProviderDataSource.openCodeCreditsChromeCookie.chainStepName
+            == "Chrome cookie \u{00B7} opencode.ai"
+    )
 }
 
 @Test

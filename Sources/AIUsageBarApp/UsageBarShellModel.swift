@@ -243,7 +243,13 @@ extension UsageBarShellModel {
     }
 
     private static func liveProviders(settingsStore: SettingsStore) -> [ProviderID: any UsageProvider] {
-        [
+        // Both OpenCode providers borrow the same Chrome session and share
+        // one locked-down transport; each fetches and qualifies on its own.
+        let openCodeSessionReader = ChromeOpenCodeSessionReader()
+        let openCodeTransport = OpenCodeGoHTTPTransport()
+        let openCodeWorkspaceOverride: @Sendable () -> String? = { settingsStore.openCodeGoWorkspaceID }
+
+        return [
             .claude: ClaudeUsageProvider(
                 credentialReader: ClaudeCredentialReader(
                     store: KeychainCredentialStore(),
@@ -264,9 +270,14 @@ extension UsageBarShellModel {
                 )
             ),
             .openCodeGo: OpenCodeGoProvider(
-                sessionReader: ChromeOpenCodeSessionReader(),
-                transport: OpenCodeGoHTTPTransport(),
-                workspaceOverride: { settingsStore.openCodeGoWorkspaceID }
+                sessionReader: openCodeSessionReader,
+                transport: openCodeTransport,
+                workspaceOverride: openCodeWorkspaceOverride
+            ),
+            .openCodeCredits: OpenCodeCreditsProvider(
+                sessionReader: openCodeSessionReader,
+                transport: openCodeTransport,
+                workspaceOverride: openCodeWorkspaceOverride
             ),
             .miniMax: MiniMaxUsageProvider(
                 credentialReader: OpenCodeAuthFileCredentialReader(),

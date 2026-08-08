@@ -858,3 +858,28 @@ func thresholdNotifierIgnoresCredits() async {
 
     #expect(await sender.sentNotifications().isEmpty)
 }
+
+@Test
+func thresholdNotifierNeverFiresForTheCreditsProvider() async {
+    // The credits provider's usage carries only a balance — no percent
+    // windows exist to cross a threshold, so even a collapsing balance
+    // produces no notification.
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let creditsOnly = { (balance: Double) in
+        ProviderUsage(
+            fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+            weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+            credits: CreditBalance(balanceUSD: balance, monthlyUsedUSD: nil, monthlyLimitUSD: nil)
+        )
+    }
+
+    await notifier.evaluate(
+        previous: creditsOnly(50.0),
+        current: creditsOnly(0.01),
+        provider: .openCodeCredits,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications().isEmpty)
+}

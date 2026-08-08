@@ -39,6 +39,8 @@ enum AccessibilityID {
             return "codex"
         case .openCodeGo:
             return "opencodeGo"
+        case .openCodeCredits:
+            return "opencodeCredits"
         case .miniMax:
             return "minimax"
         }

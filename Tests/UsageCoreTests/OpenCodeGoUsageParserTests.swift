@@ -96,24 +96,21 @@ func openCodeGoParserRejectsAlteredMonthlyUsagePastTheBillingClosingBrace(_ sibl
 }
 
 @Test
-func openCodeGoParserExtractsCreditsFromBillingFixture() throws {
-    // Fixture (synthetic): balance:12345678 / monthlyUsage:87654321 /
-    // monthlyLimit:99, 10⁻⁸ dollars for the first two. 1e-9 tolerance
-    // accounts for the non-power-of-two divisor.
+func openCodeGoParserLeavesCreditsToTheCreditsProvider() throws {
+    // Ownership: the billing record belongs to OpenCodeCreditsParser. Even
+    // on a page with a configured record, Go parses only its windows — a
+    // single owner means the balance can never render twice when both
+    // OpenCode toggles are on.
     let now = Date(timeIntervalSince1970: 2_000_000_000)
     let usage = try OpenCodeGoUsageParser().parse(
         fixtureData("opencode-go-usage-billing.html"),
         now: now
     )
 
-    let credits = try #require(usage.credits, "Credits should be parsed from the billing fixture")
-    #expect(abs(credits.balanceUSD - (12345678.0 / 100_000_000)) < 1e-9)
-    let monthlyUsed = try #require(
-        credits.monthlyUsedUSD,
-        "monthlyUsage is present in the fixture"
-    )
-    #expect(abs(monthlyUsed - (87654321.0 / 100_000_000)) < 1e-9)
-    #expect(credits.monthlyLimitUSD == 99)
+    #expect(usage.credits == nil)
+    #expect(usage.fiveHour.percentRemaining == 0)
+    #expect(usage.weekly.percentRemaining == 11)
+    #expect(usage.monthly?.percentRemaining == 18)
 }
 
 @Test
@@ -208,25 +205,6 @@ func openCodeGoParserReturnsNilCreditsWhenBalanceDigitsOverflowToInfinity() thro
 
     #expect(usage.credits == nil)
     #expect(usage.fiveHour.percentRemaining == 100)
-}
-
-@Test
-func openCodeGoParserCreditsCannotLeakPaymentMetadata() throws {
-    // CreditBalance has no fields for payment metadata (customerID,
-    // paymentMethodID, subscription, lite, …), so the parsed result must
-    // be value-equal to one constructed from the three numbers alone.
-    // The structural limit on the type is the privacy guarantee.
-    let usage = try OpenCodeGoUsageParser().parse(
-        fixtureData("opencode-go-usage-billing.html"),
-        now: Date(timeIntervalSince1970: 2_000_000_000)
-    )
-
-    let manual = CreditBalance(
-        balanceUSD: 12345678.0 / 100_000_000,
-        monthlyUsedUSD: 87654321.0 / 100_000_000,
-        monthlyLimitUSD: 99
-    )
-    #expect(usage.credits == manual)
 }
 
 @Test(arguments: [

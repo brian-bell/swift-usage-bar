@@ -293,11 +293,11 @@ func openCodeGoProviderReportsNoSourceAndPreservesStaleReasonWhenSessionExpired(
 }
 
 @Test
-func openCodeGoProviderSurfacesCreditsFromBillingFixture() async throws {
-    // The provider doesn't touch the billing record itself — the parser
-    // extracts the credit balance and the provider forwards the resulting
-    // ProviderUsage verbatim. This test pins the passthrough so a future
-    // refactor that drops a field can't silently strip credits.
+func openCodeGoProviderDoesNotSurfaceCredits() async throws {
+    // Ownership: the billing record belongs to OpenCodeCreditsProvider. Go's
+    // state carries no credits even on a page with a configured record, so
+    // the balance can never render twice when both OpenCode toggles are on.
+    // Workspace qualification (rolling window present) is unaffected.
     let responseTime = Date(timeIntervalSince1970: 2_000_000_000)
     let reader = RecordingOpenCodeSessionReader(session: OpenCodeSession(authenticationCookie: "auth=test"))
     let transport = StubOpenCodeGoTransport(
@@ -320,14 +320,6 @@ func openCodeGoProviderSurfacesCreditsFromBillingFixture() async throws {
     guard case .fresh(let usage, _) = state else {
         Issue.record("Expected fresh state, got \(state)"); return
     }
-    let credits = try #require(usage.credits, "Credits should be parsed from the billing fixture")
-    #expect(abs(credits.balanceUSD - (12345678.0 / 100_000_000)) < 1e-9)
-    let monthlyUsed = try #require(
-        credits.monthlyUsedUSD,
-        "monthlyUsage is present in the fixture"
-    )
-    #expect(abs(monthlyUsed - (87654321.0 / 100_000_000)) < 1e-9)
-    #expect(credits.monthlyLimitUSD == 99)
-    // Workspace qualification (rolling window present) is unaffected by the billing record.
+    #expect(usage.credits == nil)
     #expect(usage.fiveHour.percentRemaining == 0)
 }

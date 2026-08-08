@@ -99,6 +99,7 @@ public enum ProviderID: CaseIterable, Hashable, Sendable {
     case claude
     case codex
     case openCodeGo
+    case openCodeCredits
     case miniMax
 
     /// Providers that ship hidden: their menu-bar row, dropdown entry, and
@@ -106,7 +107,9 @@ public enum ProviderID: CaseIterable, Hashable, Sendable {
     /// enabled and have produced data. The single source of truth — every
     /// site that needs to special-case a default-hidden provider reads from
     /// here rather than maintaining its own list.
-    public static let defaultHiddenProviders: Set<ProviderID> = [.openCodeGo, .miniMax]
+    public static let defaultHiddenProviders: Set<ProviderID> = [
+        .openCodeGo, .openCodeCredits, .miniMax,
+    ]
 
     /// Whether this provider ships hidden. The opposite direction of
     /// `isProviderVisible` for an unrecorded UserDefaults key.
@@ -175,6 +178,8 @@ private extension ProviderID {
             return "Codex"
         case .openCodeGo:
             return "OpenCode Go"
+        case .openCodeCredits:
+            return "OpenCode Credits"
         case .miniMax:
             return "MiniMax"
         }
@@ -1897,62 +1902,14 @@ public struct OpenCodeGoUsageParser: Sendable {
             throw UsageParsingError.parseFailure
         }
 
-        // Credits are decoration: extracted best-effort from the same SSR
-        // stream the Go windows live in. A missing or unparseable billing
-        // record never fails window parsing — only the Go windows are the
-        // product. See docs/PLAN-opencode-credits.md slice 1.
-        let credits = Self.credits(in: text)
-
+        // The billing record on the same page belongs to
+        // OpenCodeCreditsParser; Go surfaces only its windows so the balance
+        // has a single owner. The `window(named:)` validation below still
+        // exempts the record's plain-number `monthlyUsage` key.
         return ProviderUsage(
             fiveHour: rolling,
             weekly: weekly ?? UsageWindow(percentRemaining: nil, resetsAt: nil),
-            monthly: monthly,
-            credits: credits
-        )
-    }
-
-    /// Extracts the workspace credit balance from the billing record the
-    /// workspace's SSR page embeds in its Seroval stream. The record is
-    /// identified by a non-null `customerID:"…"` (CodexBar's sentinel for
-    /// "billing is configured" — a `null` value means the workspace has
-    /// no real balance to report, and we return nil instead of `$0.00`).
-    ///
-    /// Returns nil for any failure mode: no record, null customerID,
-    /// unparseable digits. The Go windows are unaffected; credits are
-    /// pure decoration.
-    private static func credits(in text: String) -> CreditBalance? {
-        // The three numeric fields appear in source-verified order within
-        // one brace group, before the nested `lite:{…}` object. `[^{}]*`
-        // gaps stay inside one brace group — a nested object between the
-        // keys breaks the match (returning nil) instead of being matched
-        // across. The fixture-backed anti-drift posture for the windows
-        // stays strict; credits follow the web-fallback's
-        // degrade-without-surfacing posture.
-        let pattern = #"\{customerID:"([^"]+)"[^{}]*balance:(\d+)[^{}]*monthlyLimit:(\d+)[^{}]*monthlyUsage:(\d+)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            return nil
-        }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, range: range),
-              let customerID = Range(match.range(at: 1), in: text),
-              let balanceRange = Range(match.range(at: 2), in: text),
-              let limitRange = Range(match.range(at: 3), in: text),
-              let usageRange = Range(match.range(at: 4), in: text),
-              !text[customerID].isEmpty,
-              let balance = Double(text[balanceRange]), balance.isFinite,
-              let limit = Int(text[limitRange]),
-              let monthlyUsage = Double(text[usageRange]), monthlyUsage.isFinite
-        else {
-            return nil
-        }
-
-        // 10⁻⁸-dollar units per docs/endpoints.md. Rounding to cents is
-        // the formatter's job, not the model's — keeps two captures of
-        // the same balance equal.
-        return CreditBalance(
-            balanceUSD: balance / 100_000_000,
-            monthlyUsedUSD: monthlyUsage / 100_000_000,
-            monthlyLimitUSD: limit
+            monthly: monthly
         )
     }
 
@@ -2590,6 +2547,8 @@ private extension ProviderUsage {
             return weekly.percentRemaining.map(String.init) ?? "--"
         case .openCodeGo:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")/\(monthly?.percentRemaining.map(String.init) ?? "--")"
+        case .openCodeCredits:
+            return credits.map { "$\(Int($0.balanceUSD.rounded()))" } ?? "--"
         case .miniMax:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
         }
@@ -2604,6 +2563,8 @@ private func remainingPlaceholder(for provider: ProviderID) -> String {
         return "--"
     case .openCodeGo:
         return "--/--/--"
+    case .openCodeCredits:
+        return "--"
     case .miniMax:
         return "--/--"
     }
@@ -2618,6 +2579,8 @@ private extension ProviderID {
             return "#"
         case .openCodeGo:
             return "G"
+        case .openCodeCredits:
+            return "Oc"
         case .miniMax:
             return "Mx"
         }

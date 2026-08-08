@@ -61,6 +61,20 @@ func statusToneIncludesMonthlyButStillExcludesFable() {
 }
 
 @Test
+func statusToneIsNormalForACreditsOnlyUsage() {
+    // The credits provider's usage has no percent windows at all — a
+    // near-zero dollar balance must not shift tone. Dollar thresholds are
+    // their own future product decision.
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        credits: CreditBalance(balanceUSD: 0.01, monthlyUsedUSD: 49.99, monthlyLimitUSD: 50)
+    )
+
+    #expect(tone(for: usage) == .normal)
+}
+
+@Test
 func statusToneIgnoresCredits() {
     // Credits are a dollar scale, not a percent-remaining window — tone
     // reads only fiveHour/weekly/monthly. A near-zero balance must not
