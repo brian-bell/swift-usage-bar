@@ -77,6 +77,20 @@ func rowLabelRendersCreditsWithOcAbbreviation() {
 }
 
 @Test
+func rowLabelRendersClaudeThreeWindowValueIncludingFable() {
+    #expect(
+        MenuBarLabelImage.rowLabel(
+            for: MenuBarTitleSegment(provider: .claude, value: "62/81/44", isStale: false)
+        ) == "Cl 62/81/44"
+    )
+    #expect(
+        MenuBarLabelImage.rowLabel(
+            for: MenuBarTitleSegment(provider: .claude, value: "62/81/44", isStale: true)
+        ) == "Cl ~62/81/44"
+    )
+}
+
+@Test
 func rowLabelMarksStaleValuesWithTilde() {
     #expect(
         MenuBarLabelImage.rowLabel(
@@ -242,6 +256,35 @@ func menuBarLabelImagePartitionsFiveProvidersAcrossTwoRows() throws {
             == labels.joined(separator: "  ")
     )
     #expect(layout.rows.map(\.text).joined(separator: "  ").contains("Oc $47"))
+}
+
+@Test
+@MainActor
+func menuBarLabelImageFitsFiveProvidersWhenClaudeCarriesFable() throws {
+    // Fable widens the Claude label by three characters. The two-row height
+    // budget is the binding constraint on the menu bar, so pin that the
+    // widest realistic case — five providers, Claude three-window — still
+    // partitions into exactly two rows within it, in order.
+    let segments = [
+        MenuBarTitleSegment(provider: .claude, value: "62/81/44", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeGo, value: "88/74/92", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "$47", isStale: false),
+        MenuBarTitleSegment(provider: .miniMax, value: "76/55", isStale: false),
+    ]
+    let labels = segments.map(MenuBarLabelImage.rowLabel(for:))
+
+    let image = try #require(MenuBarLabelImage.image(for: segments))
+    let layout = try #require(MenuBarLabelImage.layout(for: segments))
+
+    #expect(image.size.height == MenuBarLabelImage.rowHeight * 2)
+    #expect(image.size.height <= 22)
+    #expect(layout.rows.count == 2)
+    #expect(
+        layout.rows.map(\.text).joined(separator: "  ")
+            == labels.joined(separator: "  ")
+    )
+    #expect(layout.rows.map(\.text).joined(separator: "  ").contains("Cl 62/81/44"))
 }
 
 @Test

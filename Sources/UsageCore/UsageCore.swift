@@ -2546,7 +2546,17 @@ private extension ProviderUsage {
     func remainingDisplay(for provider: ProviderID) -> String {
         switch provider {
         case .claude:
-            return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
+            let windows = "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
+            // The model-scoped weekly window is appended only when the payload
+            // reported one. Unlike Go's monthly slot there is no permanent
+            // `--` placeholder for it: the statusline-cache path never carries
+            // a scoped window at all, so a fixed third slot would sit empty
+            // for every user on that fallback.
+            guard let fable else {
+                return windows
+            }
+
+            return "\(windows)/\(fable.percentRemaining.map(String.init) ?? "--")"
         case .codex:
             return weekly.percentRemaining.map(String.init) ?? "--"
         case .openCodeGo:

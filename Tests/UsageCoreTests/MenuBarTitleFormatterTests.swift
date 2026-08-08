@@ -42,6 +42,78 @@ func menuBarTitleFormatterShowsUnavailableClaudeWindowAsPlaceholder() {
 }
 
 @Test
+func menuBarTitleFormatterAppendsFableToClaudeSegment() {
+    // Claude's model-scoped weekly window renders as a third slot after
+    // 5h/weekly, so a segment carrying it reads `<5h>/<weekly>/<fable>`.
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .fresh(claudeFableUsage, asOf: Date(timeIntervalSince1970: 10)),
+        .codex: .hidden,
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .claude, value: "62/81/44", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterShowsFableSlotAsPlaceholderWhenPercentIsUnknown() {
+    // A reported-but-percentless Fable window keeps its slot and shows `--`,
+    // matching how the 5h/weekly slots degrade. Today's parser always derives
+    // a percent, so this pins the formatter's totality rather than a live
+    // payload shape — the alternative (force-unwrapping) would crash the
+    // whole menu bar if a future source ever reports a window without one.
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 62, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 81, resetsAt: nil),
+        fable: UsageWindow(percentRemaining: nil, resetsAt: nil)
+    )
+
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .fresh(usage, asOf: Date(timeIntervalSince1970: 10)),
+        .codex: .hidden,
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .claude, value: "62/81/--", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterOmitsFableSlotWhenClaudeHasNoFableWindow() {
+    // The third slot is conditional, not a placeholder: no reported Fable
+    // window means a two-slot segment. Pins the decision against a drift to
+    // `62/81/--`, which would put a permanent dead slot in front of every
+    // user whose data comes from the statusline cache.
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .fresh(claudeUsage, asOf: Date(timeIntervalSince1970: 10)),
+        .codex: .hidden,
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
+    ])
+    // ...and the never-fetched placeholder stays two-slot for the same reason.
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .stale(last: nil, reason: .parseFailure),
+        .codex: .hidden,
+    ]) == [
+        MenuBarTitleSegment(provider: .claude, value: "--/--", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterKeepsFableSlotOnStaleClaude() {
+    // Stale rendering reads the last known usage through the same display
+    // path, so the Fable slot survives the `~` marker.
+    let title = MenuBarTitleFormatter.format([
+        .claude: .stale(last: claudeFableUsage, reason: .networkError),
+        .codex: .hidden,
+    ])
+
+    #expect(plainText(title) == "* ~62/81/44")
+}
+
+@Test
 func menuBarTitleFormatterShowsUnavailableCodexWeeklyAsPlaceholder() {
     let usage = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
@@ -193,6 +265,12 @@ func menuBarTitleFormatterEmitsFourSegmentsInProviderOrderWhenAllVisible() {
 private let claudeUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 62, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 81, resetsAt: nil)
+)
+
+private let claudeFableUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: 62, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: 81, resetsAt: nil),
+    fable: UsageWindow(percentRemaining: 44, resetsAt: nil)
 )
 
 private let codexUsage = ProviderUsage(
