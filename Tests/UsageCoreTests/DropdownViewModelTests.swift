@@ -357,10 +357,11 @@ func dropdownSummaryIsNilWhenVisibleProvidersHaveNoUpdateTimestamp() {
 }
 
 @Test
-func dropdownCreditsRowFormatsBalanceAsUSDWithTwoDecimals() {
-    // The spec is "two-decimal dollars" — synthetic values round to the
-    // nearest cent under Locale("en_US_POSIX") so the formatter is
-    // deterministic across runs and machines.
+func dropdownCreditsRowShowsMonthlyAllowanceRemainingWithBar() {
+    // With both monthly fields present the row reads like the window rows:
+    // remaining-of-allowance above a bar. Remaining is limit − used, and
+    // the fraction is the same expression production uses so the compare
+    // is exact without float literals.
     let row = DropdownCreditsRow(
         credits: CreditBalance(
             balanceUSD: 42.50,
@@ -371,29 +372,56 @@ func dropdownCreditsRowFormatsBalanceAsUSDWithTwoDecimals() {
     )
 
     #expect(row.title == "Credits")
-    #expect(row.amountLabel == "$42.50")
-    #expect(row.captionLabel == "$2.96 of $50 used this month")
+    #expect(row.amountLabel == "$47.04 remaining")
+    #expect(row.barFraction == (50.0 - 2.96) / 50.0)
+    #expect(row.limitLabel == "$50 monthly limit")
 }
 
 @Test
-func dropdownCreditsRowOmitsCaptionWhenMonthlyLimitIsNil() {
+func dropdownCreditsRowMatchesTheBillingFixture() throws {
+    // Sanitized sentinels from opencode-go-usage-billing.html:
+    // monthlyLimit:99, monthlyUsage:87654321 (10⁻⁸ dollars) →
+    // 99 − 0.87654321 = 98.12345679 → "$98.12" under any rounding mode.
+    let credits = try #require(
+        try OpenCodeCreditsParser().parse(fixtureData("opencode-go-usage-billing.html"))
+    )
+    let row = DropdownCreditsRow(
+        credits: credits,
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(row.amountLabel == "$98.12 remaining")
+    #expect(row.barFraction == (99.0 - 87654321.0 / 100_000_000) / 99.0)
+    #expect(row.limitLabel == "$99 monthly limit")
+}
+
+@Test
+func dropdownCreditsRowFallsBackToBalanceWhenMonthlyFieldsAreNil() {
+    // Without an allowance there is no fraction to chart: the row degrades
+    // to the wallet balance alone — barFraction == nil suppresses the bar
+    // (an empty bar would falsely read "0 remaining") and limitLabel ==
+    // nil suppresses the right-side limit text. A zero balance still
+    // renders as "$0.00": zero-but-billing-configured is a real state,
+    // not the same as "no credits".
     let row = DropdownCreditsRow(
         credits: CreditBalance(
-            balanceUSD: 12.30,
+            balanceUSD: 0,
             monthlyUsedUSD: nil,
             monthlyLimitUSD: nil
         ),
         locale: Locale(identifier: "en_US_POSIX")
     )
 
-    #expect(row.amountLabel == "$12.30")
-    #expect(row.captionLabel == nil)
+    #expect(row.amountLabel == "$0.00")
+    #expect(row.barFraction == nil)
+    #expect(row.limitLabel == nil)
 }
 
 @Test
-func dropdownCreditsRowOmitsCaptionWhenMonthlyUsedIsNil() {
-    // The caption reads "X of Y used this month" — without X, the line
-    // is meaningless. Limit alone is not enough.
+func dropdownCreditsRowFallsBackToBalanceWhenMonthlyUsedIsNil() {
+    // "Remaining" is limit − used — without used, the limit alone cannot
+    // produce it, and a lone right-side "$50 monthly limit" next to a
+    // wallet balance would imply a comparison the row isn't making.
     let row = DropdownCreditsRow(
         credits: CreditBalance(
             balanceUSD: 12.30,
@@ -404,13 +432,34 @@ func dropdownCreditsRowOmitsCaptionWhenMonthlyUsedIsNil() {
     )
 
     #expect(row.amountLabel == "$12.30")
-    #expect(row.captionLabel == nil)
+    #expect(row.barFraction == nil)
+    #expect(row.limitLabel == nil)
 }
 
 @Test
-func dropdownCreditsRowRendersZeroBalanceAsZeroDollars() {
-    // A zero balance must still render — a balance-but-billing-configured
-    // workspace is a real state, not the same as "no credits".
+func dropdownCreditsRowFallsBackToBalanceWhenMonthlyLimitIsZero() {
+    // A zero limit has no meaningful fraction (division aside, "remaining
+    // of $0" is noise) — same balance-only degradation as a nil field.
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 12.30,
+            monthlyUsedUSD: 2.96,
+            monthlyLimitUSD: 0
+        ),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(row.amountLabel == "$12.30")
+    #expect(row.barFraction == nil)
+    #expect(row.limitLabel == nil)
+}
+
+@Test
+func dropdownCreditsRowShowsFullAllowanceWhenNothingIsUsed() {
+    // Zero used is a real state and must render as a full bar, not be
+    // conflated with "no data". (The old zero-*balance* pin moved to the
+    // both-fields-nil fallback test — the balance no longer renders on
+    // the full-data path.)
     let row = DropdownCreditsRow(
         credits: CreditBalance(
             balanceUSD: 0,
@@ -420,15 +469,35 @@ func dropdownCreditsRowRendersZeroBalanceAsZeroDollars() {
         locale: Locale(identifier: "en_US_POSIX")
     )
 
-    #expect(row.amountLabel == "$0.00")
-    #expect(row.captionLabel == "$0.00 of $50 used this month")
+    #expect(row.amountLabel == "$50.00 remaining")
+    #expect(row.barFraction == 1.0)
+    #expect(row.limitLabel == "$50 monthly limit")
+}
+
+@Test
+func dropdownCreditsRowKeepsLabelUnclampedWhenOverLimit() {
+    // Same split the window rows pin: the label tells the truth about
+    // overspend ("$-10.00 remaining") while the bar clamps to empty.
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 5,
+            monthlyUsedUSD: 60,
+            monthlyLimitUSD: 50
+        ),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(row.amountLabel == "$-10.00 remaining")
+    #expect(row.barFraction == 0)
+    #expect(row.limitLabel == "$50 monthly limit")
 }
 
 @Test
 func dropdownCreditsRowRoundsBalanceToTwoDecimals() {
     // NumberFormatter with min=max=2 rounds halfUp. A future refactor that
     // swaps the formatter (e.g. for `String(format:)` or `formatted(_:)`)
-    // could change the rounding rule — this test pins the spec.
+    // could change the rounding rule — this test pins the spec on the
+    // balance-fallback path.
     let row = DropdownCreditsRow(
         credits: CreditBalance(
             balanceUSD: 99.999,
@@ -460,6 +529,25 @@ func dropdownCreditsRowUsesLocaleDecimalSeparator() {
     #expect(row.amountLabel == "$42,50")
 }
 
+@Test
+func dropdownCreditsRowUsesLocaleDecimalSeparatorForRemaining() {
+    // The remaining label goes through the same formatCurrency path as the
+    // balance fallback — one locale pin per path.
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 42.50,
+            monthlyUsedUSD: 2.96,
+            monthlyLimitUSD: 50
+        ),
+        locale: Locale(identifier: "de_DE")
+    )
+
+    #expect(row.amountLabel == "$47,04 remaining")
+    // The limit side keeps raw Int interpolation (no locale separators) —
+    // limits are small whole dollars, per the original caption decision.
+    #expect(row.limitLabel == "$50 monthly limit")
+}
+
 private let creditsProviderUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
@@ -472,9 +560,11 @@ private let creditsProviderUsage = ProviderUsage(
 
 @Test
 func dropdownCreditsProviderRowShowsOnlyTheCreditsRow() throws {
-    // The credits provider's usage is the balance alone: no 5h, weekly, or
-    // monthly rows — a percent bar under a dollar figure would claim
-    // window semantics the number doesn't have.
+    // The credits provider still exposes no 5h/weekly/monthly rows. Its
+    // bar charts monthly-allowance-remaining (limit − used, over limit) —
+    // a dollar figure, not a rate-limit window — so credits keep their own
+    // row type, own no WindowKey, and stay out of tone and threshold
+    // notifications.
     let model = DropdownViewModel(
         states: [.openCodeCredits: .fresh(creditsProviderUsage, asOf: referenceNow)],
         now: referenceNow,
@@ -489,8 +579,9 @@ func dropdownCreditsProviderRowShowsOnlyTheCreditsRow() throws {
     #expect(row.monthly == nil)
     let credits = try #require(row.credits, "fresh credits usage should expose the credits row")
     #expect(credits.title == "Credits")
-    #expect(credits.amountLabel == "$42.50")
-    #expect(credits.captionLabel == "$2.96 of $50 used this month")
+    #expect(credits.amountLabel == "$47.04 remaining")
+    #expect(credits.barFraction == (50.0 - 2.96) / 50.0)
+    #expect(credits.limitLabel == "$50 monthly limit")
 }
 
 @Test
@@ -508,8 +599,8 @@ func dropdownCreditsProviderRowPreservesCreditsWhenStaleWithLastUsage() throws {
     let row = try #require(model.rows.first { $0.provider == .openCodeCredits })
     #expect(row.isStale)
     let credits = try #require(row.credits, "stale(last: usage) preserves last-known credits")
-    #expect(credits.amountLabel == "$42.50")
-    #expect(credits.captionLabel == "$2.96 of $50 used this month")
+    #expect(credits.amountLabel == "$47.04 remaining")
+    #expect(credits.barFraction == (50.0 - 2.96) / 50.0)
 }
 
 @Test
@@ -528,7 +619,8 @@ func dropdownCreditsProviderRowShowsPlaceholderWhenStaleWithNothing() throws {
     let credits = try #require(row.credits, "the credits provider always shows its one row")
     #expect(credits.title == "Credits")
     #expect(credits.amountLabel == "--")
-    #expect(credits.captionLabel == nil)
+    #expect(credits.barFraction == 0, "placeholder renders an empty bar, matching the window rows")
+    #expect(credits.limitLabel == nil, "no data means no limit to state on the right")
     #expect(row.staleMessage == "Stale: no credits balance found")
 }
 
@@ -589,6 +681,15 @@ private let miniMaxUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 76, resetsAt: referenceNow.addingTimeInterval(2 * 60 * 60)),
     weekly: UsageWindow(percentRemaining: 55, resetsAt: referenceNow.addingTimeInterval(5 * 24 * 60 * 60))
 )
+
+private func fixtureData(_ name: String) throws -> Data {
+    let testFile = URL(fileURLWithPath: #filePath)
+    return try Data(contentsOf: testFile
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Fixtures")
+        .appendingPathComponent(name))
+}
 
 private func deterministicCalendar() -> Calendar {
     var calendar = Calendar(identifier: .gregorian)

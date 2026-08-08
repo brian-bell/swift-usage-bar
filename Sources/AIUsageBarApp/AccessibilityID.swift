@@ -72,9 +72,22 @@ enum AccessibilityID {
 
     /// Credits row (rendered under the OpenCode Credits provider). The
     /// window-kind enum sees no new case — credits are not a `UsageWindow`
-    /// and have no kind.
+    /// and have no kind, even though the row renders the same label-over-bar
+    /// shape as the windows.
     static func menuBarProviderCredits(_ provider: ProviderID) -> String {
         "\(menuBarProvider(provider)).credits"
+    }
+
+    static func menuBarProviderCreditsAmount(_ provider: ProviderID) -> String {
+        "\(menuBarProviderCredits(provider)).amount"
+    }
+
+    static func menuBarProviderCreditsBar(_ provider: ProviderID) -> String {
+        "\(menuBarProviderCredits(provider)).bar"
+    }
+
+    static func menuBarProviderCreditsLimit(_ provider: ProviderID) -> String {
+        "\(menuBarProviderCredits(provider)).limit"
     }
 
     static func settingsProviderToggle(_ provider: ProviderID) -> String {

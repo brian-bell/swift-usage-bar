@@ -80,13 +80,21 @@ struct HostedUITests {
         // The amount label is the most failure-prone piece of the row —
         // it goes through NumberFormatter with the system locale. A bare
         // existence check on the AX id only proves the row is wired up;
-        // confirming the formatted dollar value pins the formatter too.
-        #expect(ax.firstValue(containing: "$42.50") != nil)
-        #expect(ax.firstValue(containing: "$2.96 of $50 used this month") != nil)
-        // Pin the per-text AX ids so a SwiftUI modifier refactor that drops
-        // an identifier doesn't leave the values visible but break future
-        // AX-based assertions.
-        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeCredits)).amount"))
-        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeCredits)).caption"))
+        // confirming the formatted value pins the formatter too. Fixture:
+        // limit 50 − used 2.96 → $47.04 of the monthly allowance remains.
+        #expect(ax.firstValue(containing: "$47.04 remaining") != nil)
+        // The right-side slot (the windows' countdown position) states the
+        // allowance the bar is charted against.
+        #expect(ax.firstValue(containing: "$50 monthly limit") != nil)
+        // The old "used this month" caption is gone — the remaining label
+        // plus the bar carries the same information.
+        #expect(ax.firstValue(containing: "used this month") == nil)
+        // Pin the per-element AX ids so a SwiftUI modifier refactor that
+        // drops an identifier doesn't leave the values visible but break
+        // future AX-based assertions.
+        #expect(ax.exists(AccessibilityID.menuBarProviderCreditsAmount(.openCodeCredits)))
+        #expect(ax.exists(AccessibilityID.menuBarProviderCreditsBar(.openCodeCredits)))
+        #expect(ax.exists(AccessibilityID.menuBarProviderCreditsLimit(.openCodeCredits)))
+        #expect(!ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeCredits)).caption"))
     }
 }

@@ -55,6 +55,15 @@ The load-bearing facts:
   is absent). No progress bar in slice 2 — a bar implies
   percent-remaining semantics the number doesn't have. If a bar is later
   wanted, `monthlyUsage / monthlyLimit` is the only defensible fraction.
+  - **Superseded (2026-08-08)**: the row now renders like the window
+    rows — `$47.04 remaining` (limit − used, unclamped) over a linear
+    bar filled `remaining / limit` (clamped 0…1), with
+    `$50 monthly limit` in the right-side slot the windows use for
+    their countdown, the caption dropped.
+    Without both monthly fields (or with a zero limit) it degrades to
+    the bare balance with no bar. Credits still own no `WindowKey` and
+    stay out of tone/threshold; the wallet balance stays in the menu
+    bar title.
 - **No new settings.** Visibility rides on the provider's existing
   visibility toggle.
 - **Staleness**: credits live inside `ProviderUsage`, so they inherit
@@ -167,6 +176,11 @@ TDD order; every step red → green.
 1. **`DropdownCreditsRow`** in `DropdownViewModel.swift`:
 
    ```swift
+   // As shipped in slice 2; since 2026-08-08 captionLabel is replaced by
+   // barFraction: Double? (nil = no bar) plus limitLabel: String?
+   // ("$50 monthly limit", nil on the balance-only fallback) and
+   // amountLabel reads "$47.04 remaining" — see the superseded Copy
+   // bullet above.
    public struct DropdownCreditsRow: Equatable, Sendable {
        public let title: String        // "Credits"
        public let amountLabel: String  // "$47.04"
@@ -185,7 +199,9 @@ TDD order; every step red → green.
    rows in the OpenCode Go section — text row, no progress bar; add an
    `AccessibilityID` case (window-kind enum gets no new case; credits
    get their own id, e.g. `providerCredits(provider)` following the
-   existing id scheme).
+   existing id scheme). *(Superseded 2026-08-08: the row now carries a
+   linear allowance bar and a right-side limit label — see the Copy
+   bullet above.)*
 
 3. **Hosted UI fixture**: extend `uiTestOpenCodeGoUsage` in
    `Tests/AIUsageBarAppTests/Support/UITestFixtures.swift` with a
@@ -203,6 +219,8 @@ TDD order; every step red → green.
 - Dropdown shows `Credits $47.04 · $2.96 of $50 used this month` under
   OpenCode Go when the live page carries a configured billing record;
   shows no credits row on the old fixture shape or `customerID:null`.
+  (Since 2026-08-08: `Credits $47.04 remaining` over an allowance bar,
+  caption removed.)
 - Menu bar title, tone, and notifications byte-identical with and
   without credits (pinned by tests).
 - No payment metadata anywhere: grep for `customerID` in `Sources/`

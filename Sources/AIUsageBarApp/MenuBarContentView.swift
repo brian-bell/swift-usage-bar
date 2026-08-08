@@ -135,17 +135,21 @@ private struct CreditsRowView: View {
                     .accessibilityIdentifier(AccessibilityID.menuBarProviderCredits(provider))
                 Text(row.amountLabel)
                     .monospacedDigit()
-                    .accessibilityIdentifier("\(AccessibilityID.menuBarProviderCredits(provider)).amount")
+                    .accessibilityIdentifier(AccessibilityID.menuBarProviderCreditsAmount(provider))
                 Spacer()
+                if let limitLabel = row.limitLabel {
+                    Text(limitLabel)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier(AccessibilityID.menuBarProviderCreditsLimit(provider))
+                }
             }
             .font(.caption)
 
-            if let caption = row.captionLabel {
-                Text(caption)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 52)
-                    .accessibilityIdentifier("\(AccessibilityID.menuBarProviderCredits(provider)).caption")
+            if let barFraction = row.barFraction {
+                ProgressView(value: barFraction)
+                    .progressViewStyle(.linear)
+                    .accessibilityIdentifier(AccessibilityID.menuBarProviderCreditsBar(provider))
+                    .accessibilityValue(row.amountLabel)
             }
         }
     }

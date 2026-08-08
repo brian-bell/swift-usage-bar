@@ -8,6 +8,7 @@ func accessibilityIDProviderTokensMatchCatalog() {
     #expect(AccessibilityID.providerToken(.claude) == "claude")
     #expect(AccessibilityID.providerToken(.codex) == "codex")
     #expect(AccessibilityID.providerToken(.openCodeGo) == "opencodeGo")
+    #expect(AccessibilityID.providerToken(.openCodeCredits) == "opencodeCredits")
     #expect(AccessibilityID.providerToken(.miniMax) == "minimax")
 }
 
@@ -43,6 +44,22 @@ func accessibilityIDCatalogUsesHierarchicalKebabCase() {
     #expect(
         AccessibilityID.menuBarWindow(.claude, .fable)
             == "menubar.content.provider.claude.window.fable"
+    )
+    #expect(
+        AccessibilityID.menuBarProviderCredits(.openCodeCredits)
+            == "menubar.content.provider.opencodeCredits.credits"
+    )
+    #expect(
+        AccessibilityID.menuBarProviderCreditsAmount(.openCodeCredits)
+            == "menubar.content.provider.opencodeCredits.credits.amount"
+    )
+    #expect(
+        AccessibilityID.menuBarProviderCreditsBar(.openCodeCredits)
+            == "menubar.content.provider.opencodeCredits.credits.bar"
+    )
+    #expect(
+        AccessibilityID.menuBarProviderCreditsLimit(.openCodeCredits)
+            == "menubar.content.provider.opencodeCredits.credits.limit"
     )
     // Empty menu-bar state uses the same identifier; value is "AI Usage".
     #expect(MenuBarLabelImage.accessibilityValue(for: []) == "AI Usage")

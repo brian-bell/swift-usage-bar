@@ -176,28 +176,36 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
 }
 
 /// Workspace credit balance, formatted for the dropdown. The row is purely
-/// presentational — no scaling, no progress bar, no threshold participation.
-/// Title and amountLabel always exist; captionLabel is omitted when there
-/// is no monthly limit (or no monthly usage to compare against the limit).
-///
-/// Caption formatting is deliberately asymmetric: the "used" side goes
-/// through `formatCurrency` (locale-aware decimal separator, e.g. "$2,96"
-/// in `de_DE`), but the "of $Y" limit side uses raw `Int` interpolation —
-/// limits are small whole dollars in practice (today's cap is $50) so a
-/// grouping-separator surprise at $1,000+ would be more confusing than
-/// helpful.
+/// presentational — no scaling, no threshold participation.
+/// Mirrors the window rows' label/bar split: `amountLabel` is unclamped
+/// (overspend renders "$-10.00 remaining") while `barFraction` clamps to
+/// 0...1. `limitLabel` fills the windows' countdown slot with the allowance
+/// the bar is charted against ("$50 monthly limit"), using raw `Int`
+/// interpolation for the dollar figure — limits are small whole dollars, so
+/// a grouping-separator surprise at $1,000+ would be more confusing than
+/// helpful. When either monthly field is missing — or the limit is
+/// non-positive, which has no meaningful fraction — the row degrades to the
+/// wallet balance alone with `barFraction == nil` (an empty bar next to a
+/// real balance would falsely read "0 remaining") and `limitLabel == nil`.
 public struct DropdownCreditsRow: Equatable, Sendable {
     public let title: String
     public let amountLabel: String
-    public let captionLabel: String?
+    public let barFraction: Double?
+    public let limitLabel: String?
 
     public init(credits: CreditBalance, locale: Locale) {
         self.title = "Credits"
-        self.amountLabel = Self.formatCurrency(credits.balanceUSD, locale: locale)
-        if let monthlyUsed = credits.monthlyUsedUSD, let monthlyLimit = credits.monthlyLimitUSD {
-            self.captionLabel = "\(Self.formatCurrency(monthlyUsed, locale: locale)) of $\(monthlyLimit) used this month"
+        if let monthlyUsed = credits.monthlyUsedUSD,
+           let monthlyLimit = credits.monthlyLimitUSD,
+           monthlyLimit > 0 {
+            let remaining = Double(monthlyLimit) - monthlyUsed
+            self.amountLabel = "\(Self.formatCurrency(remaining, locale: locale)) remaining"
+            self.barFraction = min(1, max(0, remaining / Double(monthlyLimit)))
+            self.limitLabel = "$\(monthlyLimit) monthly limit"
         } else {
-            self.captionLabel = nil
+            self.amountLabel = Self.formatCurrency(credits.balanceUSD, locale: locale)
+            self.barFraction = nil
+            self.limitLabel = nil
         }
     }
 
@@ -212,16 +220,20 @@ public struct DropdownCreditsRow: Equatable, Sendable {
 
     /// The credits provider's row before it has ever produced data —
     /// mirrors the window rows' `--` placeholder rather than inventing $0.
+    /// Unlike the balance-only fallback, the empty bar is fine here: next
+    /// to `--` it reads as "no data yet", not "0 remaining".
     static let placeholder = DropdownCreditsRow(
         title: "Credits",
         amountLabel: "--",
-        captionLabel: nil
+        barFraction: 0,
+        limitLabel: nil
     )
 
-    private init(title: String, amountLabel: String, captionLabel: String?) {
+    private init(title: String, amountLabel: String, barFraction: Double?, limitLabel: String?) {
         self.title = title
         self.amountLabel = amountLabel
-        self.captionLabel = captionLabel
+        self.barFraction = barFraction
+        self.limitLabel = limitLabel
     }
 }
 
