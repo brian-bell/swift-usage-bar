@@ -205,6 +205,69 @@ private let miniMaxUsage = ProviderUsage(
     weekly: UsageWindow(percentRemaining: 55, resetsAt: nil)
 )
 
+private func creditsState(balanceUSD: Double) -> ProviderState {
+    .fresh(
+        ProviderUsage(
+            fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+            weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+            credits: CreditBalance(balanceUSD: balanceUSD, monthlyUsedUSD: nil, monthlyLimitUSD: nil)
+        ),
+        asOf: Date(timeIntervalSince1970: 20)
+    )
+}
+
+@Test
+func menuBarTitleFormatterRendersCreditsAsWholeDollars() {
+    // The bar shows whole dollars, matching the whole-percent convention of
+    // every other segment; exact cents live in the dropdown.
+    for (balance, value) in [(47.03, "$47"), (47.60, "$48"), (0.12, "$0")] {
+        #expect(MenuBarTitleFormatter.segments([
+            .claude: .hidden,
+            .codex: .hidden,
+            .openCodeCredits: creditsState(balanceUSD: balance),
+        ]) == [
+            MenuBarTitleSegment(provider: .openCodeCredits, value: value, isStale: false),
+        ])
+    }
+}
+
+@Test
+func menuBarTitleFormatterMarksStaleCreditsAndFallsBackToPlaceholder() {
+    let lastKnown = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        credits: CreditBalance(balanceUSD: 12.40, monthlyUsedUSD: nil, monthlyLimitUSD: nil)
+    )
+
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .openCodeCredits: .stale(last: lastKnown, reason: .networkError),
+    ]) == [
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "$12", isStale: true),
+    ])
+    // Stale with nothing ever fetched: the placeholder, not a fabricated $0.
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .openCodeCredits: .stale(last: nil, reason: .credentialUnavailable),
+    ]) == [
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "--", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterSkipsTheCreditsProviderUntilItHasReported() {
+    // Default-hidden provider contract: no state → no segment, no
+    // placeholder — identical to OpenCode Go and MiniMax.
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .fresh(codexUsage, asOf: Date(timeIntervalSince1970: 20)),
+    ]) == [
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
+    ])
+}
+
 @Test
 func menuBarTitleFormatterIsIdenticalWithOrWithoutCredits() {
     // The menu-bar title is the percent-remaining scale only; adding or

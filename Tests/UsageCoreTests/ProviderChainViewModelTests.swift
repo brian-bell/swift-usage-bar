@@ -335,12 +335,49 @@ func workspaceCaptionSaysDiscoveryIsSkippedOnceAnIDIsSet() throws {
 }
 
 @Test
-func onlyOpenCodeGoShowsTheWorkspaceField() throws {
-    for provider in [ProviderID.claude, .codex] {
+func onlyTheOpenCodeProvidersShowTheWorkspaceField() throws {
+    for provider in [ProviderID.claude, .codex, .miniMax] {
         let section = try chainSection(for: provider)
         #expect(!section.showsWorkspaceField)
         #expect(section.workspaceCaption == nil)
     }
+}
+
+@Test
+func openCodeCreditsDisclosureSharesTheWorkspaceFieldAndSaysSo() throws {
+    // The one workspace setting names the same opencode.ai workspace for
+    // both OpenCode providers; the credits disclosure must offer it too, or
+    // enabling only Credits would strand the field inside a hidden Go
+    // disclosure.
+    let section = try chainSection(
+        for: .openCodeCredits,
+        states: [.openCodeCredits: .fresh(chainUsage, asOf: chainNow)],
+        chains: [.openCodeCredits: [ProviderDataSourceStep(.openCodeCreditsChromeCookie, .used)]],
+        lastUpdatedAt: [.openCodeCredits: chainNow]
+    )
+
+    #expect(section.showsWorkspaceField)
+    #expect(section.workspaceCaption
+        == "Currently auto-discovered. Set an ID to skip discovery. Shared with OpenCode Go.")
+    #expect(section.steps.map(\.name) == ["Chrome cookie \u{00B7} opencode.ai"])
+}
+
+@Test
+func openCodeCreditsStaleDisclosureExplainsTheMissingBalance() throws {
+    // `.credentialUnavailable` covers both "no cookie" and "billing not
+    // configured"; the callout must name both candidate causes.
+    let section = try chainSection(
+        for: .openCodeCredits,
+        states: [.openCodeCredits: .stale(last: nil, reason: .credentialUnavailable)],
+        chains: [.openCodeCredits: [
+            ProviderDataSourceStep(.openCodeCreditsChromeCookie, .failed(.credentialUnavailable)),
+        ]]
+    )
+
+    #expect(section.recoveryCallout == "Showing last-known data. No credits balance found. "
+        + "Check your opencode.ai sign-in in Chrome and that billing is configured on the "
+        + "workspace, then choose Refresh Now from the menu bar.")
+    #expect(section.steps.first?.stateText == "No credits balance")
 }
 
 // MARK: - Hidden providers

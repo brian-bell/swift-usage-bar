@@ -69,10 +69,10 @@ func dropdownRowsExposeMiniMaxFiveHourAndWeeklyCountdowns() throws {
     #expect(fiveHour.title == "5h")
     #expect(fiveHour.percentLabel == "76% remaining")
     #expect(fiveHour.countdownLabel == "resets in 1h 30m")
-    #expect(row.weekly.title == "Weekly")
-    #expect(row.weekly.percentLabel == "55% remaining")
+    #expect(row.weekly?.title == "Weekly")
+    #expect(row.weekly?.percentLabel == "55% remaining")
     // referenceNow is 2026-01-01 (Thursday); +3 days is Sunday.
-    #expect(row.weekly.countdownLabel == "resets Sun 12:00 PM")
+    #expect(row.weekly?.countdownLabel == "resets Sun 12:00 PM")
     #expect(row.staleMessage == nil)
     #expect(row.updatedLabel == nil)
 }
@@ -102,10 +102,10 @@ func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
     #expect(fiveHour.percentLabel == "120% remaining")
     #expect(fiveHour.barFraction == 1)
     #expect(fiveHour.countdownLabel == "resets in 1h 30m")
-    #expect(row.weekly.percentLabel == "-20% remaining")
-    #expect(row.weekly.barFraction == 0)
+    #expect(row.weekly?.percentLabel == "-20% remaining")
+    #expect(row.weekly?.barFraction == 0)
     // referenceNow (2026-01-01 12:00 UTC) is a Thursday; +3 days is Sunday.
-    #expect(row.weekly.countdownLabel == "resets Sun 12:00 PM")
+    #expect(row.weekly?.countdownLabel == "resets Sun 12:00 PM")
 }
 
 @Test
@@ -124,9 +124,9 @@ func dropdownRowsOmitUnavailableFiveHourWindow() throws {
     let row = try #require(model.rows.first { $0.provider == .codex })
     #expect(!row.isStale)
     #expect(row.fiveHour == nil)
-    #expect(row.weekly.percentLabel == "90% remaining")
+    #expect(row.weekly?.percentLabel == "90% remaining")
     // referenceNow (2026-01-01 12:00 UTC) is a Thursday; +6 days is Wednesday.
-    #expect(row.weekly.countdownLabel == "resets Wed 12:00 PM")
+    #expect(row.weekly?.countdownLabel == "resets Wed 12:00 PM")
 }
 
 @Test
@@ -146,9 +146,9 @@ func dropdownRowsShowUnavailableClaudeWeeklyWithoutMarkingProviderStale() throws
     #expect(!row.isStale)
     let fiveHour = try #require(row.fiveHour)
     #expect(fiveHour.percentLabel == "76% remaining")
-    #expect(row.weekly.percentLabel == "--")
-    #expect(row.weekly.barFraction == 0)
-    #expect(row.weekly.countdownLabel == "reset unknown")
+    #expect(row.weekly?.percentLabel == "--")
+    #expect(row.weekly?.barFraction == 0)
+    #expect(row.weekly?.countdownLabel == "reset unknown")
 }
 
 @Test
@@ -212,7 +212,7 @@ func dropdownRowsFlagStaleProvidersWhilePreservingLastKnownValues() throws {
     #expect(row.staleMessage == "Stale: network error")
     let fiveHour = try #require(row.fiveHour)
     #expect(fiveHour.percentLabel == "62% remaining")
-    #expect(row.weekly.percentLabel == "81% remaining")
+    #expect(row.weekly?.percentLabel == "81% remaining")
 }
 
 @Test
@@ -231,7 +231,7 @@ func dropdownRowsUsePlaceholdersForStaleProvidersWithoutData() throws {
     #expect(fiveHour.percentLabel == "--")
     #expect(fiveHour.barFraction == 0)
     #expect(fiveHour.countdownLabel == "reset unknown")
-    #expect(row.weekly.percentLabel == "--")
+    #expect(row.weekly?.percentLabel == "--")
 }
 
 @Test
@@ -247,7 +247,7 @@ func dropdownRowsOmitFiveHourPlaceholderForStaleCodexWithoutData() throws {
     #expect(row.isStale)
     #expect(row.staleMessage == "Stale: token expired")
     #expect(row.fiveHour == nil)
-    #expect(row.weekly.percentLabel == "--")
+    #expect(row.weekly?.percentLabel == "--")
 }
 
 @Test(arguments: [
@@ -460,55 +460,52 @@ func dropdownCreditsRowUsesLocaleDecimalSeparator() {
     #expect(row.amountLabel == "$42,50")
 }
 
-@Test
-func dropdownProviderRowExposesCreditsForFreshOpenCodeGoUsage() throws {
-    let usage = ProviderUsage(
-        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
-        weekly: UsageWindow(percentRemaining: 74, resetsAt: nil),
-        monthly: UsageWindow(percentRemaining: 92, resetsAt: nil),
-        credits: CreditBalance(
-            balanceUSD: 42.50,
-            monthlyUsedUSD: 2.96,
-            monthlyLimitUSD: 50
-        )
+private let creditsProviderUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    credits: CreditBalance(
+        balanceUSD: 42.50,
+        monthlyUsedUSD: 2.96,
+        monthlyLimitUSD: 50
     )
+)
+
+@Test
+func dropdownCreditsProviderRowShowsOnlyTheCreditsRow() throws {
+    // The credits provider's usage is the balance alone: no 5h, weekly, or
+    // monthly rows — a percent bar under a dollar figure would claim
+    // window semantics the number doesn't have.
     let model = DropdownViewModel(
-        states: [.openCodeGo: .fresh(usage, asOf: referenceNow)],
+        states: [.openCodeCredits: .fresh(creditsProviderUsage, asOf: referenceNow)],
         now: referenceNow,
         calendar: deterministicCalendar(),
         locale: Locale(identifier: "en_US_POSIX")
     )
 
-    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
-    let credits = try #require(row.credits, "fresh openCodeGo with credits should expose a credits row")
+    let row = try #require(model.rows.first { $0.provider == .openCodeCredits })
+    #expect(row.providerName == "OpenCode Credits")
+    #expect(row.fiveHour == nil)
+    #expect(row.weekly == nil)
+    #expect(row.monthly == nil)
+    let credits = try #require(row.credits, "fresh credits usage should expose the credits row")
     #expect(credits.title == "Credits")
     #expect(credits.amountLabel == "$42.50")
     #expect(credits.captionLabel == "$2.96 of $50 used this month")
 }
 
 @Test
-func dropdownProviderRowPreservesCreditsWhenStaleWithLastUsage() throws {
+func dropdownCreditsProviderRowPreservesCreditsWhenStaleWithLastUsage() throws {
     // Stale keeps the last-known credits inside the greyed row so the
     // user continues to see the dollar figure across a network blip —
     // matching the windows' "last-preserved" behavior.
-    let usage = ProviderUsage(
-        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
-        weekly: UsageWindow(percentRemaining: 74, resetsAt: nil),
-        monthly: UsageWindow(percentRemaining: 92, resetsAt: nil),
-        credits: CreditBalance(
-            balanceUSD: 42.50,
-            monthlyUsedUSD: 2.96,
-            monthlyLimitUSD: 50
-        )
-    )
     let model = DropdownViewModel(
-        states: [.openCodeGo: .stale(last: usage, reason: .networkError)],
+        states: [.openCodeCredits: .stale(last: creditsProviderUsage, reason: .networkError)],
         now: referenceNow,
         calendar: deterministicCalendar(),
         locale: Locale(identifier: "en_US_POSIX")
     )
 
-    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
+    let row = try #require(model.rows.first { $0.provider == .openCodeCredits })
     #expect(row.isStale)
     let credits = try #require(row.credits, "stale(last: usage) preserves last-known credits")
     #expect(credits.amountLabel == "$42.50")
@@ -516,61 +513,64 @@ func dropdownProviderRowPreservesCreditsWhenStaleWithLastUsage() throws {
 }
 
 @Test
-func dropdownProviderRowHasNilCreditsForStaleWithoutLastUsage() throws {
+func dropdownCreditsProviderRowShowsPlaceholderWhenStaleWithNothing() throws {
     let model = DropdownViewModel(
-        states: [.openCodeGo: .stale(last: nil, reason: .networkError)],
+        states: [.openCodeCredits: .stale(last: nil, reason: .credentialUnavailable)],
         now: referenceNow,
         calendar: deterministicCalendar(),
         locale: Locale(identifier: "en_US_POSIX")
     )
 
-    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
-    #expect(row.credits == nil)
+    let row = try #require(model.rows.first { $0.provider == .openCodeCredits })
+    #expect(row.fiveHour == nil)
+    #expect(row.weekly == nil)
+    #expect(row.monthly == nil)
+    let credits = try #require(row.credits, "the credits provider always shows its one row")
+    #expect(credits.title == "Credits")
+    #expect(credits.amountLabel == "--")
+    #expect(credits.captionLabel == nil)
+    #expect(row.staleMessage == "Stale: no credits balance found")
 }
 
 @Test
-func dropdownProviderRowHasNilCreditsWhenUsageHasNoCredits() throws {
-    // A fresh parse that didn't carry a billing record (e.g. customerID:null)
-    // yields ProviderUsage.credits == nil; the row must not invent one.
-    let usage = ProviderUsage(
+func dropdownProviderRowHasNilCreditsForOtherProviders() throws {
+    // Ownership: Go's parser never attaches credits any more, and no other
+    // provider ever did. The credits row renders only under the credits
+    // provider.
+    let goUsage = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
         weekly: UsageWindow(percentRemaining: 74, resetsAt: nil),
         monthly: UsageWindow(percentRemaining: 92, resetsAt: nil)
     )
     let model = DropdownViewModel(
-        states: [.openCodeGo: .fresh(usage, asOf: referenceNow)],
-        now: referenceNow,
-        calendar: deterministicCalendar(),
-        locale: Locale(identifier: "en_US_POSIX")
-    )
-
-    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
-    #expect(row.credits == nil)
-}
-
-@Test
-func dropdownProviderRowHasNilCreditsForNonOpenCodeGoProviders() throws {
-    // Credits are an OpenCode Go decoration; other providers never carry
-    // them in their usage. Mirror the fable pattern: the field exists on
-    // the row type, but only OpenCodeGo populates it.
-    let usage = ProviderUsage(
-        fiveHour: UsageWindow(percentRemaining: 80, resetsAt: nil),
-        weekly: UsageWindow(percentRemaining: 80, resetsAt: nil)
-    )
-    let model = DropdownViewModel(
         states: [
-            .claude: .fresh(usage, asOf: referenceNow),
+            .claude: .fresh(claudeUsage, asOf: referenceNow),
             .codex: .fresh(codexUsage, asOf: referenceNow),
+            .openCodeGo: .fresh(goUsage, asOf: referenceNow),
         ],
         now: referenceNow,
         calendar: deterministicCalendar(),
         locale: Locale(identifier: "en_US_POSIX")
     )
 
-    let claudeRow = try #require(model.rows.first { $0.provider == .claude })
-    #expect(claudeRow.credits == nil)
-    let codexRow = try #require(model.rows.first { $0.provider == .codex })
-    #expect(codexRow.credits == nil)
+    for provider in [ProviderID.claude, .codex, .openCodeGo] {
+        let row = try #require(model.rows.first { $0.provider == provider })
+        #expect(row.credits == nil)
+    }
+}
+
+@Test
+func dropdownSkipsTheCreditsProviderUntilItHasReported() throws {
+    // Default-hidden provider with no state yet: no row, no placeholder —
+    // same contract as OpenCode Go and MiniMax.
+    let model = DropdownViewModel(
+        states: [.claude: .fresh(claudeUsage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(!model.rows.contains { $0.provider == .openCodeCredits })
 }
 
 private let referenceNow = Date(timeIntervalSince1970: 1_767_268_800) // 2026-01-01 12:00 UTC

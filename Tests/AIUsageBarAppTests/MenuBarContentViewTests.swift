@@ -48,19 +48,19 @@ struct HostedUITests {
     }
 
     @Test
-    func menuBarContentViewRendersOpenCodeGoCreditsRow() throws {
-        // OpenCode Go is hidden by default; the shell model respects that
-        // via applyStoredProviderVisibility, so the credits row would never
-        // render. Flip the visibility in the isolated SettingsStore before
-        // building the model.
+    func menuBarContentViewRendersOpenCodeCreditsRow() throws {
+        // OpenCode Credits is hidden by default; the shell model respects
+        // that via applyStoredProviderVisibility, so the credits row would
+        // never render. Flip the visibility in the isolated SettingsStore
+        // before building the model.
         let settingsStore = SettingsStore(defaults: isolatedDefaults())
-        settingsStore.setProvider(.openCodeGo, visible: true)
+        settingsStore.setProvider(.openCodeCredits, visible: true)
 
         let host = onMain {
             UITestHost.dropdown(
                 MenuBarContentView(
                     model: shellModel(
-                        appState: openCodeGoFreshState(),
+                        appState: openCodeCreditsFreshState(),
                         settingsStore: settingsStore
                     )
                 )
@@ -70,9 +70,13 @@ struct HostedUITests {
         let ax = AXQuery(windowTitle: host.windowTitle)
 
         #expect(
-            pollUntil { ax.exists(AccessibilityID.menuBarProviderCredits(.openCodeGo)) },
-            "Missing OpenCode Go credits row. Tree:\n\(ax.dumpIdentifiers())"
+            pollUntil { ax.exists(AccessibilityID.menuBarProviderCredits(.openCodeCredits)) },
+            "Missing OpenCode Credits row. Tree:\n\(ax.dumpIdentifiers())"
         )
+        // The credits provider renders no percent-window rows at all.
+        #expect(!ax.exists(AccessibilityID.menuBarWindow(.openCodeCredits, .fiveHour)))
+        #expect(!ax.exists(AccessibilityID.menuBarWindow(.openCodeCredits, .weekly)))
+        #expect(!ax.exists(AccessibilityID.menuBarWindow(.openCodeCredits, .monthly)))
         // The amount label is the most failure-prone piece of the row —
         // it goes through NumberFormatter with the system locale. A bare
         // existence check on the AX id only proves the row is wired up;
@@ -82,7 +86,7 @@ struct HostedUITests {
         // Pin the per-text AX ids so a SwiftUI modifier refactor that drops
         // an identifier doesn't leave the values visible but break future
         // AX-based assertions.
-        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeGo)).amount"))
-        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeGo)).caption"))
+        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeCredits)).amount"))
+        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeCredits)).caption"))
     }
 }

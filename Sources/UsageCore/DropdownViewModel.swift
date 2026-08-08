@@ -54,12 +54,13 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
     public let updatedLabel: String?
     /// `nil` when the provider does not expose a 5-hour window (Codex is weekly-only).
     public let fiveHour: DropdownUsageWindowRow?
-    public let weekly: DropdownUsageWindowRow
+    /// `nil` when the provider has no weekly window (OpenCode Credits is a
+    /// balance, not a set of percent windows).
+    public let weekly: DropdownUsageWindowRow?
     public let monthly: DropdownUsageWindowRow?
     public let fable: DropdownUsageWindowRow?
-    /// Workspace credit balance (OpenCode Go), nil when the provider has no
-    /// credits in its usage or is in a no-usage state. Decoration only —
-    /// never participates in tone, threshold, or the menu-bar title.
+    /// Workspace credit balance — the OpenCode Credits provider's one row.
+    /// Never participates in tone, threshold, or the menu-bar percent scale.
     public let credits: DropdownCreditsRow?
     public let statusTone: UsageStatusTone?
 
@@ -85,13 +86,15 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 calendar: calendar,
                 locale: locale
             )
-            self.weekly = DropdownUsageWindowRow(
-                title: "Weekly",
-                usageWindow: usage.weekly,
-                now: now,
-                calendar: calendar,
-                locale: locale
-            )
+            self.weekly = provider.showsWeeklyWindow
+                ? DropdownUsageWindowRow(
+                    title: "Weekly",
+                    usageWindow: usage.weekly,
+                    now: now,
+                    calendar: calendar,
+                    locale: locale
+                )
+                : nil
             self.monthly = usage.monthly.map {
                 DropdownUsageWindowRow(title: "Monthly", usageWindow: $0, now: now, calendar: calendar, locale: locale)
             }
@@ -115,13 +118,15 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 calendar: calendar,
                 locale: locale
             )
-            self.weekly = DropdownUsageWindowRow(
-                title: "Weekly",
-                usageWindow: usage.weekly,
-                now: now,
-                calendar: calendar,
-                locale: locale
-            )
+            self.weekly = provider.showsWeeklyWindow
+                ? DropdownUsageWindowRow(
+                    title: "Weekly",
+                    usageWindow: usage.weekly,
+                    now: now,
+                    calendar: calendar,
+                    locale: locale
+                )
+                : nil
             self.monthly = usage.monthly.map {
                 DropdownUsageWindowRow(title: "Monthly", usageWindow: $0, now: now, calendar: calendar, locale: locale)
             }
@@ -142,12 +147,14 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
             self.fiveHour = provider.showsFiveHourWindow
                 ? DropdownUsageWindowRow.placeholder(title: "5h")
                 : nil
-            self.weekly = DropdownUsageWindowRow.placeholder(title: "Weekly")
+            self.weekly = provider.showsWeeklyWindow
+                ? DropdownUsageWindowRow.placeholder(title: "Weekly")
+                : nil
             self.monthly = provider == .openCodeGo
                 ? DropdownUsageWindowRow.placeholder(title: "Monthly")
                 : nil
             self.fable = nil
-            self.credits = nil
+            self.credits = provider == .openCodeCredits ? .placeholder : nil
             self.statusTone = nil
         case .hidden:
             self.isStale = false
@@ -155,12 +162,14 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
             self.fiveHour = provider.showsFiveHourWindow
                 ? DropdownUsageWindowRow.placeholder(title: "5h")
                 : nil
-            self.weekly = DropdownUsageWindowRow.placeholder(title: "Weekly")
+            self.weekly = provider.showsWeeklyWindow
+                ? DropdownUsageWindowRow.placeholder(title: "Weekly")
+                : nil
             self.monthly = provider == .openCodeGo
                 ? DropdownUsageWindowRow.placeholder(title: "Monthly")
                 : nil
             self.fable = nil
-            self.credits = nil
+            self.credits = provider == .openCodeCredits ? .placeholder : nil
             self.statusTone = nil
         }
     }
@@ -199,6 +208,20 @@ public struct DropdownCreditsRow: Equatable, Sendable {
         formatter.locale = locale
         let formatted = formatter.string(from: amount as NSNumber) ?? "\(amount)"
         return "$" + formatted
+    }
+
+    /// The credits provider's row before it has ever produced data —
+    /// mirrors the window rows' `--` placeholder rather than inventing $0.
+    static let placeholder = DropdownCreditsRow(
+        title: "Credits",
+        amountLabel: "--",
+        captionLabel: nil
+    )
+
+    private init(title: String, amountLabel: String, captionLabel: String?) {
+        self.title = title
+        self.amountLabel = amountLabel
+        self.captionLabel = captionLabel
     }
 }
 
@@ -321,6 +344,12 @@ private extension ProviderID {
         case .miniMax:
             return true
         }
+    }
+
+    /// Everything except the credits provider has a weekly window; its row
+    /// is the dollar balance alone.
+    var showsWeeklyWindow: Bool {
+        self != .openCodeCredits
     }
 }
 

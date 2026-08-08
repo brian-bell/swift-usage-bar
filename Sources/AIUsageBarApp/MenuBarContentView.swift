@@ -94,11 +94,13 @@ private struct ProviderUsageRowView: View {
                     window: .fiveHour
                 )
             }
-            UsageWindowRowView(
-                row: row.weekly,
-                provider: row.provider,
-                window: .weekly
-            )
+            if let weekly = row.weekly {
+                UsageWindowRowView(
+                    row: weekly,
+                    provider: row.provider,
+                    window: .weekly
+                )
+            }
             if let monthly = row.monthly {
                 UsageWindowRowView(
                     row: monthly,

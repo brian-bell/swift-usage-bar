@@ -21,7 +21,12 @@ let uiTestCodexUsage = ProviderUsage(
 let uiTestOpenCodeGoUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 88, resetsAt: uiTestNow.addingTimeInterval(3 * 60 * 60)),
     weekly: UsageWindow(percentRemaining: 74, resetsAt: uiTestNow.addingTimeInterval(4 * 24 * 60 * 60)),
-    monthly: UsageWindow(percentRemaining: 92, resetsAt: uiTestNow.addingTimeInterval(20 * 24 * 60 * 60)),
+    monthly: UsageWindow(percentRemaining: 92, resetsAt: uiTestNow.addingTimeInterval(20 * 24 * 60 * 60))
+)
+
+let uiTestOpenCodeCreditsUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
     credits: CreditBalance(
         balanceUSD: 42.50,
         monthlyUsedUSD: 2.96,
@@ -81,6 +86,7 @@ func liveProvidersState(
             .claude: .fresh(uiTestClaudeUsage, asOf: asOf),
             .codex: .fresh(uiTestCodexUsage, asOf: asOf),
             .openCodeGo: .hidden,
+            .openCodeCredits: .hidden,
             .miniMax: .hidden,
         ],
         lastSuccessfulRefreshes: [
@@ -94,23 +100,23 @@ func liveProvidersState(
     )
 }
 
-/// OpenCode Go visible and fresh (with credits), for the OpenCode-Go-only
-/// hosted UI tests. Claude/Codex stay hidden so the rows don't drown the
-/// credits row in noise.
+/// OpenCode Credits visible and fresh, for the credits-row hosted UI tests.
+/// Every other provider stays hidden so the rows don't drown the credits
+/// row in noise.
 @MainActor
-func openCodeGoFreshState(
+func openCodeCreditsFreshState(
     asOf: Date = uiTestNow,
     lastSuccess: Date = uiTestNow.addingTimeInterval(-120)
 ) -> AppState {
     AppState(
         providerStates: [
-            .openCodeGo: .fresh(uiTestOpenCodeGoUsage, asOf: asOf),
+            .openCodeCredits: .fresh(uiTestOpenCodeCreditsUsage, asOf: asOf),
         ],
         lastSuccessfulRefreshes: [
-            .openCodeGo: lastSuccess,
+            .openCodeCredits: lastSuccess,
         ],
         lastDataSources: [
-            .openCodeGo: .openCodeGoChromeCookie,
+            .openCodeCredits: .openCodeCreditsChromeCookie,
         ]
     )
 }

@@ -63,6 +63,20 @@ func rowLabelPrefixesProviderAbbreviation() {
 }
 
 @Test
+func rowLabelRendersCreditsWithOcAbbreviation() {
+    #expect(
+        MenuBarLabelImage.rowLabel(
+            for: MenuBarTitleSegment(provider: .openCodeCredits, value: "$47", isStale: false)
+        ) == "Oc $47"
+    )
+    #expect(
+        MenuBarLabelImage.rowLabel(
+            for: MenuBarTitleSegment(provider: .openCodeCredits, value: "$47", isStale: true)
+        ) == "Oc ~$47"
+    )
+}
+
+@Test
 func rowLabelMarksStaleValuesWithTilde() {
     #expect(
         MenuBarLabelImage.rowLabel(
@@ -202,6 +216,32 @@ func menuBarLabelImagePartitionsFourProvidersAcrossTwoRows() throws {
     for candidate in candidateSplits {
         #expect(chosenMax <= candidate.max)
     }
+}
+
+@Test
+@MainActor
+func menuBarLabelImagePartitionsFiveProvidersAcrossTwoRows() throws {
+    // With the credits provider on, all five segments must still land in
+    // exactly two rows, in order, at the same two-row height budget.
+    let segments = [
+        MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeGo, value: "88/74/92", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "$47", isStale: false),
+        MenuBarTitleSegment(provider: .miniMax, value: "76/55", isStale: false),
+    ]
+    let labels = segments.map(MenuBarLabelImage.rowLabel(for:))
+
+    let image = try #require(MenuBarLabelImage.image(for: segments))
+    let layout = try #require(MenuBarLabelImage.layout(for: segments))
+
+    #expect(image.size.height == MenuBarLabelImage.rowHeight * 2)
+    #expect(layout.rows.count == 2)
+    #expect(
+        layout.rows.map(\.text).joined(separator: "  ")
+            == labels.joined(separator: "  ")
+    )
+    #expect(layout.rows.map(\.text).joined(separator: "  ").contains("Oc $47"))
 }
 
 @Test

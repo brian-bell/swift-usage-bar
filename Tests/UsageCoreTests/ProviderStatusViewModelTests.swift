@@ -281,6 +281,21 @@ func providerStatusRendersOffForHiddenProvider() throws {
 }
 
 @Test
+func providerStatusSummarizesAMissingCreditsBalance() throws {
+    // For credits, `.credentialUnavailable` most often means "billing not
+    // configured on the workspace", not a missing cookie — the one-line
+    // summary must not claim a credential problem the user can't find.
+    let model = ProviderStatusViewModel(
+        states: [.openCodeCredits: .stale(last: nil, reason: .credentialUnavailable)],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .openCodeCredits })
+    #expect(row.stateLabel == "Stale")
+    #expect(row.methodLabel == "No credits balance found")
+}
+
+@Test
 func providerStatusCoversEveryProviderInStableOrder() {
     let model = ProviderStatusViewModel(states: [:], dataSources: [:], lastUpdatedAt: [:], now: statusNow)
 
