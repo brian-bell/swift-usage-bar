@@ -2018,13 +2018,14 @@ public struct OpenCodeGoUsageParser: Sendable {
 
         // The observed billing record is a Seroval object beginning with
         // `{customerID:…}` and names its own `monthlyUsage` field. Capture only
-        // that key. The captured field appears before any nested Seroval
-        // assignment, so stop at a new assignment or line rather than risk
-        // crossing into a sibling object; broader layouts require a new
+        // that key. The gap stops at the record's closing `}` so a record that
+        // omits the field cannot lend its exemption to a sibling object, and —
+        // since the observed field precedes any nested Seroval assignment —
+        // also at a new assignment or line. Broader layouts require a new
         // fixture-backed contract. Billing-value drift at the observed field
         // degrades credits to nil without making otherwise valid Go windows
         // stale.
-        let billingPattern = #"\{customerID:(?:\"[^\"]+\"|null)(?:(?!\$R\[\d+\]\s*=)[^\r\n])*?(\bmonthlyUsage\s*:)"#
+        let billingPattern = #"\{customerID:(?:\"[^\"]+\"|null)(?:(?!\$R\[\d+\]\s*=)[^}\r\n])*?(\bmonthlyUsage\s*:)"#
         let billingUsageRanges: [NSRange]
         if name == "monthlyUsage" {
             let billingRegex = try NSRegularExpression(pattern: billingPattern)

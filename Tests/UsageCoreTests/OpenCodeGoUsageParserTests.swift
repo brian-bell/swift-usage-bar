@@ -75,6 +75,26 @@ func openCodeGoParserRejectsNamedOptionalWindowsInUnobservedShapes(_ optionalWin
     }
 }
 
+@Test(arguments: [
+    #"{mine:!0,monthlyUsage:null}"#,
+    #"{mine:!0,monthlyUsage:{resetInSec:20,usagePercent:30}}"#,
+])
+func openCodeGoParserRejectsAlteredMonthlyUsagePastTheBillingClosingBrace(_ sibling: String) {
+    // The billing record's plain-number `monthlyUsage` is the sole exemption
+    // from window-drift validation, and it ends at the billing object's
+    // closing brace. A record that omits the key must not extend the
+    // exemption to a same-line sibling object, which would silently drop the
+    // monthly window instead of reporting drift.
+    let data = Data("""
+    rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
+    $R[2]={customerID:"cus_x",balance:100000000,monthlyLimit:50},\(sibling)
+    """.utf8)
+
+    #expect(throws: UsageParsingError.parseFailure) {
+        try OpenCodeGoUsageParser().parse(data, now: .distantPast)
+    }
+}
+
 @Test
 func openCodeGoParserExtractsCreditsFromBillingFixture() throws {
     // Fixture (synthetic): balance:12345678 / monthlyUsage:87654321 /
