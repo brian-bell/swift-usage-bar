@@ -11,11 +11,11 @@ the code disagree, the code and its tests win.
 
 **AIUsageBar**: a native macOS menu bar app (SwiftUI `MenuBarExtra`, macOS
 14+) showing **percent remaining** for Claude, Codex, OpenCode Go, and
-MiniMax. Providers borrow existing local state read-only (Keychain, Chrome
-cookies, OpenCode's `auth.json`, a statusline cache file) and degrade to a
-greyed "stale" state instead of erroring. Per-provider retrieval order and
-fallbacks: `ProviderID.dataSourceChain` in
-`Sources/UsageCore/ProviderDataSource.swift` and `docs/endpoints.md`.
+MiniMax, and **workspace credits** for OpenCode Go. Providers borrow existing
+local state read-only (Keychain, Chrome cookies, OpenCode's `auth.json`, a
+statusline cache file) and degrade to a greyed "stale" state instead of
+erroring. Per-provider retrieval order and fallbacks: `ProviderID.dataSourceChain`
+in `Sources/UsageCore/ProviderDataSource.swift` and `docs/endpoints.md`.
 
 ## Build, test, run
 
@@ -66,5 +66,12 @@ fake shell-model wiring from `Tests/AIUsageBarAppTests/Support/`, never
   in `Tests/Fixtures/` captured from a real payload. No speculative fallbacks,
   alias keys, extra hosts or regions, or browsers beyond Chrome without a new
   product decision (rejected alternatives are recorded in `docs/endpoints.md`).
+  OpenCode credits: any change to the credits parser, formatter, or row
+  layout must be backed by a sanitized observed fixture (the credit values
+  are scrubbed to obviously-synthetic sentinels — see
+  `Tests/Fixtures/opencode-go-usage-billing.html`). Never surface payment
+  metadata (customer id, payment method, subscription, …) from the billing
+  record; `CreditBalance` is numeric-only by construction, and that is the
+  privacy guarantee.
 - Never commit real credentials or unsanitized captures.
 - Feature branches only; never commit or push directly to `main`.

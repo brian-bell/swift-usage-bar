@@ -21,7 +21,12 @@ let uiTestCodexUsage = ProviderUsage(
 let uiTestOpenCodeGoUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 88, resetsAt: uiTestNow.addingTimeInterval(3 * 60 * 60)),
     weekly: UsageWindow(percentRemaining: 74, resetsAt: uiTestNow.addingTimeInterval(4 * 24 * 60 * 60)),
-    monthly: UsageWindow(percentRemaining: 92, resetsAt: uiTestNow.addingTimeInterval(20 * 24 * 60 * 60))
+    monthly: UsageWindow(percentRemaining: 92, resetsAt: uiTestNow.addingTimeInterval(20 * 24 * 60 * 60)),
+    credits: CreditBalance(
+        balanceUSD: 42.50,
+        monthlyUsedUSD: 2.96,
+        monthlyLimitUSD: 50
+    )
 )
 
 let uiTestMiniMaxUsage = ProviderUsage(
@@ -85,6 +90,27 @@ func liveProvidersState(
         lastDataSources: [
             .claude: .claudeWebSession,
             .codex: .codexAPI,
+        ]
+    )
+}
+
+/// OpenCode Go visible and fresh (with credits), for the OpenCode-Go-only
+/// hosted UI tests. Claude/Codex stay hidden so the rows don't drown the
+/// credits row in noise.
+@MainActor
+func openCodeGoFreshState(
+    asOf: Date = uiTestNow,
+    lastSuccess: Date = uiTestNow.addingTimeInterval(-120)
+) -> AppState {
+    AppState(
+        providerStates: [
+            .openCodeGo: .fresh(uiTestOpenCodeGoUsage, asOf: asOf),
+        ],
+        lastSuccessfulRefreshes: [
+            .openCodeGo: lastSuccess,
+        ],
+        lastDataSources: [
+            .openCodeGo: .openCodeGoChromeCookie,
         ]
     )
 }
