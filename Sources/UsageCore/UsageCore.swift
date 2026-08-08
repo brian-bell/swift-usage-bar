@@ -45,9 +45,12 @@ public struct ProviderUsage: Equatable, Sendable {
     public let monthly: UsageWindow?
     // Model-scoped weekly window (Claude's "Fable" limit), when the API reports one.
     public let fable: UsageWindow?
-    // Workspace credit balance (OpenCode Go), when the billing record is present.
-    // Decoration only — never participates in tone, threshold notifications, or
-    // the menu-bar title. See docs/PLAN-opencode-credits.md.
+    /// Workspace credit balance (OpenCode Go), when the billing record is
+    /// present. Decoration only — never participates in tone, threshold
+    /// notifications, or the menu-bar title. The type is numeric-only by
+    /// design (no payment metadata), so a parser that extracts the three
+    /// numeric values cannot accidentally surface anything else. See
+    /// `docs/PLAN-opencode-credits.md`.
     public let credits: CreditBalance?
 
     public init(
@@ -1920,12 +1923,12 @@ public struct OpenCodeGoUsageParser: Sendable {
     private static func credits(in text: String) -> CreditBalance? {
         // The three numeric fields appear in source-verified order within
         // one brace group, before the nested `lite:{…}` object. `[^{}]*`
-        // gaps rely on that ordering — a console deploy that introduces
-        // a nested brace between customerID and monthlyUsage would drop
-        // credits silently. The fixture-backed anti-drift posture for the
-        // windows stays strict; credits follow the web-fallback's
+        // gaps stay inside one brace group — a nested object between the
+        // keys breaks the match (returning nil) instead of being matched
+        // across. The fixture-backed anti-drift posture for the windows
+        // stays strict; credits follow the web-fallback's
         // degrade-without-surfacing posture.
-        let pattern = #"\{customerID:"([^"]+)"[^}]*balance:(\d+)[^}]*monthlyLimit:(\d+)[^}]*monthlyUsage:(\d+)"#
+        let pattern = #"\{customerID:"([^"]+)"[^{}]*balance:(\d+)[^{}]*monthlyLimit:(\d+)[^{}]*monthlyUsage:(\d+)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return nil
         }
@@ -1936,9 +1939,9 @@ public struct OpenCodeGoUsageParser: Sendable {
               let limitRange = Range(match.range(at: 3), in: text),
               let usageRange = Range(match.range(at: 4), in: text),
               !text[customerID].isEmpty,
-              let balance = Double(text[balanceRange]),
+              let balance = Double(text[balanceRange]), balance.isFinite,
               let limit = Int(text[limitRange]),
-              let monthlyUsage = Double(text[usageRange])
+              let monthlyUsage = Double(text[usageRange]), monthlyUsage.isFinite
         else {
             return nil
         }

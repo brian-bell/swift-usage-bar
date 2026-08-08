@@ -126,6 +126,40 @@ func openCodeGoParserReturnsNilCreditsWhenBalanceDigitsAreMalformed() throws {
 }
 
 @Test
+func openCodeGoParserReturnsNilCreditsWhenNestedObjectBreaksBraceGroup() throws {
+    // The `[^{}]*` gaps must stay inside one brace group; a malformed
+    // nested object (no closing brace) between customerID and the
+    // numeric fields could otherwise let the regex match across it.
+    let data = Data(#"""
+    rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
+    $R[2]={customerID:"cus_x",nested:{balance:99,monthlyLimit:99,monthlyUsage:99}
+    """#.utf8)
+
+    let usage = try OpenCodeGoUsageParser().parse(data, now: .distantPast)
+
+    #expect(usage.credits == nil)
+    #expect(usage.fiveHour.percentRemaining == 100)
+}
+
+@Test
+func openCodeGoParserReturnsNilCreditsWhenBalanceDigitsOverflowToInfinity() throws {
+    // Double parses sufficiently large digit strings as infinity. Without
+    // an isFinite guard, that would surface as a CreditBalance with
+    // balanceUSD: .infinity. The fixture value is in 10⁻⁸ dollars — even
+    // a wildly large balance must round-trip through finite math.
+    let overflowDigits = String(repeating: "9", count: 400)
+    let data = Data(#"""
+    rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
+    \#(overflowDigits)R[2]={customerID:"cus_x",balance:\#(overflowDigits),monthlyLimit:50,monthlyUsage:200000000}
+    """#.utf8)
+
+    let usage = try OpenCodeGoUsageParser().parse(data, now: .distantPast)
+
+    #expect(usage.credits == nil)
+    #expect(usage.fiveHour.percentRemaining == 100)
+}
+
+@Test
 func openCodeGoParserCreditsCannotLeakPaymentMetadata() throws {
     // CreditBalance has no fields for payment metadata (customerID,
     // paymentMethodID, subscription, lite, …), so the parsed result must
