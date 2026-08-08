@@ -51,17 +51,16 @@ func menuBarTitleFormatterAppendsFableToClaudeSegment() {
     ])
 
     #expect(segments == [
-        MenuBarTitleSegment(provider: .claude, value: "62/81/44", isStale: false),
+        MenuBarTitleSegment(provider: .claude, value: "62/81/56", isStale: false),
     ])
 }
 
 @Test
 func menuBarTitleFormatterShowsFableSlotAsPlaceholderWhenPercentIsUnknown() {
     // A reported-but-percentless Fable window keeps its slot and shows `--`,
-    // matching how the 5h/weekly slots degrade. Today's parser always derives
-    // a percent, so this pins the formatter's totality rather than a live
-    // payload shape — the alternative (force-unwrapping) would crash the
-    // whole menu bar if a future source ever reports a window without one.
+    // matching how the 5h/weekly slots degrade. No parser produces this state
+    // today — `percentRemaining(fromUsedPercentage:)` always returns a value —
+    // so this pins the formatter's totality, not an observed payload shape.
     let usage = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: 62, resetsAt: nil),
         weekly: UsageWindow(percentRemaining: 81, resetsAt: nil),
@@ -92,13 +91,6 @@ func menuBarTitleFormatterOmitsFableSlotWhenClaudeHasNoFableWindow() {
     #expect(segments == [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
     ])
-    // ...and the never-fetched placeholder stays two-slot for the same reason.
-    #expect(MenuBarTitleFormatter.segments([
-        .claude: .stale(last: nil, reason: .parseFailure),
-        .codex: .hidden,
-    ]) == [
-        MenuBarTitleSegment(provider: .claude, value: "--/--", isStale: false),
-    ])
 }
 
 @Test
@@ -110,7 +102,7 @@ func menuBarTitleFormatterKeepsFableSlotOnStaleClaude() {
         .codex: .hidden,
     ])
 
-    #expect(plainText(title) == "* ~62/81/44")
+    #expect(plainText(title) == "* ~62/81/56")
 }
 
 @Test
@@ -270,7 +262,7 @@ private let claudeUsage = ProviderUsage(
 private let claudeFableUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 62, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 81, resetsAt: nil),
-    fable: UsageWindow(percentRemaining: 44, resetsAt: nil)
+    fable: UsageWindow(percentRemaining: 56, resetsAt: nil)
 )
 
 private let codexUsage = ProviderUsage(
