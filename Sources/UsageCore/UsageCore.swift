@@ -1968,16 +1968,23 @@ public struct OpenCodeGoUsageParser: Sendable {
             + number + #")\s*,[^}]*\busagePercent\s*:\s*("# + number + #")[^}]*\}"#
         let regex = try NSRegularExpression(pattern: pattern)
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, range: range) else {
-            // Fixture-backed contract: an optional window may be omitted, but a
-            // named value in any unobserved shape is drift and must not be
-            // guessed at. The presence check looks for the full `$R[N]={…}`
-            // shape — a bare `name:<digit>` from an unrelated record (e.g. the
-            // billing record's plain-number `monthlyUsage:0`) is not drift in
-            // the Go-window sense; it's a different key in a different object.
-            let windowShape = #"\b"# + NSRegularExpression.escapedPattern(for: name)
-                + #"\s*:\s*\$R\[\d+\]\s*=\s*\{"#
-            if required || text.range(of: windowShape, options: .regularExpression) != nil {
+        let matches = regex.matches(in: text, range: range)
+
+        // Fixture-backed contract: an optional window may be omitted, but a
+        // named value in any unobserved shape is drift and must not be guessed
+        // at. Validate every occurrence so a canonical window cannot mask an
+        // altered duplicate. The sole collision is the fixture-backed billing
+        // record's plain-number `monthlyUsage`.
+        if try Self.hasUnexpectedNamedWindowValue(
+            name,
+            in: text,
+            validWindowLocations: Set(matches.map { $0.range.location })
+        ) {
+            throw UsageParsingError.parseFailure
+        }
+
+        guard let match = matches.first else {
+            if required {
                 throw UsageParsingError.parseFailure
             }
             return nil
@@ -1994,6 +2001,41 @@ public struct OpenCodeGoUsageParser: Sendable {
             percentRemaining: percentRemaining(fromUsedPercentage: usedPercent),
             resetsAt: now.addingTimeInterval(reset)
         )
+    }
+
+    private static func hasUnexpectedNamedWindowValue(
+        _ name: String,
+        in text: String,
+        validWindowLocations: Set<Int>
+    ) throws -> Bool {
+        let namedPattern = #"\b"# + NSRegularExpression.escapedPattern(for: name) + #"\s*:"#
+        let namedRegex = try NSRegularExpression(pattern: namedPattern)
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let namedMatches = namedRegex.matches(in: text, range: range)
+        guard !namedMatches.isEmpty else {
+            return false
+        }
+
+        // The observed billing record is a Seroval object beginning with
+        // `{customerID:…}` and names its own `monthlyUsage` field. Capture only
+        // that key. The captured field appears before any nested Seroval
+        // assignment, so stop at a new assignment or line rather than risk
+        // crossing into a sibling object; broader layouts require a new
+        // fixture-backed contract. Billing-value drift at the observed field
+        // degrades credits to nil without making otherwise valid Go windows
+        // stale.
+        let billingPattern = #"\{customerID:(?:\"[^\"]+\"|null)(?:(?!\$R\[\d+\]\s*=)[^\r\n])*?(\bmonthlyUsage\s*:)"#
+        let billingUsageRanges: [NSRange]
+        if name == "monthlyUsage" {
+            let billingRegex = try NSRegularExpression(pattern: billingPattern)
+            billingUsageRanges = billingRegex.matches(in: text, range: range).map { $0.range(at: 1) }
+        } else {
+            billingUsageRanges = []
+        }
+        return namedMatches.contains { namedMatch in
+            !validWindowLocations.contains(namedMatch.range.location)
+                && !billingUsageRanges.contains { NSLocationInRange(namedMatch.range.location, $0) }
+        }
     }
 
     private static func looksSignedOut(_ text: String) -> Bool {

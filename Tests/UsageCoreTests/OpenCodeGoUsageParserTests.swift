@@ -57,6 +57,24 @@ func openCodeGoParserAcceptsRollingOnlyAndFloatingPointPercentages() throws {
     #expect(usage.monthly == nil)
 }
 
+@Test(arguments: [
+    #"weeklyUsage:null"#,
+    #"weeklyUsage:{resetInSec:20,usagePercent:30}"#,
+    #"monthlyUsage:null"#,
+    #"monthlyUsage:{resetInSec:20,usagePercent:30}"#,
+    #"weeklyUsage:null,weeklyUsage:$R[2]={resetInSec:20,usagePercent:30}"#,
+    #"monthlyUsage:$R[2]={resetInSec:20,usagePercent:30},monthlyUsage:null"#,
+    #"weeklyUsage:$R[2]={resetInSec:20,weeklyUsage:null,usagePercent:30}"#,
+    #"monthlyUsage:$R[2]={resetInSec:20,monthlyUsage:null,usagePercent:30}"#,
+])
+func openCodeGoParserRejectsNamedOptionalWindowsInUnobservedShapes(_ optionalWindow: String) {
+    let data = Data("rollingUsage:$R[1]={resetInSec:10,usagePercent:0}\n\(optionalWindow)".utf8)
+
+    #expect(throws: UsageParsingError.parseFailure) {
+        try OpenCodeGoUsageParser().parse(data, now: .distantPast)
+    }
+}
+
 @Test
 func openCodeGoParserExtractsCreditsFromBillingFixture() throws {
     // Fixture (synthetic): balance:12345678 / monthlyUsage:87654321 /
@@ -117,6 +135,19 @@ func openCodeGoParserReturnsNilCreditsWhenBalanceDigitsAreMalformed() throws {
     let data = Data(#"""
     rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
     $R[2]={customerID:"cus_x",balance:abc,monthlyLimit:50,monthlyUsage:200000000}
+    """#.utf8)
+
+    let usage = try OpenCodeGoUsageParser().parse(data, now: .distantPast)
+
+    #expect(usage.credits == nil)
+    #expect(usage.fiveHour.percentRemaining == 100)
+}
+
+@Test(arguments: ["null", "abc"])
+func openCodeGoParserReturnsNilCreditsWhenBillingMonthlyUsageIsMalformed(_ monthlyUsage: String) throws {
+    let data = Data(#"""
+    rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
+    $R[2]={customerID:"cus_x",balance:100000000,monthlyLimit:50,monthlyUsage:\#(monthlyUsage)}
     """#.utf8)
 
     let usage = try OpenCodeGoUsageParser().parse(data, now: .distantPast)
