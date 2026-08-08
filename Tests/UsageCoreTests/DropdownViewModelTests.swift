@@ -534,9 +534,9 @@ func dropdownCreditsProviderRowShowsPlaceholderWhenStaleWithNothing() throws {
 
 @Test
 func dropdownProviderRowHasNilCreditsForOtherProviders() throws {
-    // Ownership: Go's parser never attaches credits any more, and no other
-    // provider ever did. The credits row renders only under the credits
-    // provider.
+    // The row model must not fabricate a credits row for a usage that
+    // carries none. (Parser-level ownership — Go never attaches credits —
+    // is pinned in OpenCodeGoUsageParserTests, not here.)
     let goUsage = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
         weekly: UsageWindow(percentRemaining: 74, resetsAt: nil),

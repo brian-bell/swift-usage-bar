@@ -27,7 +27,7 @@ public struct OpenCodeCreditsParser: Sendable {
         // brace group, before the nested `lite:{…}` object; `[^{}]*` gaps
         // cannot cross a nested object. See docs/endpoints.md › OpenCode
         // credits for units and evidence.
-        let pattern = #"\{customerID:"([^"]+)"[^{}]*balance:(\d+)[^{}]*monthlyLimit:(\d+)[^{}]*monthlyUsage:(\d+)"#
+        let pattern = #"\{customerID:"([^"]*)"[^{}]*balance:(\d+)[^{}]*monthlyLimit:(\d+)[^{}]*monthlyUsage:(\d+)"#
         let regex = try NSRegularExpression(pattern: pattern)
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let match = regex.firstMatch(in: text, range: range) else {
@@ -36,6 +36,13 @@ public struct OpenCodeCreditsParser: Sendable {
             if text.contains(#"customerID:""#) {
                 throw UsageParsingError.parseFailure
             }
+            return nil
+        }
+
+        // An empty customer id is the same account state as `null`: billing
+        // was never configured, so there is no balance — benign nil, not
+        // drift.
+        if let customerID = Range(match.range(at: 1), in: text), text[customerID].isEmpty {
             return nil
         }
 
@@ -133,14 +140,20 @@ public struct OpenCodeCreditsProvider: UsageProvider {
                 OpenCodeGoWorkspace.normalizedID(from: $0)
             })).sorted()
             let candidates = await qualifyingCandidates(workspaceIDs: workspaceIDs, session: session)
-            if candidates.sessionExpired, candidates.usages.isEmpty {
-                return .stale(last: previous, reason: .sessionExpired)
+            if candidates.usages.isEmpty {
+                // Drift outranks "no billing": a configured record we could
+                // not read means billing exists and the page changed shape —
+                // telling the user to configure billing would be wrong.
+                if candidates.sessionExpired {
+                    return .stale(last: previous, reason: .sessionExpired)
+                }
+                if candidates.parseFailure {
+                    return .stale(last: previous, reason: .parseFailure)
+                }
+                return .stale(last: previous, reason: .credentialUnavailable)
             }
             guard candidates.usages.count == 1 else {
-                return .stale(
-                    last: previous,
-                    reason: candidates.usages.isEmpty ? .credentialUnavailable : .workspaceSelectionRequired
-                )
+                return .stale(last: previous, reason: .workspaceSelectionRequired)
             }
             let selected = candidates.usages[0]
             return .fresh(selected.usage, asOf: selected.asOf)
@@ -172,14 +185,15 @@ public struct OpenCodeCreditsProvider: UsageProvider {
     private enum CandidateResult: Sendable {
         case usage(Candidate)
         case sessionExpired
+        case parseFailure
         case rejected
     }
 
     private func qualifyingCandidates(
         workspaceIDs: [String],
         session: OpenCodeSession
-    ) async -> (usages: [Candidate], sessionExpired: Bool) {
-        guard !workspaceIDs.isEmpty else { return ([], false) }
+    ) async -> (usages: [Candidate], sessionExpired: Bool, parseFailure: Bool) {
+        guard !workspaceIDs.isEmpty else { return ([], false, false) }
         let transport = self.transport
         let parser = self.parser
         let limit = maximumConcurrentWorkspaceRequests
@@ -199,10 +213,12 @@ public struct OpenCodeCreditsProvider: UsageProvider {
 
             var usages: [Candidate] = []
             var sawSessionExpired = false
+            var sawParseFailure = false
             while let result = await group.next() {
                 switch result {
                 case let .usage(candidate): usages.append(candidate)
                 case .sessionExpired: sawSessionExpired = true
+                case .parseFailure: sawParseFailure = true
                 case .rejected: break
                 }
                 if let workspaceID = iterator.next() {
@@ -214,7 +230,7 @@ public struct OpenCodeCreditsProvider: UsageProvider {
                     ) }
                 }
             }
-            return (usages, sawSessionExpired)
+            return (usages, sawSessionExpired, sawParseFailure)
         }
     }
 
@@ -235,6 +251,11 @@ public struct OpenCodeCreditsProvider: UsageProvider {
             return .usage(Candidate(usage: usage(for: credits), asOf: response.receivedAt))
         } catch OpenCodeGoTransportError.sessionExpired {
             return .sessionExpired
+        } catch UsageParsingError.parseFailure {
+            // A configured-but-drifted billing record. Not the same as
+            // "no billing on this workspace" — the caller surfaces it when
+            // no sibling workspace qualifies.
+            return .parseFailure
         } catch {
             return .rejected
         }

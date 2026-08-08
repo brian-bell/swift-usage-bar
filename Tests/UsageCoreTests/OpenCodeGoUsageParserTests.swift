@@ -113,27 +113,14 @@ func openCodeGoParserLeavesCreditsToTheCreditsProvider() throws {
     #expect(usage.monthly?.percentRemaining == 18)
 }
 
-@Test
-func openCodeGoParserReturnsNilCreditsWhenNoBillingRecord() throws {
-    // Old fixture has no billing record; credits must be nil without
-    // affecting the Go windows.
-    let now = Date(timeIntervalSince1970: 2_000_000_000)
-    let usage = try OpenCodeGoUsageParser().parse(
-        fixtureData("opencode-go-usage.html"),
-        now: now
-    )
-
-    #expect(usage.credits == nil)
-    #expect(usage.fiveHour.percentRemaining == 100)
-    #expect(usage.weekly.percentRemaining == 100)
-    #expect(usage.monthly?.percentRemaining == 63)
-}
+// Billing-record drift must never make otherwise valid Go windows stale:
+// the record lives on the same page, but it belongs to OpenCodeCreditsParser
+// (which validates it strictly). These pin that Go's window parsing — and
+// the `monthlyUsage` anti-drift exemption in particular — survives every
+// observed and adversarial billing-record shape.
 
 @Test
-func openCodeGoParserReturnsNilCreditsWhenCustomerIDIsNull() throws {
-    // customerID:null means billing is not configured (CodexBar's
-    // sentinel for "no real balance"). The parser must drop credits
-    // rather than report a fabricated $0.00.
+func openCodeGoParserWindowsSurviveNullCustomerBillingRecord() throws {
     let data = Data(#"""
     rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
     $R[2]={customerID:null,balance:0,monthlyLimit:0,monthlyUsage:0}
@@ -141,14 +128,11 @@ func openCodeGoParserReturnsNilCreditsWhenCustomerIDIsNull() throws {
 
     let usage = try OpenCodeGoUsageParser().parse(data, now: .distantPast)
 
-    #expect(usage.credits == nil)
     #expect(usage.fiveHour.percentRemaining == 100)
 }
 
 @Test
-func openCodeGoParserReturnsNilCreditsWhenBalanceDigitsAreMalformed() throws {
-    // A future console deploy that renames or restructures the billing
-    // record must never break window parsing.
+func openCodeGoParserWindowsSurviveMalformedBillingBalance() throws {
     let data = Data(#"""
     rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
     $R[2]={customerID:"cus_x",balance:abc,monthlyLimit:50,monthlyUsage:200000000}
@@ -156,12 +140,14 @@ func openCodeGoParserReturnsNilCreditsWhenBalanceDigitsAreMalformed() throws {
 
     let usage = try OpenCodeGoUsageParser().parse(data, now: .distantPast)
 
-    #expect(usage.credits == nil)
     #expect(usage.fiveHour.percentRemaining == 100)
 }
 
 @Test(arguments: ["null", "abc"])
-func openCodeGoParserReturnsNilCreditsWhenBillingMonthlyUsageIsMalformed(_ monthlyUsage: String) throws {
+func openCodeGoParserWindowsSurviveMalformedBillingMonthlyUsage(_ monthlyUsage: String) throws {
+    // The malformed plain-number `monthlyUsage:` key still sits inside the
+    // billing record, so the window validator's exemption must keep
+    // covering it rather than reporting drift.
     let data = Data(#"""
     rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
     $R[2]={customerID:"cus_x",balance:100000000,monthlyLimit:50,monthlyUsage:\#(monthlyUsage)}
@@ -169,15 +155,11 @@ func openCodeGoParserReturnsNilCreditsWhenBillingMonthlyUsageIsMalformed(_ month
 
     let usage = try OpenCodeGoUsageParser().parse(data, now: .distantPast)
 
-    #expect(usage.credits == nil)
     #expect(usage.fiveHour.percentRemaining == 100)
 }
 
 @Test
-func openCodeGoParserReturnsNilCreditsWhenNestedObjectBreaksBraceGroup() throws {
-    // The `[^{}]*` gaps must stay inside one brace group; a malformed
-    // nested object (no closing brace) between customerID and the
-    // numeric fields could otherwise let the regex match across it.
+func openCodeGoParserWindowsSurviveNestedBillingObject() throws {
     let data = Data(#"""
     rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
     $R[2]={customerID:"cus_x",nested:{balance:99,monthlyLimit:99,monthlyUsage:99}
@@ -185,16 +167,11 @@ func openCodeGoParserReturnsNilCreditsWhenNestedObjectBreaksBraceGroup() throws 
 
     let usage = try OpenCodeGoUsageParser().parse(data, now: .distantPast)
 
-    #expect(usage.credits == nil)
     #expect(usage.fiveHour.percentRemaining == 100)
 }
 
 @Test
-func openCodeGoParserReturnsNilCreditsWhenBalanceDigitsOverflowToInfinity() throws {
-    // Double parses sufficiently large digit strings as infinity. Without
-    // an isFinite guard, that would surface as a CreditBalance with
-    // balanceUSD: .infinity. The fixture value is in 10⁻⁸ dollars — even
-    // a wildly large balance must round-trip through finite math.
+func openCodeGoParserWindowsSurviveOverflowingBillingBalance() throws {
     let overflowDigits = String(repeating: "9", count: 400)
     let data = Data(#"""
     rollingUsage:$R[1]={resetInSec:10,usagePercent:0}
@@ -203,7 +180,6 @@ func openCodeGoParserReturnsNilCreditsWhenBalanceDigitsOverflowToInfinity() thro
 
     let usage = try OpenCodeGoUsageParser().parse(data, now: .distantPast)
 
-    #expect(usage.credits == nil)
     #expect(usage.fiveHour.percentRemaining == 100)
 }
 

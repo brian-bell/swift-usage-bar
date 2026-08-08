@@ -28,6 +28,9 @@ public struct CreditBalance: Equatable, Sendable {
     /// happens at the formatter, not here, so two captures compare equal.
     public let balanceUSD: Double
     /// Dollars spent from the balance this calendar month, when reported.
+    /// The optionality of both monthly fields is reserved for a future
+    /// observed record that omits them; today's fixture-backed parser
+    /// requires all three numeric fields and always sets both.
     public let monthlyUsedUSD: Double?
     /// Whole-dollar monthly spend limit, when configured.
     public let monthlyLimitUSD: Int?
@@ -45,11 +48,12 @@ public struct ProviderUsage: Equatable, Sendable {
     public let monthly: UsageWindow?
     // Model-scoped weekly window (Claude's "Fable" limit), when the API reports one.
     public let fable: UsageWindow?
-    /// Workspace credit balance (OpenCode Go), when the billing record is
-    /// present. Decoration only — never participates in tone, threshold
-    /// notifications, or the menu-bar title. The type is numeric-only by
-    /// design (no payment metadata), so a parser that extracts the three
-    /// numeric values cannot accidentally surface anything else. See
+    /// Workspace credit balance, set only by the OpenCode Credits provider —
+    /// it renders as that provider's menu-bar segment and dropdown row, and
+    /// is excluded from tone and threshold notifications (a dollar balance
+    /// has no percent window). The type is numeric-only by design (no
+    /// payment metadata), so a parser that extracts the three numeric
+    /// values cannot accidentally surface anything else. See
     /// `docs/PLAN-opencode-credits.md`.
     public let credits: CreditBalance?
 
@@ -1980,8 +1984,8 @@ public struct OpenCodeGoUsageParser: Sendable {
         // since the observed field precedes any nested Seroval assignment —
         // also at a new assignment or line. Broader layouts require a new
         // fixture-backed contract. Billing-value drift at the observed field
-        // degrades credits to nil without making otherwise valid Go windows
-        // stale.
+        // must never make otherwise valid Go windows stale; the record itself
+        // is parsed — and strictly validated — by OpenCodeCreditsParser.
         let billingPattern = #"\{customerID:(?:\"[^\"]+\"|null)(?:(?!\$R\[\d+\]\s*=)[^}\r\n])*?(\bmonthlyUsage\s*:)"#
         let billingUsageRanges: [NSRange]
         if name == "monthlyUsage" {
@@ -2548,7 +2552,10 @@ private extension ProviderUsage {
         case .openCodeGo:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")/\(monthly?.percentRemaining.map(String.init) ?? "--")"
         case .openCodeCredits:
-            return credits.map { "$\(Int($0.balanceUSD.rounded()))" } ?? "--"
+            // Int(exactly:) instead of Int(): a finite-but-huge upstream
+            // balance (> Int.max after rounding) must degrade to the
+            // placeholder, not trap and crash the whole menu bar.
+            return credits.flatMap { Int(exactly: $0.balanceUSD.rounded()) }.map { "$\($0)" } ?? "--"
         case .miniMax:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
         }

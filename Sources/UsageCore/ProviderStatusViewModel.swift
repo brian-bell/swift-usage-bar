@@ -157,7 +157,7 @@ public struct ProviderChainStepRow: Equatable, Identifiable, Sendable {
 
 /// Everything inside one provider's disclosure: the numbered chain, an optional
 /// explanatory caption, a recovery callout when the provider is stale, and — for
-/// OpenCode Go only — the optional workspace field.
+/// the two OpenCode providers — the shared optional workspace field.
 public struct ProviderChainSection: Equatable, Identifiable, Sendable {
     public var id: ProviderID { provider }
 
@@ -225,9 +225,12 @@ public struct ProviderChainSection: Equatable, Identifiable, Sendable {
             let discovery = trimmed.isEmpty
                 ? "Currently auto-discovered. Set an ID to skip discovery."
                 : "Using the workspace ID you set; discovery is skipped."
-            self.workspaceCaption = provider == .openCodeCredits
-                ? discovery + " Shared with OpenCode Go."
-                : discovery
+            // Symmetric: whichever disclosure the user edits from, the
+            // caption says the value also moves the other OpenCode provider.
+            let sharing = provider == .openCodeCredits
+                ? " Shared with OpenCode Go."
+                : " Shared with OpenCode Credits."
+            self.workspaceCaption = discovery + sharing
         } else {
             self.workspaceCaption = nil
         }
@@ -426,7 +429,10 @@ private extension ProviderID {
             return prefix + "Check your opencode.ai sign-in and workspace access in Chrome, "
                 + "then choose Refresh Now from the menu bar."
         case (.openCodeCredits, .credentialUnavailable):
-            return prefix + "No credits balance found. Check your opencode.ai sign-in in "
+            // No "Showing last-known data." prefix: unlike the transient
+            // failures, "billing not configured" is a steady state that
+            // usually has no last-known data behind it.
+            return "No credits balance found. Check your opencode.ai sign-in in "
                 + "Chrome and that billing is configured on the workspace, then choose "
                 + "Refresh Now from the menu bar."
         case (.openCodeGo, .workspaceSelectionRequired), (.openCodeCredits, .workspaceSelectionRequired):

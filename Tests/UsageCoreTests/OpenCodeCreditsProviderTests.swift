@@ -160,6 +160,64 @@ func openCodeCreditsProviderSelectsTheOnlyBillingWorkspaceDespitePartialFailures
 }
 
 @Test
+func openCodeCreditsProviderSurfacesDriftWhenDiscoveryFindsOnlyAMalformedRecord() async {
+    // The no-override path is the default configuration, and drift must
+    // surface there too: a configured-but-unreadable billing record is a
+    // parse failure, not "billing is not configured" — the latter would
+    // send the user to check a billing page that is set up fine.
+    let malformed = Data(#"""
+    ((self.$R=self.$R||{}),$R[1]={customerID:"cus_x",balance:abc,monthlyLimit:50,monthlyUsage:1});
+    """#.utf8)
+    let provider = OpenCodeCreditsProvider(
+        sessionReader: RecordingCreditsSessionReader(
+            session: OpenCodeSession(authenticationCookie: "auth=test")
+        ),
+        transport: StubCreditsTransport(
+            workspaceIDs: ["wrk_drift"],
+            pages: [
+                "wrk_drift": OpenCodeGoPageResponse(
+                    data: malformed,
+                    receivedAt: Date(timeIntervalSince1970: 2_000_000_000)
+                ),
+            ]
+        ),
+        workspaceOverride: { nil }
+    )
+
+    #expect(await provider.fetch(previous: previousCredits, mode: .background) ==
+        .stale(last: previousCredits, reason: .parseFailure))
+}
+
+@Test
+func openCodeCreditsProviderPrefersAValidWorkspaceOverADriftedOne() async throws {
+    // One drifted record must not block a sibling workspace whose record
+    // parses — the sole valid candidate still wins discovery.
+    let responseTime = Date(timeIntervalSince1970: 2_000_000_000)
+    let malformed = Data(#"""
+    ((self.$R=self.$R||{}),$R[1]={customerID:"cus_x",balance:abc,monthlyLimit:50,monthlyUsage:1});
+    """#.utf8)
+    let provider = OpenCodeCreditsProvider(
+        sessionReader: RecordingCreditsSessionReader(
+            session: OpenCodeSession(authenticationCookie: "auth=test")
+        ),
+        transport: StubCreditsTransport(
+            workspaceIDs: ["wrk_drift", "wrk_billing"],
+            pages: [
+                "wrk_drift": OpenCodeGoPageResponse(data: malformed, receivedAt: responseTime),
+                "wrk_billing": OpenCodeGoPageResponse(
+                    data: try fixtureData("opencode-go-usage-billing.html"),
+                    receivedAt: responseTime
+                ),
+            ]
+        ),
+        workspaceOverride: { nil }
+    )
+
+    #expect(await provider.fetch(previous: nil, mode: .background) ==
+        .fresh(creditsUsage(fixtureCredits), asOf: responseTime))
+}
+
+@Test
 func openCodeCreditsProviderPreservesLastKnownUsageWhenNoWorkspaceQualifies() async throws {
     let provider = OpenCodeCreditsProvider(
         sessionReader: RecordingCreditsSessionReader(

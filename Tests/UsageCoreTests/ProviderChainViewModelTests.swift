@@ -320,7 +320,8 @@ func openCodeGoDisclosureOwnsTheWorkspaceFieldAndItsCaption() throws {
     #expect(section.workspaceFieldLabel == "Workspace")
     #expect(section.workspaceFieldPlaceholder == "Optional wrk_\u{2026} ID or URL")
     #expect(section.workspaceFieldAccessibilityLabel == "OpenCode workspace")
-    #expect(section.workspaceCaption == "Currently auto-discovered. Set an ID to skip discovery.")
+    #expect(section.workspaceCaption
+        == "Currently auto-discovered. Set an ID to skip discovery. Shared with OpenCode Credits.")
 }
 
 @Test
@@ -331,7 +332,8 @@ func workspaceCaptionSaysDiscoveryIsSkippedOnceAnIDIsSet() throws {
         workspaceID: "wrk_abc123"
     )
 
-    #expect(section.workspaceCaption == "Using the workspace ID you set; discovery is skipped.")
+    #expect(section.workspaceCaption
+        == "Using the workspace ID you set; discovery is skipped. Shared with OpenCode Credits.")
 }
 
 @Test
@@ -374,7 +376,9 @@ func openCodeCreditsStaleDisclosureExplainsTheMissingBalance() throws {
         ]]
     )
 
-    #expect(section.recoveryCallout == "Showing last-known data. No credits balance found. "
+    // No "Showing last-known data." prefix: billing-not-configured is a
+    // durable state that usually has no last-known data behind it.
+    #expect(section.recoveryCallout == "No credits balance found. "
         + "Check your opencode.ai sign-in in Chrome and that billing is configured on the "
         + "workspace, then choose Refresh Now from the menu bar.")
     #expect(section.steps.first?.stateText == "No credits balance")

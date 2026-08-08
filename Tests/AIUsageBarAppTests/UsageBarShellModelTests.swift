@@ -502,7 +502,8 @@ func shellModelFeedsTheStoredWorkspaceIDIntoTheOpenCodeGoDisclosure() throws {
         model.providerStatusViewModel.rows.first { $0.provider == .openCodeGo }
     ).chain
     #expect(chain.showsWorkspaceField)
-    #expect(chain.workspaceCaption == "Using the workspace ID you set; discovery is skipped.")
+    #expect(chain.workspaceCaption
+        == "Using the workspace ID you set; discovery is skipped. Shared with OpenCode Credits.")
 }
 
 @Test

@@ -232,6 +232,21 @@ func menuBarTitleFormatterRendersCreditsAsWholeDollars() {
 }
 
 @Test
+func menuBarTitleFormatterShowsPlaceholderForUnrepresentableCreditsBalance() {
+    // A ~27-digit upstream balance is finite (so it passes the parser's
+    // isFinite guard) but exceeds Int.max; Int(_:) would trap and crash the
+    // whole menu bar app on every relaunch. The formatter must stay total:
+    // garbage renders as the placeholder, never a crash.
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .openCodeCredits: creditsState(balanceUSD: 1e19),
+    ]) == [
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "--", isStale: false),
+    ])
+}
+
+@Test
 func menuBarTitleFormatterMarksStaleCreditsAndFallsBackToPlaceholder() {
     let lastKnown = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
