@@ -113,8 +113,39 @@ private struct ProviderUsageRowView: View {
                     window: .fable
                 )
             }
+            if let credits = row.credits {
+                CreditsRowView(row: credits, provider: row.provider)
+            }
         }
         .foregroundStyle(row.isStale ? .secondary : .primary)
+    }
+}
+
+private struct CreditsRowView: View {
+    let row: DropdownCreditsRow
+    let provider: ProviderID
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(row.title)
+                    .frame(width: 52, alignment: .leading)
+                    .accessibilityIdentifier(AccessibilityID.menuBarProviderCredits(provider))
+                Text(row.amountLabel)
+                    .monospacedDigit()
+                    .accessibilityIdentifier("\(AccessibilityID.menuBarProviderCredits(provider)).amount")
+                Spacer()
+            }
+            .font(.caption)
+
+            if let caption = row.captionLabel {
+                Text(caption)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 52)
+                    .accessibilityIdentifier("\(AccessibilityID.menuBarProviderCredits(provider)).caption")
+            }
+        }
     }
 }
 

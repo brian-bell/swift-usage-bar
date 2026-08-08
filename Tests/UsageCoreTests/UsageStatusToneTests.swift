@@ -59,3 +59,28 @@ func statusToneIncludesMonthlyButStillExcludesFable() {
     #expect(tone(for: monthlyWarning, warningThreshold: 20) == .warning)
     #expect(tone(for: fableOnlyWarning, warningThreshold: 20) == .normal)
 }
+
+@Test
+func statusToneIgnoresCredits() {
+    // Credits are a dollar scale, not a percent-remaining window — tone
+    // reads only fiveHour/weekly/monthly. A near-zero balance must not
+    // shift the tone. (See docs/PLAN-opencode-credits.md slice 1.)
+    let withCredits = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        credits: CreditBalance(
+            balanceUSD: 0.01,
+            monthlyUsedUSD: 99.99,
+            monthlyLimitUSD: 100
+        )
+    )
+    let withoutCredits = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 80, resetsAt: nil)
+    )
+
+    #expect(tone(for: withCredits, warningThreshold: 20) == .normal)
+    #expect(tone(for: withCredits) == tone(for: withoutCredits))
+}

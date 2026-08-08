@@ -356,6 +356,223 @@ func dropdownSummaryIsNilWhenVisibleProvidersHaveNoUpdateTimestamp() {
     #expect(model.updatedLabel == nil)
 }
 
+@Test
+func dropdownCreditsRowFormatsBalanceAsUSDWithTwoDecimals() {
+    // The spec is "two-decimal dollars" — synthetic values round to the
+    // nearest cent under Locale("en_US_POSIX") so the formatter is
+    // deterministic across runs and machines.
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 42.50,
+            monthlyUsedUSD: 2.96,
+            monthlyLimitUSD: 50
+        ),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(row.title == "Credits")
+    #expect(row.amountLabel == "$42.50")
+    #expect(row.captionLabel == "$2.96 of $50 used this month")
+}
+
+@Test
+func dropdownCreditsRowOmitsCaptionWhenMonthlyLimitIsNil() {
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 12.30,
+            monthlyUsedUSD: nil,
+            monthlyLimitUSD: nil
+        ),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(row.amountLabel == "$12.30")
+    #expect(row.captionLabel == nil)
+}
+
+@Test
+func dropdownCreditsRowOmitsCaptionWhenMonthlyUsedIsNil() {
+    // The caption reads "X of Y used this month" — without X, the line
+    // is meaningless. Limit alone is not enough.
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 12.30,
+            monthlyUsedUSD: nil,
+            monthlyLimitUSD: 50
+        ),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(row.amountLabel == "$12.30")
+    #expect(row.captionLabel == nil)
+}
+
+@Test
+func dropdownCreditsRowRendersZeroBalanceAsZeroDollars() {
+    // A zero balance must still render — a balance-but-billing-configured
+    // workspace is a real state, not the same as "no credits".
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 0,
+            monthlyUsedUSD: 0,
+            monthlyLimitUSD: 50
+        ),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(row.amountLabel == "$0.00")
+    #expect(row.captionLabel == "$0.00 of $50 used this month")
+}
+
+@Test
+func dropdownCreditsRowRoundsBalanceToTwoDecimals() {
+    // NumberFormatter with min=max=2 rounds halfUp. A future refactor that
+    // swaps the formatter (e.g. for `String(format:)` or `formatted(_:)`)
+    // could change the rounding rule — this test pins the spec.
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 99.999,
+            monthlyUsedUSD: nil,
+            monthlyLimitUSD: nil
+        ),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(row.amountLabel == "$100.00")
+}
+
+@Test
+func dropdownCreditsRowUsesLocaleDecimalSeparator() {
+    // Decimal style + "$" prefix keeps the dollar sign universal while
+    // delegating the decimal separator to the locale. The original
+    // currency-style formatter was rejected because it inserted a
+    // non-breaking space; this pin locks in the locale path so a future
+    // "simplification" can't silently regress it.
+    let row = DropdownCreditsRow(
+        credits: CreditBalance(
+            balanceUSD: 42.50,
+            monthlyUsedUSD: nil,
+            monthlyLimitUSD: nil
+        ),
+        locale: Locale(identifier: "de_DE")
+    )
+
+    #expect(row.amountLabel == "$42,50")
+}
+
+@Test
+func dropdownProviderRowExposesCreditsForFreshOpenCodeGoUsage() throws {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 74, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 92, resetsAt: nil),
+        credits: CreditBalance(
+            balanceUSD: 42.50,
+            monthlyUsedUSD: 2.96,
+            monthlyLimitUSD: 50
+        )
+    )
+    let model = DropdownViewModel(
+        states: [.openCodeGo: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
+    let credits = try #require(row.credits, "fresh openCodeGo with credits should expose a credits row")
+    #expect(credits.title == "Credits")
+    #expect(credits.amountLabel == "$42.50")
+    #expect(credits.captionLabel == "$2.96 of $50 used this month")
+}
+
+@Test
+func dropdownProviderRowPreservesCreditsWhenStaleWithLastUsage() throws {
+    // Stale keeps the last-known credits inside the greyed row so the
+    // user continues to see the dollar figure across a network blip —
+    // matching the windows' "last-preserved" behavior.
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 74, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 92, resetsAt: nil),
+        credits: CreditBalance(
+            balanceUSD: 42.50,
+            monthlyUsedUSD: 2.96,
+            monthlyLimitUSD: 50
+        )
+    )
+    let model = DropdownViewModel(
+        states: [.openCodeGo: .stale(last: usage, reason: .networkError)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
+    #expect(row.isStale)
+    let credits = try #require(row.credits, "stale(last: usage) preserves last-known credits")
+    #expect(credits.amountLabel == "$42.50")
+    #expect(credits.captionLabel == "$2.96 of $50 used this month")
+}
+
+@Test
+func dropdownProviderRowHasNilCreditsForStaleWithoutLastUsage() throws {
+    let model = DropdownViewModel(
+        states: [.openCodeGo: .stale(last: nil, reason: .networkError)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
+    #expect(row.credits == nil)
+}
+
+@Test
+func dropdownProviderRowHasNilCreditsWhenUsageHasNoCredits() throws {
+    // A fresh parse that didn't carry a billing record (e.g. customerID:null)
+    // yields ProviderUsage.credits == nil; the row must not invent one.
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 74, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 92, resetsAt: nil)
+    )
+    let model = DropdownViewModel(
+        states: [.openCodeGo: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .openCodeGo })
+    #expect(row.credits == nil)
+}
+
+@Test
+func dropdownProviderRowHasNilCreditsForNonOpenCodeGoProviders() throws {
+    // Credits are an OpenCode Go decoration; other providers never carry
+    // them in their usage. Mirror the fable pattern: the field exists on
+    // the row type, but only OpenCodeGo populates it.
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: nil)
+    )
+    let model = DropdownViewModel(
+        states: [
+            .claude: .fresh(usage, asOf: referenceNow),
+            .codex: .fresh(codexUsage, asOf: referenceNow),
+        ],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let claudeRow = try #require(model.rows.first { $0.provider == .claude })
+    #expect(claudeRow.credits == nil)
+    let codexRow = try #require(model.rows.first { $0.provider == .codex })
+    #expect(codexRow.credits == nil)
+}
+
 private let referenceNow = Date(timeIntervalSince1970: 1_767_268_800) // 2026-01-01 12:00 UTC
 
 private let claudeUsage = ProviderUsage(

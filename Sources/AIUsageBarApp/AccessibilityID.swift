@@ -68,6 +68,12 @@ enum AccessibilityID {
         "\(menuBarWindow(provider, window)).countdown"
     }
 
+    /// Credits row (OpenCode Go today). The window-kind enum sees no
+    /// new case — credits are not a `UsageWindow` and have no kind.
+    static func menuBarProviderCredits(_ provider: ProviderID) -> String {
+        "\(menuBarProvider(provider)).credits"
+    }
+
     static func settingsProviderToggle(_ provider: ProviderID) -> String {
         "settings.provider.\(providerToken(provider)).toggle"
     }
