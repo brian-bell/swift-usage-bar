@@ -20,7 +20,11 @@ fallbacks: `ProviderID.dataSourceChain` in
 `Sources/UsageCore/ProviderDataSource.swift` and `docs/endpoints.md`.
 Credits stay out of tone and threshold notifications (a dollar balance has
 no percent window); both OpenCode providers share the one workspace-ID
-setting.
+setting. Claude's menu-bar value is `5h/weekly` plus a third slot for the
+model-scoped weekly window (`Cl 62/81/56`) whenever the payload carries
+one — omitted rather than dashed when it doesn't, matching the dropdown,
+which maps its Fable row from the same optional. Fable is a display-only
+window: like credits, it stays out of tone and threshold notifications.
 
 ## Build, test, run
 

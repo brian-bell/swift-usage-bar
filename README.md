@@ -2,13 +2,13 @@
 
 A native macOS menu bar app that shows how much of your **Claude**, **ChatGPT/Codex**, and **OpenCode Go** subscription rate limits you have left — always visible, at a glance.
 
-The menu bar shows percent **remaining** (fuel-gauge semantics) in at most two rows, e.g. `Cl 62/81  Cx 90` over `Go 88/74/92`. OpenCode Go uses 5-hour/weekly/monthly order and `--` for an unavailable optional window. The dropdown adds progress bars, exact percentages, reset countdowns, and a Refresh-now button with last-updated time. Settings live in the standard macOS Settings window (⌘,).
+The menu bar shows percent **remaining** (fuel-gauge semantics) in at most two rows, e.g. `Cl 62/81/56  Cx 90` over `Go 88/74/92`. Claude is 5-hour/weekly plus a third slot for the model-scoped weekly window (Fable) when the usage API reports one; unlike Go's optional monthly window, that slot is omitted rather than dashed when absent, so Claude reads `Cl 62/81` on the statusline-cache fallback. OpenCode Go uses 5-hour/weekly/monthly order and `--` for an unavailable optional window. The dropdown adds progress bars, exact percentages, reset countdowns, and a Refresh-now button with last-updated time. Settings live in the standard macOS Settings window (⌘,).
 
 Access is strictly **read-only**: the app borrows state your CLIs already maintain. It never writes to the Keychain, never refreshes OAuth tokens, and degrades to a greyed "stale" display when data is unavailable.
 
 ## Features
 
-- Claude 5-hour + weekly, Codex weekly, and optional OpenCode Go 5-hour + weekly + monthly usage; stale values are marked with `~` and missing windows with `--`
+- Claude 5-hour + weekly (plus the model-scoped Fable weekly window when reported), Codex weekly, and optional OpenCode Go 5-hour + weekly + monthly usage; stale values are marked with `~` and missing windows with `--`
 - Dropdown with per-window progress bars and reset countdowns ("resets in 2h 14m", or weekday + time when more than a day out)
 - Polls every 2 minutes (configurable: 1/2/5/10 min), plus on Mac wake and on manual refresh
 - Notification when a window drops below a threshold (default 20%, configurable) — fired once per window per reset cycle

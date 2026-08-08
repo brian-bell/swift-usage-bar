@@ -2546,7 +2546,21 @@ private extension ProviderUsage {
     func remainingDisplay(for provider: ProviderID) -> String {
         switch provider {
         case .claude:
-            return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
+            let leadingSlots = "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
+            // The model-scoped weekly window is appended only when the payload
+            // reported one, so the bar and the dropdown show this window
+            // together or not at all — `DropdownViewModel` maps its Fable row
+            // from the same optional and likewise draws no placeholder, unlike
+            // Go's monthly slot which is always present. A fixed third slot
+            // would also sit permanently empty for anyone served by the
+            // statusline-cache fallback, which carries no scoped window at
+            // all. The cost is that the slot appears and disappears when the
+            // winning source changes between polls.
+            guard let fable else {
+                return leadingSlots
+            }
+
+            return "\(leadingSlots)/\(fable.percentRemaining.map(String.init) ?? "--")"
         case .codex:
             return weekly.percentRemaining.map(String.init) ?? "--"
         case .openCodeGo:

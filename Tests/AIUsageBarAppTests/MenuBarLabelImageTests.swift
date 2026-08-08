@@ -245,6 +245,51 @@ func menuBarLabelImagePartitionsFiveProvidersAcrossTwoRows() throws {
 }
 
 @Test
+func menuBarLabelImageRepartitionsFiveProvidersWhenClaudeCarriesFable() throws {
+    // Row count — and therefore height — is fixed by construction above two
+    // segments, so the observable effects of Fable's three extra characters
+    // are the width and the split; `layout` puts no ceiling on either.
+    // Without Fable the widest row is `Cl…Go` (3+2); with it the partition
+    // flips to 2+3. Asserting both splits is stronger than re-checking
+    // width-minimality *for this input* (the four-provider test above
+    // asserts minimality as a property over all candidate splits, which
+    // generalizes further) — an inverted comparator fails here, because
+    // `min` would then select the widest candidate instead.
+    //
+    // The `after` split is decided by a 4.35pt margin (143.19 vs 147.55).
+    // If this fails after a system font change, suspect shifted metrics
+    // before suspecting a layout regression — `size.width` below is the
+    // near-structural assertion.
+    let tail = [
+        MenuBarTitleSegment(provider: .codex, value: "90", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeGo, value: "88/74/92", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "$47", isStale: false),
+        MenuBarTitleSegment(provider: .miniMax, value: "76/55", isStale: false),
+    ]
+    let withoutFable =
+        [MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false)] + tail
+    let withFable =
+        [MenuBarTitleSegment(provider: .claude, value: "62/81/56", isStale: false)] + tail
+
+    let before = try #require(MenuBarLabelImage.layout(for: withoutFable))
+    let after = try #require(MenuBarLabelImage.layout(for: withFable))
+
+    #expect(before.rows.map(\.text) == [
+        "Cl 62/81  Cx 90  Go 88/74/92",
+        "Oc $47  Mx 76/55",
+    ])
+    #expect(after.rows.map(\.text) == [
+        "Cl 62/81/56  Cx 90",
+        "Go 88/74/92  Oc $47  Mx 76/55",
+    ])
+    // The wider label costs real horizontal space (~133pt -> ~144pt here);
+    // the height budget absorbs it because the rows rebalance.
+    #expect(after.size.width > before.size.width)
+    #expect(after.size.height == MenuBarLabelImage.rowHeight * 2)
+    #expect(after.size.height <= 22)
+}
+
+@Test
 func menuBarLabelLayoutPlacesFirstSegmentInTopRow() throws {
     let layout = try #require(MenuBarLabelImage.layout(for: [
         MenuBarTitleSegment(provider: .claude, value: "62/81", isStale: false),
