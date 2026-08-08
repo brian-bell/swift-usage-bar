@@ -262,7 +262,14 @@ in three slices, TDD throughout.
   override between both OpenCode providers. Request cost with both toggles
   on: with a workspace override, two page fetches per cycle; without one,
   two full discovery sweeps — each a `_server` call plus one page fetch per
-  discovered workspace — accepted for now.
+  discovered workspace. Each provider also runs its own Chrome cookie-DB
+  read and Safe Storage Keychain read per cycle (one "Always Allow" grant
+  covers all of them; background reads never prompt). Accepted for now.
+- **Shared workspace constraint, named:** the single workspace setting
+  means an account whose Go subscription and billing balance live on
+  *different* workspaces cannot configure both providers at once — the
+  guarantee that the two can never point at different workspaces is also
+  the case it forecloses. Revisit only if that account shape shows up.
 - **Menu bar**: whole dollars (`Oc $47`, rounded to nearest; cents live in
   the dropdown), `Oc ~$47` stale, `--` before first data, no segment until
   enabled and reported. Five segments still partition into two rows.

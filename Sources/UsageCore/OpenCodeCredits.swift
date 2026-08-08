@@ -27,22 +27,20 @@ public struct OpenCodeCreditsParser: Sendable {
         // brace group, before the nested `lite:{…}` object; `[^{}]*` gaps
         // cannot cross a nested object. See docs/endpoints.md › OpenCode
         // credits for units and evidence.
-        let pattern = #"\{customerID:"([^"]*)"[^{}]*balance:(\d+)[^{}]*monthlyLimit:(\d+)[^{}]*monthlyUsage:(\d+)"#
+        let pattern = #"\{customerID:"([^"]+)"[^{}]*balance:(\d+)[^{}]*monthlyLimit:(\d+)[^{}]*monthlyUsage:(\d+)"#
         let regex = try NSRegularExpression(pattern: pattern)
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let match = regex.firstMatch(in: text, range: range) else {
             // A configured record the regex cannot read is unobserved drift;
-            // anything else is a workspace without billing.
+            // anything else is a workspace without billing. `customerID:""`
+            // lands here deliberately: only `null` is the observed
+            // not-configured sentinel, and the Go parser's billing exemption
+            // makes the same call — inventing a benign meaning for an
+            // unobserved shape in one parser but not the other would let the
+            // two disagree about the same bytes.
             if text.contains(#"customerID:""#) {
                 throw UsageParsingError.parseFailure
             }
-            return nil
-        }
-
-        // An empty customer id is the same account state as `null`: billing
-        // was never configured, so there is no balance — benign nil, not
-        // drift.
-        if let customerID = Range(match.range(at: 1), in: text), text[customerID].isEmpty {
             return nil
         }
 

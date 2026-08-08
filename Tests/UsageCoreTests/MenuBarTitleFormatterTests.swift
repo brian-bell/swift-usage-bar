@@ -218,9 +218,10 @@ private func creditsState(balanceUSD: Double) -> ProviderState {
 
 @Test
 func menuBarTitleFormatterRendersCreditsAsWholeDollars() {
-    // The bar shows whole dollars, matching the whole-percent convention of
-    // every other segment; exact cents live in the dropdown.
-    for (balance, value) in [(47.03, "$47"), (47.60, "$48"), (0.12, "$0")] {
+    // The bar shows whole dollars, rounded DOWN — a balance display must
+    // never claim money the user doesn't have. Exact cents live in the
+    // dropdown.
+    for (balance, value) in [(47.03, "$47"), (47.60, "$47"), (0.92, "$0")] {
         #expect(MenuBarTitleFormatter.segments([
             .claude: .hidden,
             .codex: .hidden,

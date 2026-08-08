@@ -384,6 +384,24 @@ func openCodeCreditsStaleDisclosureExplainsTheMissingBalance() throws {
     #expect(section.steps.first?.stateText == "No credits balance")
 }
 
+@Test
+func openCodeCreditsDriftCalloutDoesNotPromiseSelfRecovery() throws {
+    // The generic parse-failure copy says the problem "usually clears on
+    // its own" — true for transient garbage, false for a drifted billing
+    // record, which stays unreadable until the app learns the new shape.
+    let section = try chainSection(
+        for: .openCodeCredits,
+        states: [.openCodeCredits: .stale(last: nil, reason: .parseFailure)],
+        chains: [.openCodeCredits: [
+            ProviderDataSourceStep(.openCodeCreditsChromeCookie, .failed(.parseFailure)),
+        ]]
+    )
+
+    #expect(section.recoveryCallout == "Showing last-known data. "
+        + "The billing data is in a shape this version can't read. "
+        + "If this persists, AIUsageBar needs an update.")
+}
+
 // MARK: - Hidden providers
 
 @Test

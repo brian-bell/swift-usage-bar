@@ -2552,10 +2552,13 @@ private extension ProviderUsage {
         case .openCodeGo:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")/\(monthly?.percentRemaining.map(String.init) ?? "--")"
         case .openCodeCredits:
+            // Rounded down: a balance display must never claim money the
+            // user doesn't have (percent segments round to nearest, but
+            // that convention overstates a dollar figure by up to $0.50).
             // Int(exactly:) instead of Int(): a finite-but-huge upstream
             // balance (> Int.max after rounding) must degrade to the
             // placeholder, not trap and crash the whole menu bar.
-            return credits.flatMap { Int(exactly: $0.balanceUSD.rounded()) }.map { "$\($0)" } ?? "--"
+            return credits.flatMap { Int(exactly: $0.balanceUSD.rounded(.down)) }.map { "$\($0)" } ?? "--"
         case .miniMax:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
         }

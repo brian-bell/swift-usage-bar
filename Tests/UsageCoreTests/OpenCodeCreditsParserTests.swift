@@ -60,14 +60,18 @@ func openCodeCreditsParserReturnsNilWhenCustomerIDIsNull() throws {
 }
 
 @Test
-func openCodeCreditsParserReturnsNilWhenCustomerIDIsEmpty() throws {
-    // An empty customer id is the same account state as null — billing was
-    // never configured — so it must be the benign nil, not a drift error.
+func openCodeCreditsParserThrowsWhenCustomerIDIsEmpty() {
+    // Only `null` is the observed not-configured sentinel; an empty string
+    // is an unobserved shape and must land in the drift bucket — the same
+    // verdict the Go parser's billing exemption reaches for that page, so
+    // the two parsers never disagree about the same bytes.
     let data = Data(#"""
     ((self.$R=self.$R||{}),$R[1]={customerID:"",balance:100000000,monthlyLimit:50,monthlyUsage:0});
     """#.utf8)
 
-    #expect(try OpenCodeCreditsParser().parse(data) == nil)
+    #expect(throws: UsageParsingError.parseFailure) {
+        try OpenCodeCreditsParser().parse(data)
+    }
 }
 
 @Test

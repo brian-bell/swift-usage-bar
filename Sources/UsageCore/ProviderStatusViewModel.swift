@@ -435,6 +435,12 @@ private extension ProviderID {
             return "No credits balance found. Check your opencode.ai sign-in in "
                 + "Chrome and that billing is configured on the workspace, then choose "
                 + "Refresh Now from the menu bar."
+        case (.openCodeCredits, .parseFailure):
+            // Unlike the generic "usually clears on its own": a drifted
+            // billing record stays drifted until the app learns the new
+            // shape.
+            return prefix + "The billing data is in a shape this version can't read. "
+                + "If this persists, AIUsageBar needs an update."
         case (.openCodeGo, .workspaceSelectionRequired), (.openCodeCredits, .workspaceSelectionRequired):
             return prefix + "Several workspaces matched. Set a workspace ID below, then "
                 + "choose Refresh Now from the menu bar."
