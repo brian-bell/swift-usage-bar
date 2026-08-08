@@ -11,11 +11,16 @@ the code disagree, the code and its tests win.
 
 **AIUsageBar**: a native macOS menu bar app (SwiftUI `MenuBarExtra`, macOS
 14+) showing **percent remaining** for Claude, Codex, OpenCode Go, and
-MiniMax, and **workspace credits** for OpenCode Go. Providers borrow existing
-local state read-only (Keychain, Chrome cookies, OpenCode's `auth.json`, a
-statusline cache file) and degrade to a greyed "stale" state instead of
-erroring. Per-provider retrieval order and fallbacks: `ProviderID.dataSourceChain`
-in `Sources/UsageCore/ProviderDataSource.swift` and `docs/endpoints.md`.
+MiniMax, plus the **OpenCode workspace credit balance** as its own provider
+(menu bar `Oc $47`, hidden by default, toggled independently of OpenCode
+Go). Providers borrow existing local state read-only (Keychain, Chrome
+cookies, OpenCode's `auth.json`, a statusline cache file) and degrade to a
+greyed "stale" state instead of erroring. Per-provider retrieval order and
+fallbacks: `ProviderID.dataSourceChain` in
+`Sources/UsageCore/ProviderDataSource.swift` and `docs/endpoints.md`.
+Credits stay out of tone and threshold notifications (a dollar balance has
+no percent window); both OpenCode providers share the one workspace-ID
+setting.
 
 ## Build, test, run
 

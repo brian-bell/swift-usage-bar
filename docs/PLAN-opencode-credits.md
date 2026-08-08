@@ -1,5 +1,12 @@
 # OpenCode credits (workspace balance) — plan
 
+> **Superseded in part by v2 (below).** Slices 0–2 shipped credits as a
+> dropdown-only decoration under OpenCode Go, exactly as this plan's
+> "Product decisions" describe. A later product decision split credits into
+> a **standalone provider** with a menu bar segment and its own toggle —
+> see "v2 — standalone provider" at the end of this document. The evidence,
+> units, privacy rules, and non-goals here still hold.
+
 Surface the OpenCode workspace credit balance ("Current Balance" on the
 console's Billing page) under the OpenCode Go provider, dropdown-only,
 following the Fable-window precedent: no menu bar, no tone, no threshold
@@ -218,3 +225,58 @@ TDD order; every step red → green.
 - **Balance semantics**: `useBalance` (spend balance after Go limits) is
   per-workspace; the row shows the balance regardless, which is correct
   — the money exists either way.
+
+---
+
+## v2 — standalone provider (slices 3–5, DONE)
+
+New product decision: credits become their own provider with an
+independent toggle, replacing the "decoration under OpenCode Go" shape
+from the sections above. Implemented on `feature/opencode-credits-provider`
+in three slices, TDD throughout.
+
+### What changed
+
+- **`ProviderID.openCodeCredits`** — menu bar `Oc`, hidden by default
+  (`defaultHiddenProviders`), visibility key
+  `settings.provider.openCodeCredits.visible`, fully independent of
+  OpenCode Go's toggle. `allCases` order: Claude, Codex, OpenCode Go,
+  OpenCode Credits, MiniMax.
+- **Ownership moved.** `OpenCodeCreditsParser` (in
+  `Sources/UsageCore/OpenCodeCredits.swift`) owns the billing record;
+  `OpenCodeGoUsageParser` no longer attaches credits, so the balance
+  renders exactly once when both OpenCode toggles are on. Go keeps its
+  `monthlyUsage` anti-drift exemption — the record is still on the page.
+- **Strictness follows ownership.** For the credits parser a *configured*
+  record (`customerID:"…"`) that fails extraction throws `.parseFailure`;
+  no record / `customerID:null` returns nil, which the provider maps to
+  `.credentialUnavailable` ("no credits balance", never `$0.00`); a body
+  with no Seroval stream at all is a parse failure, not "not configured".
+- **`OpenCodeCreditsProvider`** mirrors Go's session/discovery flow with
+  the same seams (`OpenCodeSessionReading`, `OpenCodeGoTransporting`);
+  discovery qualifies a workspace iff its page yields a configured billing
+  record; single-step chain `[.openCodeCreditsChromeCookie]` whose step
+  reason equals the surfaced reason. `.live()` shares one transport,
+  session reader, and workspace override between both OpenCode providers
+  (two page fetches per cycle when both are on — accepted).
+- **Menu bar**: whole dollars (`Oc $47`, rounded to nearest; cents live in
+  the dropdown), `Oc ~$47` stale, `--` before first data, no segment until
+  enabled and reported. Five segments still partition into two rows.
+- **Dropdown**: the credits provider renders only the Credits row
+  (`DropdownProviderRow.weekly` became optional, gated by
+  `showsWeeklyWindow`); `--` placeholder before first data; usage carries
+  no percent windows, which keeps credits out of `tone(for:)` and
+  `ThresholdNotifier` structurally (pinned by tests).
+- **Settings**: own status row and chain disclosure; recovery callout for
+  `.credentialUnavailable` names both candidate causes (cookie vs.
+  billing not configured); the shared workspace field appears in both
+  OpenCode disclosures with a "Shared with OpenCode Go." caption — same
+  `settings.openCodeGo.workspaceID` key, so the two providers can never
+  point at different workspaces.
+
+### Still out (unchanged non-goals)
+
+Low-balance notifications and tone participation; per-request cost
+ledgers, referral rewards, auto-reload state, payment metadata; a second
+workspace setting; a shared page-fetch cache (revisit only if the double
+fetch proves problematic).
