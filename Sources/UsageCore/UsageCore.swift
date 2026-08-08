@@ -18,23 +18,53 @@ public struct UsageWindow: Equatable, Sendable {
     }
 }
 
+/// Workspace credit balance, sourced from OpenCode's billing record. The type
+/// is intentionally numeric-only: it has no fields for payment metadata
+/// (customer id, payment method, subscription, …), so a parser that pulls
+/// the three values out of the raw page cannot accidentally surface anything
+/// else — the structural limit on the type is the privacy guarantee.
+public struct CreditBalance: Equatable, Sendable {
+    /// Dollars remaining on the workspace balance. Raw — rounding to cents
+    /// happens at the formatter, not here, so two captures compare equal.
+    public let balanceUSD: Double
+    /// Dollars spent from the balance this calendar month, when reported.
+    public let monthlyUsedUSD: Double?
+    /// Whole-dollar monthly spend limit, when configured.
+    public let monthlyLimitUSD: Int?
+
+    public init(balanceUSD: Double, monthlyUsedUSD: Double? = nil, monthlyLimitUSD: Int? = nil) {
+        self.balanceUSD = balanceUSD
+        self.monthlyUsedUSD = monthlyUsedUSD
+        self.monthlyLimitUSD = monthlyLimitUSD
+    }
+}
+
 public struct ProviderUsage: Equatable, Sendable {
     public let fiveHour: UsageWindow
     public let weekly: UsageWindow
     public let monthly: UsageWindow?
     // Model-scoped weekly window (Claude's "Fable" limit), when the API reports one.
     public let fable: UsageWindow?
+    /// Workspace credit balance (OpenCode Go), when the billing record is
+    /// present. Decoration only — never participates in tone, threshold
+    /// notifications, or the menu-bar title. The type is numeric-only by
+    /// design (no payment metadata), so a parser that extracts the three
+    /// numeric values cannot accidentally surface anything else. See
+    /// `docs/PLAN-opencode-credits.md`.
+    public let credits: CreditBalance?
 
     public init(
         fiveHour: UsageWindow,
         weekly: UsageWindow,
         monthly: UsageWindow? = nil,
-        fable: UsageWindow? = nil
+        fable: UsageWindow? = nil,
+        credits: CreditBalance? = nil
     ) {
         self.fiveHour = fiveHour
         self.weekly = weekly
         self.monthly = monthly
         self.fable = fable
+        self.credits = credits
     }
 }
 
@@ -1867,10 +1897,62 @@ public struct OpenCodeGoUsageParser: Sendable {
             throw UsageParsingError.parseFailure
         }
 
+        // Credits are decoration: extracted best-effort from the same SSR
+        // stream the Go windows live in. A missing or unparseable billing
+        // record never fails window parsing — only the Go windows are the
+        // product. See docs/PLAN-opencode-credits.md slice 1.
+        let credits = Self.credits(in: text)
+
         return ProviderUsage(
             fiveHour: rolling,
             weekly: weekly ?? UsageWindow(percentRemaining: nil, resetsAt: nil),
-            monthly: monthly
+            monthly: monthly,
+            credits: credits
+        )
+    }
+
+    /// Extracts the workspace credit balance from the billing record the
+    /// workspace's SSR page embeds in its Seroval stream. The record is
+    /// identified by a non-null `customerID:"…"` (CodexBar's sentinel for
+    /// "billing is configured" — a `null` value means the workspace has
+    /// no real balance to report, and we return nil instead of `$0.00`).
+    ///
+    /// Returns nil for any failure mode: no record, null customerID,
+    /// unparseable digits. The Go windows are unaffected; credits are
+    /// pure decoration.
+    private static func credits(in text: String) -> CreditBalance? {
+        // The three numeric fields appear in source-verified order within
+        // one brace group, before the nested `lite:{…}` object. `[^{}]*`
+        // gaps stay inside one brace group — a nested object between the
+        // keys breaks the match (returning nil) instead of being matched
+        // across. The fixture-backed anti-drift posture for the windows
+        // stays strict; credits follow the web-fallback's
+        // degrade-without-surfacing posture.
+        let pattern = #"\{customerID:"([^"]+)"[^{}]*balance:(\d+)[^{}]*monthlyLimit:(\d+)[^{}]*monthlyUsage:(\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return nil
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let customerID = Range(match.range(at: 1), in: text),
+              let balanceRange = Range(match.range(at: 2), in: text),
+              let limitRange = Range(match.range(at: 3), in: text),
+              let usageRange = Range(match.range(at: 4), in: text),
+              !text[customerID].isEmpty,
+              let balance = Double(text[balanceRange]), balance.isFinite,
+              let limit = Int(text[limitRange]),
+              let monthlyUsage = Double(text[usageRange]), monthlyUsage.isFinite
+        else {
+            return nil
+        }
+
+        // 10⁻⁸-dollar units per docs/endpoints.md. Rounding to cents is
+        // the formatter's job, not the model's — keeps two captures of
+        // the same balance equal.
+        return CreditBalance(
+            balanceUSD: balance / 100_000_000,
+            monthlyUsedUSD: monthlyUsage / 100_000_000,
+            monthlyLimitUSD: limit
         )
     }
 
@@ -1886,10 +1968,23 @@ public struct OpenCodeGoUsageParser: Sendable {
             + number + #")\s*,[^}]*\busagePercent\s*:\s*("# + number + #")[^}]*\}"#
         let regex = try NSRegularExpression(pattern: pattern)
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, range: range) else {
-            // Fixture-backed contract: an optional window may be omitted, but a named
-            // value in any unobserved shape is drift and must not be guessed at.
-            if required || text.contains("\(name):") {
+        let matches = regex.matches(in: text, range: range)
+
+        // Fixture-backed contract: an optional window may be omitted, but a
+        // named value in any unobserved shape is drift and must not be guessed
+        // at. Validate every occurrence so a canonical window cannot mask an
+        // altered duplicate. The sole collision is the fixture-backed billing
+        // record's plain-number `monthlyUsage`.
+        if try Self.hasUnexpectedNamedWindowValue(
+            name,
+            in: text,
+            validWindowLocations: Set(matches.map { $0.range.location })
+        ) {
+            throw UsageParsingError.parseFailure
+        }
+
+        guard let match = matches.first else {
+            if required {
                 throw UsageParsingError.parseFailure
             }
             return nil
@@ -1906,6 +2001,42 @@ public struct OpenCodeGoUsageParser: Sendable {
             percentRemaining: percentRemaining(fromUsedPercentage: usedPercent),
             resetsAt: now.addingTimeInterval(reset)
         )
+    }
+
+    private static func hasUnexpectedNamedWindowValue(
+        _ name: String,
+        in text: String,
+        validWindowLocations: Set<Int>
+    ) throws -> Bool {
+        let namedPattern = #"\b"# + NSRegularExpression.escapedPattern(for: name) + #"\s*:"#
+        let namedRegex = try NSRegularExpression(pattern: namedPattern)
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let namedMatches = namedRegex.matches(in: text, range: range)
+        guard !namedMatches.isEmpty else {
+            return false
+        }
+
+        // The observed billing record is a Seroval object beginning with
+        // `{customerID:…}` and names its own `monthlyUsage` field. Capture only
+        // that key. The gap stops at the record's closing `}` so a record that
+        // omits the field cannot lend its exemption to a sibling object, and —
+        // since the observed field precedes any nested Seroval assignment —
+        // also at a new assignment or line. Broader layouts require a new
+        // fixture-backed contract. Billing-value drift at the observed field
+        // degrades credits to nil without making otherwise valid Go windows
+        // stale.
+        let billingPattern = #"\{customerID:(?:\"[^\"]+\"|null)(?:(?!\$R\[\d+\]\s*=)[^}\r\n])*?(\bmonthlyUsage\s*:)"#
+        let billingUsageRanges: [NSRange]
+        if name == "monthlyUsage" {
+            let billingRegex = try NSRegularExpression(pattern: billingPattern)
+            billingUsageRanges = billingRegex.matches(in: text, range: range).map { $0.range(at: 1) }
+        } else {
+            billingUsageRanges = []
+        }
+        return namedMatches.contains { namedMatch in
+            !validWindowLocations.contains(namedMatch.range.location)
+                && !billingUsageRanges.contains { NSLocationInRange(namedMatch.range.location, $0) }
+        }
     }
 
     private static func looksSignedOut(_ text: String) -> Bool {

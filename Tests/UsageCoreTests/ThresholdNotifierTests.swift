@@ -822,3 +822,39 @@ private func usage(
         weekly: UsageWindow(percentRemaining: weekly, resetsAt: weeklyReset)
     )
 }
+
+@Test
+func thresholdNotifierIgnoresCredits() async {
+    // ThresholdNotifier reads only fiveHour/weekly/monthly windows; a
+    // near-zero credit balance is not a notification event. Pinned here so
+    // a future change that promotes ProviderUsage.credits into the
+    // compared set is caught before it ships. (See docs/PLAN-opencode-credits.md
+    // slice 1.)
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_783_008_000)
+    let richCredits = CreditBalance(
+        balanceUSD: 0.01,
+        monthlyUsedUSD: 99.99,
+        monthlyLimitUSD: 100
+    )
+
+    let previous = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 50, resetsAt: reset),
+        weekly: UsageWindow(percentRemaining: 50, resetsAt: reset)
+    )
+    let current = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 50, resetsAt: reset),
+        weekly: UsageWindow(percentRemaining: 50, resetsAt: reset),
+        credits: richCredits
+    )
+
+    await notifier.evaluate(
+        previous: previous,
+        current: current,
+        provider: .openCodeGo,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications().isEmpty)
+}

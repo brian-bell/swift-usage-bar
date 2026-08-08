@@ -46,4 +46,43 @@ struct HostedUITests {
         // Seeded last-updated caption rendered via the dropdown view model.
         #expect(ax.exists(AccessibilityID.menuBarUpdated))
     }
+
+    @Test
+    func menuBarContentViewRendersOpenCodeGoCreditsRow() throws {
+        // OpenCode Go is hidden by default; the shell model respects that
+        // via applyStoredProviderVisibility, so the credits row would never
+        // render. Flip the visibility in the isolated SettingsStore before
+        // building the model.
+        let settingsStore = SettingsStore(defaults: isolatedDefaults())
+        settingsStore.setProvider(.openCodeGo, visible: true)
+
+        let host = onMain {
+            UITestHost.dropdown(
+                MenuBarContentView(
+                    model: shellModel(
+                        appState: openCodeGoFreshState(),
+                        settingsStore: settingsStore
+                    )
+                )
+            )
+        }
+        defer { onMain { host.close() } }
+        let ax = AXQuery(windowTitle: host.windowTitle)
+
+        #expect(
+            pollUntil { ax.exists(AccessibilityID.menuBarProviderCredits(.openCodeGo)) },
+            "Missing OpenCode Go credits row. Tree:\n\(ax.dumpIdentifiers())"
+        )
+        // The amount label is the most failure-prone piece of the row —
+        // it goes through NumberFormatter with the system locale. A bare
+        // existence check on the AX id only proves the row is wired up;
+        // confirming the formatted dollar value pins the formatter too.
+        #expect(ax.firstValue(containing: "$42.50") != nil)
+        #expect(ax.firstValue(containing: "$2.96 of $50 used this month") != nil)
+        // Pin the per-text AX ids so a SwiftUI modifier refactor that drops
+        // an identifier doesn't leave the values visible but break future
+        // AX-based assertions.
+        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeGo)).amount"))
+        #expect(ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeGo)).caption"))
+    }
 }

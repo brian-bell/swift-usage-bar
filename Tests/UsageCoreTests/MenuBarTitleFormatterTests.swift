@@ -205,6 +205,38 @@ private let miniMaxUsage = ProviderUsage(
     weekly: UsageWindow(percentRemaining: 55, resetsAt: nil)
 )
 
+@Test
+func menuBarTitleFormatterIsIdenticalWithOrWithoutCredits() {
+    // The menu-bar title is the percent-remaining scale only; adding or
+    // removing a credits value must not change the rendered string.
+    // (See docs/PLAN-opencode-credits.md slice 1.)
+    let reset = Date(timeIntervalSince1970: 100)
+    let withCredits = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: reset),
+        weekly: UsageWindow(percentRemaining: 74, resetsAt: reset),
+        monthly: UsageWindow(percentRemaining: 92, resetsAt: reset),
+        credits: CreditBalance(
+            balanceUSD: 42.50,
+            monthlyUsedUSD: 2.96,
+            monthlyLimitUSD: 50
+        )
+    )
+    let withoutCredits = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: reset),
+        weekly: UsageWindow(percentRemaining: 74, resetsAt: reset),
+        monthly: UsageWindow(percentRemaining: 92, resetsAt: reset)
+    )
+
+    let titleWith = MenuBarTitleFormatter.format([
+        .openCodeGo: .fresh(withCredits, asOf: Date(timeIntervalSince1970: 1)),
+    ])
+    let titleWithout = MenuBarTitleFormatter.format([
+        .openCodeGo: .fresh(withoutCredits, asOf: Date(timeIntervalSince1970: 1)),
+    ])
+
+    #expect(plainText(titleWith) == plainText(titleWithout))
+}
+
 private func plainText(_ attributedString: AttributedString) -> String {
     String(attributedString.characters)
 }

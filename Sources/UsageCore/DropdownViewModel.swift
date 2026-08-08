@@ -57,6 +57,10 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
     public let weekly: DropdownUsageWindowRow
     public let monthly: DropdownUsageWindowRow?
     public let fable: DropdownUsageWindowRow?
+    /// Workspace credit balance (OpenCode Go), nil when the provider has no
+    /// credits in its usage or is in a no-usage state. Decoration only —
+    /// never participates in tone, threshold, or the menu-bar title.
+    public let credits: DropdownCreditsRow?
     public let statusTone: UsageStatusTone?
 
     fileprivate init(
@@ -100,6 +104,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                     locale: locale
                 )
             }
+            self.credits = usage.credits.map { DropdownCreditsRow(credits: $0, locale: locale) }
             self.statusTone = tone(for: usage)
         case let .stale(last: usage?, reason: reason):
             self.isStale = true
@@ -129,6 +134,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                     locale: locale
                 )
             }
+            self.credits = usage.credits.map { DropdownCreditsRow(credits: $0, locale: locale) }
             self.statusTone = tone(for: usage)
         case let .stale(last: nil, reason: reason):
             self.isStale = true
@@ -141,6 +147,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: "Monthly")
                 : nil
             self.fable = nil
+            self.credits = nil
             self.statusTone = nil
         case .hidden:
             self.isStale = false
@@ -153,8 +160,45 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: "Monthly")
                 : nil
             self.fable = nil
+            self.credits = nil
             self.statusTone = nil
         }
+    }
+}
+
+/// Workspace credit balance, formatted for the dropdown. The row is purely
+/// presentational — no scaling, no progress bar, no threshold participation.
+/// Title and amountLabel always exist; captionLabel is omitted when there
+/// is no monthly limit (or no monthly usage to compare against the limit).
+///
+/// Caption formatting is deliberately asymmetric: the "used" side goes
+/// through `formatCurrency` (locale-aware decimal separator, e.g. "$2,96"
+/// in `de_DE`), but the "of $Y" limit side uses raw `Int` interpolation —
+/// limits are small whole dollars in practice (today's cap is $50) so a
+/// grouping-separator surprise at $1,000+ would be more confusing than
+/// helpful.
+public struct DropdownCreditsRow: Equatable, Sendable {
+    public let title: String
+    public let amountLabel: String
+    public let captionLabel: String?
+
+    public init(credits: CreditBalance, locale: Locale) {
+        self.title = "Credits"
+        self.amountLabel = Self.formatCurrency(credits.balanceUSD, locale: locale)
+        if let monthlyUsed = credits.monthlyUsedUSD, let monthlyLimit = credits.monthlyLimitUSD {
+            self.captionLabel = "\(Self.formatCurrency(monthlyUsed, locale: locale)) of $\(monthlyLimit) used this month"
+        } else {
+            self.captionLabel = nil
+        }
+    }
+
+    private static func formatCurrency(_ amount: Double, locale: Locale) -> String {
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.locale = locale
+        let formatted = formatter.string(from: amount as NSNumber) ?? "\(amount)"
+        return "$" + formatted
     }
 }
 
