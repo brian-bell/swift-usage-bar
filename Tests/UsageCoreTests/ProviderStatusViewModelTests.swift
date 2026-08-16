@@ -301,7 +301,7 @@ func providerStatusCoversEveryProviderInStableOrder() {
 
     #expect(model.rows.map(\.provider) == ProviderID.allCases)
     #expect(model.rows.map(\.providerName) == [
-        "Claude", "Codex", "OpenCode Go", "OpenCode Credits", "MiniMax",
+        "Claude", "Codex", "OpenCode Go", "OpenCode Credits", "MiniMax", "Cursor",
     ])
     #expect(model.rows.map(\.id) == ProviderID.allCases)
 }
@@ -412,6 +412,12 @@ func providerStatusClampsFutureRefreshTimestampsToJustNow() throws {
     (.miniMax, .credentialUnavailable, "No MiniMax key found"),
     (.miniMax, .sessionExpired, "MiniMax key rejected"),
     (.miniMax, .workspaceSelectionRequired, "Workspace selection required"),
+    (.cursor, .parseFailure, "Unexpected response format"),
+    (.cursor, .networkError, "Network error"),
+    (.cursor, .tokenExpired, "Cursor session expired"),
+    (.cursor, .credentialUnavailable, "No Cursor sign-in found"),
+    (.cursor, .sessionExpired, "Cursor session expired"),
+    (.cursor, .workspaceSelectionRequired, "Workspace selection required"),
 ])
 func providerStatusMapsEveryStaleReasonToProviderSpecificPhrasing(
     provider: ProviderID,

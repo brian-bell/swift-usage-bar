@@ -173,6 +173,8 @@ private extension ProviderID {
             return "opencode-credits"
         case .miniMax:
             return "minimax"
+        case .cursor:
+            return "cursor"
         }
     }
 }

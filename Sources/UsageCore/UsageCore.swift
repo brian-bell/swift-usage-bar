@@ -105,6 +105,7 @@ public enum ProviderID: CaseIterable, Hashable, Sendable {
     case openCodeGo
     case openCodeCredits
     case miniMax
+    case cursor
 
     /// Providers that ship hidden: their menu-bar row, dropdown entry, and
     /// default Settings visibility all skip them until they are explicitly
@@ -112,7 +113,7 @@ public enum ProviderID: CaseIterable, Hashable, Sendable {
     /// site that needs to special-case a default-hidden provider reads from
     /// here rather than maintaining its own list.
     public static let defaultHiddenProviders: Set<ProviderID> = [
-        .openCodeGo, .openCodeCredits, .miniMax,
+        .openCodeGo, .openCodeCredits, .miniMax, .cursor,
     ]
 
     /// Whether this provider ships hidden. The opposite direction of
@@ -165,7 +166,11 @@ public struct UsageThresholdNotification: Equatable, Sendable {
     }
 
     public var title: String {
-        "\(provider.notificationDisplayName) \(window.notificationDisplayName) usage below \(threshold)%"
+        let windowName = window.notificationDisplayName(for: provider)
+        if provider == .cursor, window == .weekly {
+            return "\(windowName) usage below \(threshold)%"
+        }
+        return "\(provider.notificationDisplayName) \(windowName) usage below \(threshold)%"
     }
 
     public var body: String {
@@ -186,6 +191,8 @@ private extension ProviderID {
             return "OpenCode Credits"
         case .miniMax:
             return "MiniMax"
+        case .cursor:
+            return "Cursor"
         }
     }
 }
@@ -199,6 +206,17 @@ private extension UsageWindowKind {
             return "weekly"
         case .monthly:
             return "monthly"
+        }
+    }
+
+    func notificationDisplayName(for provider: ProviderID) -> String {
+        switch (provider, self) {
+        case (.cursor, .weekly):
+            return "Cursor Models"
+        case (.cursor, .monthly):
+            return "Other Models"
+        default:
+            return notificationDisplayName
         }
     }
 }
@@ -2575,6 +2593,12 @@ private extension ProviderUsage {
             return credits.flatMap { Int(exactly: $0.balanceUSD.rounded(.down)) }.map { "$\($0)" } ?? "--"
         case .miniMax:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
+        case .cursor:
+            let otherModels = monthly?.percentRemaining.map(String.init) ?? "--"
+            guard let cursorModels = weekly.percentRemaining else {
+                return otherModels
+            }
+            return "\(cursorModels)/\(otherModels)"
         }
     }
 }
@@ -2590,6 +2614,8 @@ private func remainingPlaceholder(for provider: ProviderID) -> String {
     case .openCodeCredits:
         return "--"
     case .miniMax:
+        return "--/--"
+    case .cursor:
         return "--/--"
     }
 }
@@ -2607,6 +2633,8 @@ private extension ProviderID {
             return "Oc"
         case .miniMax:
             return "Mx"
+        case .cursor:
+            return "Cu"
         }
     }
 }

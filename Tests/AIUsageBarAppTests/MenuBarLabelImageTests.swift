@@ -140,7 +140,7 @@ func menuBarLabelImageRendersSingleProviderAtReadableMenuBarHeight() throws {
 func menuBarLabelImageUsesReadableFontForSingleProvider(provider: ProviderID) throws {
     let value: String
     switch provider {
-    case .claude, .miniMax:
+    case .claude, .miniMax, .cursor:
         value = "62/81"
     case .codex, .openCodeGo:
         value = "90"

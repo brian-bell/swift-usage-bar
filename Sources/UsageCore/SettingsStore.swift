@@ -127,6 +127,8 @@ private extension ProviderID {
             return "openCodeCredits"
         case .miniMax:
             return "miniMax"
+        case .cursor:
+            return "cursor"
         }
     }
 }

@@ -15,6 +15,7 @@ func providerIconAssetsLoadForAllProviders() throws {
         true,  // .openCodeGo
         true,  // .openCodeCredits — shares the OpenCode mark
         false, // .miniMax
+        false, // .cursor
     ])
     for provider in ProviderID.allCases where ProviderIconAsset.hasAsset(for: provider) {
         let image = try #require(ProviderIconAsset.image(for: provider))

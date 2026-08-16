@@ -10,12 +10,14 @@ the code disagree, the code and its tests win.
 ## What this is
 
 **AIUsageBar**: a native macOS menu bar app (SwiftUI `MenuBarExtra`, macOS
-14+) showing **percent remaining** for Claude, Codex, OpenCode Go, and
-MiniMax, plus the **OpenCode workspace credit balance** as its own provider
+14+) showing **percent remaining** for Claude, Codex, OpenCode Go, MiniMax,
+and Cursor, plus the **OpenCode workspace credit balance** as its own provider
 (menu bar `Oc $47`, hidden by default, toggled independently of OpenCode
-Go). Providers borrow existing local state read-only (Keychain, Chrome
-cookies, OpenCode's `auth.json`, a statusline cache file) and degrade to a
-greyed "stale" state instead of erroring. Per-provider retrieval order and
+Go). Cursor is hidden by default and shows Cursor Models / Other Models as
+`Cu 62/81` (the first slot is omitted when the payload has no first-party
+pool). Dropdown labels are `Cursor` / `Other`. Providers borrow existing local state read-only (Keychain, Chrome
+cookies, OpenCode's `auth.json`, a statusline cache file, Cursor's
+`state.vscdb`) and degrade to a greyed "stale" state instead of erroring. Per-provider retrieval order and
 fallbacks: `ProviderID.dataSourceChain` in
 `Sources/UsageCore/ProviderDataSource.swift` and `docs/endpoints.md`.
 Credits stay out of tone and threshold notifications (a dollar balance has

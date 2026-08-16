@@ -144,6 +144,8 @@ enum MenuBarLabelImage {
             return "Oc"
         case .miniMax:
             return "Mx"
+        case .cursor:
+            return "Cu"
         }
     }
 }

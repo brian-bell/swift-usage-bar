@@ -19,6 +19,7 @@ func providerDataSourceChainListsEachProvidersSourcesInFallbackOrder() {
     #expect(ProviderID.openCodeGo.dataSourceChain == [.openCodeGoChromeCookie])
     #expect(ProviderID.openCodeCredits.dataSourceChain == [.openCodeCreditsChromeCookie])
     #expect(ProviderID.miniMax.dataSourceChain == [.minimaxTokenPlanAPI])
+    #expect(ProviderID.cursor.dataSourceChain == [.cursorUsageSummary])
 }
 
 @Test
@@ -36,6 +37,16 @@ func minimaxTokenPlanAPIDataSourceNamesMatchTheProviderStatusConvention() {
     #expect(ProviderDataSource.minimaxTokenPlanAPI.provider == .miniMax)
     #expect(ProviderDataSource.minimaxTokenPlanAPI.displayName == "MiniMax token plan API")
     #expect(ProviderDataSource.minimaxTokenPlanAPI.chainStepName == "MiniMax token plan API (OpenCode key)")
+}
+
+@Test
+func cursorUsageSummaryDataSourceNamesMatchTheProviderStatusConvention() {
+    #expect(ProviderDataSource.cursorUsageSummary.provider == .cursor)
+    #expect(ProviderDataSource.cursorUsageSummary.displayName == "Cursor usage-summary API")
+    #expect(
+        ProviderDataSource.cursorUsageSummary.chainStepName
+            == "Cursor usage-summary \u{00B7} Local IDE session"
+    )
 }
 
 @Test

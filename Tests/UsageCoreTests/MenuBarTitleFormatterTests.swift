@@ -226,6 +226,38 @@ func menuBarTitleFormatterRendersFreshMiniMaxAsMxSymbol() {
 }
 
 @Test
+func menuBarTitleFormatterRendersFreshCursorAsTwoPoolDisplay() {
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .cursor: .fresh(cursorUsage, asOf: Date(timeIntervalSince1970: 30)),
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .cursor, value: "95/90", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterOmitsCursorModelsSlotWhenMonthlyIsAbsent() {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 90, resetsAt: nil)
+    )
+
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .cursor: .fresh(usage, asOf: Date(timeIntervalSince1970: 30)),
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .cursor, value: "90", isStale: false),
+    ])
+}
+
+@Test
 func menuBarTitleFormatterEmitsFourSegmentsInProviderOrderWhenAllVisible() {
     // The first time all four providers can be visible simultaneously the
     // formatter must produce four segments in `ProviderID.allCases` order
@@ -273,6 +305,12 @@ private let codexUsage = ProviderUsage(
 private let miniMaxUsage = ProviderUsage(
     fiveHour: UsageWindow(percentRemaining: 76, resetsAt: nil),
     weekly: UsageWindow(percentRemaining: 55, resetsAt: nil)
+)
+
+private let cursorUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: 95, resetsAt: nil),
+    monthly: UsageWindow(percentRemaining: 90, resetsAt: nil)
 )
 
 private func creditsState(balanceUSD: Double) -> ProviderState {
