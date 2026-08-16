@@ -283,6 +283,10 @@ extension UsageBarShellModel {
                 credentialReader: OpenCodeAuthFileCredentialReader(),
                 transport: MiniMaxHTTPTransport()
             ),
+            .cursor: CursorUsageProvider(
+                credentialReader: CursorIDECredentialReader(),
+                transport: CursorUsageHTTPTransport()
+            ),
         ]
     }
 

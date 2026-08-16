@@ -338,7 +338,7 @@ func workspaceCaptionSaysDiscoveryIsSkippedOnceAnIDIsSet() throws {
 
 @Test
 func onlyTheOpenCodeProvidersShowTheWorkspaceField() throws {
-    for provider in [ProviderID.claude, .codex, .miniMax] {
+    for provider in [ProviderID.claude, .codex, .miniMax, .cursor] {
         let section = try chainSection(for: provider)
         #expect(!section.showsWorkspaceField)
         #expect(section.workspaceCaption == nil)

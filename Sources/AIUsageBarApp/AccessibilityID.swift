@@ -43,6 +43,8 @@ enum AccessibilityID {
             return "opencodeCredits"
         case .miniMax:
             return "minimax"
+        case .cursor:
+            return "cursor"
         }
     }
 

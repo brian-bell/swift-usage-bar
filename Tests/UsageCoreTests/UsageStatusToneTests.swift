@@ -43,6 +43,17 @@ func statusToneUsesMinimumRemainingAcrossFiveHourAndWeeklyWindows() {
 }
 
 @Test
+func statusToneUsesCursorOtherModelsAndCursorModelsWindows() {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 90, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 19, resetsAt: nil)
+    )
+
+    #expect(tone(for: usage, warningThreshold: 20) == .warning)
+}
+
+@Test
 func statusToneIncludesMonthlyButStillExcludesFable() {
     let monthlyWarning = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: 90, resetsAt: nil),

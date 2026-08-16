@@ -81,7 +81,7 @@ enum ProviderIconAsset {
         case .openCodeGo, .openCodeCredits:
             // Credits shares the OpenCode mark; the row title disambiguates.
             return "ProviderIcon-opencode-go"
-        case .miniMax:
+        case .miniMax, .cursor:
             return nil
         }
     }
@@ -118,6 +118,8 @@ struct ProviderIconView: View {
             // Single glyph so it fits the square icon frame at the call sites
             // (`size × size`, no scaling). The menu-bar abbreviation stays `Mx`.
             return "M"
+        case .cursor:
+            return "C"
         }
     }
 }

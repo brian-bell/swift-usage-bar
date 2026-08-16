@@ -13,6 +13,7 @@ func settingsStoreReturnsDefaultsWhenNothingHasBeenSaved() {
         #expect(!store.isProviderVisible(.openCodeGo))
         #expect(!store.isProviderVisible(.openCodeCredits))
         #expect(!store.isProviderVisible(.miniMax))
+        #expect(!store.isProviderVisible(.cursor))
         #expect(store.thresholdPercent == 20)
         #expect(!store.launchAtLoginEnabled)
     }
@@ -25,12 +26,13 @@ func providerIDIsHiddenByDefaultReportsMembershipInTheSingleSourceOfTruth() {
     // AppSettingsDraft) all read from this membership. Pin it directly so
     // adding a fifth default-hidden provider — or un-hiding one — can't
     // drift between sites silently.
-    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .openCodeCredits, .miniMax])
+    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .openCodeCredits, .miniMax, .cursor])
     #expect(!ProviderID.claude.isHiddenByDefault)
     #expect(!ProviderID.codex.isHiddenByDefault)
     #expect(ProviderID.openCodeGo.isHiddenByDefault)
     #expect(ProviderID.openCodeCredits.isHiddenByDefault)
     #expect(ProviderID.miniMax.isHiddenByDefault)
+    #expect(ProviderID.cursor.isHiddenByDefault)
 }
 
 @Test
@@ -82,6 +84,17 @@ func settingsStoreRoundTripsMiniMaxVisibility() {
 
         let reloaded = SettingsStore(defaults: defaults)
         #expect(reloaded.isProviderVisible(.miniMax))
+    }
+}
+
+@Test
+func settingsStoreRoundTripsCursorVisibility() {
+    withIsolatedDefaults { defaults in
+        let store = SettingsStore(defaults: defaults)
+        store.setProvider(.cursor, visible: true)
+
+        let reloaded = SettingsStore(defaults: defaults)
+        #expect(reloaded.isProviderVisible(.cursor))
     }
 }
 

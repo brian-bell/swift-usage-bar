@@ -86,17 +86,20 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 calendar: calendar,
                 locale: locale
             )
-            self.weekly = provider.showsWeeklyWindow
-                ? DropdownUsageWindowRow(
-                    title: "Weekly",
-                    usageWindow: usage.weekly,
+            self.weekly = provider.weeklyRow(
+                for: usage.weekly,
+                now: now,
+                calendar: calendar,
+                locale: locale
+            )
+            self.monthly = usage.monthly.map {
+                DropdownUsageWindowRow(
+                    title: provider.monthlyDropdownTitle,
+                    usageWindow: $0,
                     now: now,
                     calendar: calendar,
                     locale: locale
                 )
-                : nil
-            self.monthly = usage.monthly.map {
-                DropdownUsageWindowRow(title: "Monthly", usageWindow: $0, now: now, calendar: calendar, locale: locale)
             }
             self.fable = usage.fable.map { fable in
                 DropdownUsageWindowRow(
@@ -118,17 +121,20 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 calendar: calendar,
                 locale: locale
             )
-            self.weekly = provider.showsWeeklyWindow
-                ? DropdownUsageWindowRow(
-                    title: "Weekly",
-                    usageWindow: usage.weekly,
+            self.weekly = provider.weeklyRow(
+                for: usage.weekly,
+                now: now,
+                calendar: calendar,
+                locale: locale
+            )
+            self.monthly = usage.monthly.map {
+                DropdownUsageWindowRow(
+                    title: provider.monthlyDropdownTitle,
+                    usageWindow: $0,
                     now: now,
                     calendar: calendar,
                     locale: locale
                 )
-                : nil
-            self.monthly = usage.monthly.map {
-                DropdownUsageWindowRow(title: "Monthly", usageWindow: $0, now: now, calendar: calendar, locale: locale)
             }
             self.fable = usage.fable.map { fable in
                 DropdownUsageWindowRow(
@@ -148,10 +154,10 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: "5h")
                 : nil
             self.weekly = provider.showsWeeklyWindow
-                ? DropdownUsageWindowRow.placeholder(title: "Weekly")
+                ? DropdownUsageWindowRow.placeholder(title: provider.weeklyDropdownTitle)
                 : nil
-            self.monthly = provider == .openCodeGo
-                ? DropdownUsageWindowRow.placeholder(title: "Monthly")
+            self.monthly = provider.showsMonthlyPlaceholder
+                ? DropdownUsageWindowRow.placeholder(title: provider.monthlyDropdownTitle)
                 : nil
             self.fable = nil
             self.credits = provider == .openCodeCredits ? .placeholder : nil
@@ -163,10 +169,10 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: "5h")
                 : nil
             self.weekly = provider.showsWeeklyWindow
-                ? DropdownUsageWindowRow.placeholder(title: "Weekly")
+                ? DropdownUsageWindowRow.placeholder(title: provider.weeklyDropdownTitle)
                 : nil
-            self.monthly = provider == .openCodeGo
-                ? DropdownUsageWindowRow.placeholder(title: "Monthly")
+            self.monthly = provider.showsMonthlyPlaceholder
+                ? DropdownUsageWindowRow.placeholder(title: provider.monthlyDropdownTitle)
                 : nil
             self.fable = nil
             self.credits = provider == .openCodeCredits ? .placeholder : nil
@@ -340,7 +346,45 @@ private extension ProviderID {
             return "OpenCode Credits"
         case .miniMax:
             return "MiniMax"
+        case .cursor:
+            return "Cursor"
         }
+    }
+
+    var weeklyDropdownTitle: String {
+        // 52pt title column: "Cursor" / "Other" match "Weekly" / "Fable".
+        self == .cursor ? "Cursor" : "Weekly"
+    }
+
+    var monthlyDropdownTitle: String {
+        self == .cursor ? "Other" : "Monthly"
+    }
+
+    var showsMonthlyPlaceholder: Bool {
+        self == .openCodeGo || self == .cursor
+    }
+
+    /// Cursor's first-party pool lives in `weekly` and is omitted (Fable rule)
+    /// when the payload doesn't carry `autoPercentUsed`.
+    func weeklyRow(
+        for usageWindow: UsageWindow,
+        now: Date,
+        calendar: Calendar,
+        locale: Locale
+    ) -> DropdownUsageWindowRow? {
+        guard showsWeeklyWindow else {
+            return nil
+        }
+        if self == .cursor, usageWindow.percentRemaining == nil {
+            return nil
+        }
+        return DropdownUsageWindowRow(
+            title: weeklyDropdownTitle,
+            usageWindow: usageWindow,
+            now: now,
+            calendar: calendar,
+            locale: locale
+        )
     }
 
     var showsFiveHourWindow: Bool {
@@ -355,6 +399,8 @@ private extension ProviderID {
             return false
         case .miniMax:
             return true
+        case .cursor:
+            return false
         }
     }
 
@@ -385,7 +431,7 @@ private extension StaleReason {
                 // must say so; the generic "token expired" makes it look
                 // like an OAuth/Keychain expiry.
                 return "MiniMax key rejected; re-authenticate in OpenCode"
-            case .claude, .codex, .openCodeGo, .openCodeCredits:
+            case .claude, .codex, .openCodeGo, .openCodeCredits, .cursor:
                 return "token expired"
             }
         case .credentialUnavailable:
@@ -394,7 +440,7 @@ private extension StaleReason {
                 // For credits, "no credential" is most often "no billing
                 // configured on the workspace" — the cookie itself was fine.
                 return "no credits balance found"
-            case .claude, .codex, .openCodeGo, .miniMax:
+            case .claude, .codex, .openCodeGo, .miniMax, .cursor:
                 return "credential unavailable"
             }
         case .workspaceSelectionRequired:
@@ -403,7 +449,7 @@ private extension StaleReason {
                 return "select an OpenCode Go workspace in Settings"
             case .openCodeCredits:
                 return "select an OpenCode workspace in Settings"
-            case .claude, .codex, .miniMax:
+            case .claude, .codex, .miniMax, .cursor:
                 // Unreachable in practice (no other provider surfaces this
                 // reason today), but the alternative would be to point
                 // Claude/Codex/MiniMax at a Settings field that only
@@ -423,6 +469,8 @@ private extension StaleReason {
                 // per its failure mapping) but kept consistent with the row
                 // and chain-step wording should the mapping widen.
                 return "MiniMax key rejected; re-authenticate in OpenCode"
+            case .cursor:
+                return "Cursor session expired; sign in again in the Cursor app"
             }
         }
     }

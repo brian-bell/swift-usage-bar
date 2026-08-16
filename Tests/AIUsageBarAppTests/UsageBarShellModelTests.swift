@@ -443,6 +443,7 @@ func shellModelExposesProviderStatusRowsForTheSettingsProvidersTab() throws {
             .codex: .stale(last: codexUsage, reason: .tokenExpired),
             .openCodeGo: .hidden,
             .miniMax: .hidden,
+            .cursor: .hidden,
         ],
         lastSuccessfulRefreshes: [
             .claude: referenceNow.addingTimeInterval(-120),
@@ -460,6 +461,7 @@ func shellModelExposesProviderStatusRowsForTheSettingsProvidersTab() throws {
         == "Stale \u{00B7} Keychain token expired \u{00B7} last data 1 h ago")
     #expect(try #require(rows.first { $0.provider == .openCodeGo }).text == "Off")
     #expect(try #require(rows.first { $0.provider == .miniMax }).text == "Off")
+    #expect(try #require(rows.first { $0.provider == .cursor }).text == "Off")
 }
 
 @Test

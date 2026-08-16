@@ -91,3 +91,28 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 - `https://api.minimax.io/v1/api/openplatform/coding_plan/remains` — requires a browser cookie session (returns 1004 with an API key per MiniMax-AI/MiniMax-M2#88). Not used.
 - China-region hosts (`api.minimaxi.com`) — no evidence, no user. Not used.
 - Reading the key from env vars, `~/.claude/settings.json`, the macOS Keychain, or browser cookies — no evidence supports a single source beyond `~/.local/share/opencode/auth.json`.
+
+## Cursor (Ultra / Pro / Pro+)
+
+- Auth source: read-only SQLite `ItemTable` key `cursorAuth/accessToken` in `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (the Cursor IDE session store). The reader opens the file `SQLITE_OPEN_READONLY`, selects that one key, and never writes. No Keychain item is involved. Local plan metadata (`cursorAuth/stripeMembershipType`) is **not** read — membership is taken from the usage payload when present and is otherwise unused.
+- Credential shape: a JWT (`sub`, `exp`, …). `exp` is epoch seconds. A live Ultra token on 2026-08-16 had `exp` ≈ 58 days ahead; the app treats `exp <= now` as `.tokenExpired` and does not call the network. `sub` is `{provider}|{user_…}`; the cookie user id is the segment after the last `|`.
+- Session cookie: `WorkosCursorSessionToken={userId}%3A%3A{accessToken}` (URL-encoded `::`). Confirmed live on 2026-08-16: this cookie authenticated `GET https://cursor.com/api/usage-summary` as HTTP 200 `application/json`.
+- Usage request: `GET https://cursor.com/api/usage-summary` with `Cookie: WorkosCursorSessionToken=…`, `Accept: application/json`, `Origin: https://cursor.com`, `Referer: https://cursor.com/dashboard/spending`, and `User-Agent: AIUsageBar/<version>`.
+- Live result (Ultra, `limitType: user`, 2026-08-16): sanitized fixture `Tests/Fixtures/cursor-usage-summary.json`. Top-level `billingCycleStart` / `billingCycleEnd` (ISO 8601 with milliseconds), `membershipType: "ultra"`, `isUnlimited: false`, and `individualUsage.plan` with:
+  - `apiPercentUsed` (float, percent **used** of the Other Models / API pool). The payload's own `namedModelSelectedDisplayMessage` was `"You've used 10% of your included API usage"` against `apiPercentUsed: 10.092`.
+  - `autoPercentUsed` (float, percent **used** of the Cursor Models / first-party pool). Official docs name this pool "Cursor Models"; the field name is `auto`.
+  - `totalPercentUsed` (blend; the `autoModelSelectedDisplayMessage` rounded this to 6%). **Ignored** — it is not a pool.
+  - `used` / `limit` / `remaining` (integers; live `14366` / `40000` / `25634`). **Ignored for percent.** `14366/40000 = 35.9%` disagrees with every percent field and with Cursor's own display messages. Do not derive remaining from these.
+  - `onDemand`, `breakdown`, `teamUsage`, display-message strings, Stripe/membership identifiers: ignored. Nothing from this record is logged or persisted except the two pool percents and the shared `billingCycleEnd` reset.
+- Mapping: `autoPercentUsed` → Cursor Models (`weekly` slot, menu-bar first, omitted when absent); `apiPercentUsed` → Other Models (`monthly` slot). Both convert with the shared used-percentage helper (`100 - Int(used.rounded())`). Both windows share `billingCycleEnd` as `resetsAt`. Five-hour is unused (`percentRemaining: nil`). Dropdown titles are `Cursor` / `Other` so they fit the 52pt window-label column.
+- Failure mapping: missing DB / missing key / unreadable file → `.credentialUnavailable`; expired or HTTP 401 JWT → `.tokenExpired`; malformed JWT / body without `apiPercentUsed` → `.parseFailure`; other transport failures → `.networkError`. AIUsageBar never refreshes the token.
+- Transport: shared `HTTPTransport` via `CursorUsageHTTPTransport`. Single GET to the fixed URL. HTTP 401 throws a dedicated not-authenticated error (provider maps `.tokenExpired`); other non-2xx throw `URLError(.badServerResponse)` → `.networkError`.
+
+### Rejected alternatives
+
+- `POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage` — Connect-RPC that wants IDE `x-cursor-client-version` spoofing. The dashboard `usage-summary` path already returned a complete Ultra body.
+- Token refresh (`api2.cursor.sh/oauth/token`, `auth/exchange_user_api_key`) — write / mutation; product non-goal. Stale until the user opens Cursor.
+- Chrome `WorkosCursorSessionToken` as primary — Cursor's own cookie DB was empty on the development machine; the IDE `state.vscdb` token was sufficient. A Claude-style web fallback can be a later slice.
+- Cursor CLI Keychain (`cursor-access-token`) as primary — no evidence it is required when the IDE session exists.
+- `GET /api/usage?user=` and `POST /api/dashboard/get-filtered-usage-events` — event/legacy paths; not needed for the two pool percents.
+- On-demand / overspend / payment metadata, extra browsers, manual cookie paste, multi-account.

@@ -321,7 +321,7 @@ public extension ProviderDataSource {
                 return "Desktop helper unavailable"
             case .claudeWebSession, .claudeOAuthAPI, .codexAPI,
                  .openCodeGoChromeCookie, .openCodeCreditsChromeCookie,
-                 .minimaxTokenPlanAPI:
+                 .minimaxTokenPlanAPI, .cursorUsageSummary:
                 return "Network error"
             }
         case .tokenExpired:
@@ -332,7 +332,7 @@ public extension ProviderDataSource {
                 return "Key rejected"
             case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache,
                  .codexAPI, .codexAppServer, .openCodeGoChromeCookie,
-                 .openCodeCreditsChromeCookie:
+                 .openCodeCreditsChromeCookie, .cursorUsageSummary:
                 return "Token expired"
             }
         case .sessionExpired:
@@ -341,7 +341,7 @@ public extension ProviderDataSource {
                 return "Key rejected"
             case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache,
                  .codexAPI, .codexAppServer, .openCodeGoChromeCookie,
-                 .openCodeCreditsChromeCookie:
+                 .openCodeCreditsChromeCookie, .cursorUsageSummary:
                 return "Session expired"
             }
         case .workspaceSelectionRequired:
@@ -362,7 +362,7 @@ public extension ProviderDataSource {
                 return "No cache file"
             case .codexAppServer:
                 return "Desktop sign-in unavailable"
-            case .claudeOAuthAPI, .codexAPI, .minimaxTokenPlanAPI:
+            case .claudeOAuthAPI, .codexAPI, .minimaxTokenPlanAPI, .cursorUsageSummary:
                 return "No credential found"
             }
         }
@@ -395,6 +395,11 @@ private extension ProviderID {
             return """
                 Reads only the OpenCode auth.json key for the MiniMax provider. All access is \
                 read-only.
+                """
+        case .cursor:
+            return """
+                Reads the Cursor IDE session token from state.vscdb and the dashboard \
+                usage-summary. All access is read-only.
                 """
         }
     }
@@ -454,6 +459,12 @@ private extension ProviderID {
         case (.miniMax, .sessionExpired):
             return prefix + "Re-authenticate the MiniMax provider in OpenCode, then choose "
                 + "Refresh Now from the menu bar."
+        case (.cursor, .tokenExpired), (.cursor, .sessionExpired):
+            return prefix + "Sign in to the Cursor app, then choose Refresh Now from the "
+                + "menu bar."
+        case (.cursor, .credentialUnavailable):
+            return prefix + "Sign in to the Cursor app on this Mac, then choose Refresh Now "
+                + "from the menu bar."
         case (_, .networkError):
             return prefix + "Check your network connection, then choose Refresh Now from "
                 + "the menu bar."
@@ -478,6 +489,8 @@ private extension ProviderID {
             return "OpenCode Credits"
         case .miniMax:
             return "MiniMax"
+        case .cursor:
+            return "Cursor"
         }
     }
 }
@@ -502,6 +515,8 @@ private extension StaleReason {
                 return "Session token expired"
             case .miniMax:
                 return "MiniMax key rejected"
+            case .cursor:
+                return "Cursor session expired"
             }
         case .credentialUnavailable:
             switch provider {
@@ -515,6 +530,8 @@ private extension StaleReason {
                 return "No credits balance found"
             case .miniMax:
                 return "No MiniMax key found"
+            case .cursor:
+                return "No Cursor sign-in found"
             }
         case .sessionExpired:
             switch provider {
@@ -526,12 +543,14 @@ private extension StaleReason {
                 return "Chrome session expired"
             case .miniMax:
                 return "MiniMax key rejected"
+            case .cursor:
+                return "Cursor session expired"
             }
         case .workspaceSelectionRequired:
             switch provider {
             case .openCodeGo, .openCodeCredits:
                 return "Choose a workspace in Settings"
-            case .claude, .codex, .miniMax:
+            case .claude, .codex, .miniMax, .cursor:
                 return "Workspace selection required"
             }
         }

@@ -202,6 +202,7 @@ struct AppSettingsDraftProvidersTabTests {
         #expect(AppSettingsDraft.placeholder.visibility(for: .codex))
         #expect(!AppSettingsDraft.placeholder.visibility(for: .openCodeGo))
         #expect(!AppSettingsDraft.placeholder.visibility(for: .miniMax))
+        #expect(!AppSettingsDraft.placeholder.visibility(for: .cursor))
     }
 
     @Test

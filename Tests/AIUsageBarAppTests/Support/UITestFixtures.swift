@@ -88,6 +88,7 @@ func liveProvidersState(
             .openCodeGo: .hidden,
             .openCodeCredits: .hidden,
             .miniMax: .hidden,
+            .cursor: .hidden,
         ],
         lastSuccessfulRefreshes: [
             .claude: lastSuccess,

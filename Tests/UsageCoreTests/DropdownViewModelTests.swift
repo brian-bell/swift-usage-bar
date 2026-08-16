@@ -78,6 +78,52 @@ func dropdownRowsExposeMiniMaxFiveHourAndWeeklyCountdowns() throws {
 }
 
 @Test
+func dropdownRowsTitleCursorPoolsOtherModelsAndCursorModels() throws {
+    let reset = referenceNow.addingTimeInterval(3 * 24 * 60 * 60)
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 95, resetsAt: reset),
+        monthly: UsageWindow(percentRemaining: 90, resetsAt: reset)
+    )
+
+    let model = DropdownViewModel(
+        states: [.cursor: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .cursor })
+    #expect(row.providerName == "Cursor")
+    #expect(row.fiveHour == nil)
+    #expect(row.weekly?.title == "Cursor")
+    #expect(row.weekly?.percentLabel == "95% remaining")
+    #expect(row.monthly?.title == "Other")
+    #expect(row.monthly?.percentLabel == "90% remaining")
+}
+
+@Test
+func dropdownRowsOmitCursorPoolWhenAutoPercentIsAbsent() throws {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 90, resetsAt: nil)
+    )
+
+    let model = DropdownViewModel(
+        states: [.cursor: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .cursor })
+    #expect(row.weekly == nil)
+    #expect(row.monthly?.title == "Other")
+    #expect(row.monthly?.percentLabel == "90% remaining")
+}
+
+@Test
 func dropdownRowsExposeClampedFractionsLabelsAndCountdowns() throws {
     let usage = ProviderUsage(
         fiveHour: UsageWindow(
@@ -266,6 +312,9 @@ func dropdownRowsOmitFiveHourPlaceholderForStaleCodexWithoutData() throws {
     (.miniMax, .tokenExpired, "Stale: MiniMax key rejected; re-authenticate in OpenCode"),
     (.miniMax, .sessionExpired, "Stale: MiniMax key rejected; re-authenticate in OpenCode"),
     (.miniMax, .workspaceSelectionRequired, "Stale: workspace selection required"),
+    (.cursor, .tokenExpired, "Stale: token expired"),
+    (.cursor, .sessionExpired, "Stale: Cursor session expired; sign in again in the Cursor app"),
+    (.cursor, .workspaceSelectionRequired, "Stale: workspace selection required"),
 ])
 func dropdownStaleMessageNamesTheFailingProvider(
     provider: ProviderID,

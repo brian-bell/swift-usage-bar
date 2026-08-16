@@ -24,6 +24,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
     case openCodeCreditsChromeCookie
     /// MiniMax: token plan API authenticated by an OpenCode auth.json key.
     case minimaxTokenPlanAPI
+    /// Cursor: dashboard usage-summary authenticated by the IDE `state.vscdb` JWT.
+    case cursorUsageSummary
 
     public var provider: ProviderID {
         switch self {
@@ -37,6 +39,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return .openCodeCredits
         case .minimaxTokenPlanAPI:
             return .miniMax
+        case .cursorUsageSummary:
+            return .cursor
         }
     }
 
@@ -57,6 +61,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "Chrome cookie"
         case .minimaxTokenPlanAPI:
             return "MiniMax token plan API"
+        case .cursorUsageSummary:
+            return "Cursor usage-summary API"
         }
     }
 
@@ -75,6 +81,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "Chrome cookie \u{00B7} opencode.ai"
         case .minimaxTokenPlanAPI:
             return "MiniMax token plan API (OpenCode key)"
+        case .cursorUsageSummary:
+            return "Cursor usage-summary \u{00B7} Local IDE session"
         }
     }
 }
@@ -95,6 +103,8 @@ public extension ProviderID {
             return [.openCodeCreditsChromeCookie]
         case .miniMax:
             return [.minimaxTokenPlanAPI]
+        case .cursor:
+            return [.cursorUsageSummary]
         }
     }
 }

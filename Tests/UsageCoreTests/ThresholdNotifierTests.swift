@@ -34,6 +34,27 @@ func usageThresholdNotificationDisplayTextForMiniMax() {
 }
 
 @Test
+func usageThresholdNotificationDisplayTextForCursorPools() {
+    let cursorModels = UsageThresholdNotification(
+        provider: .cursor,
+        window: .weekly,
+        percentRemaining: 12,
+        threshold: 20,
+        resetsAt: Date(timeIntervalSince1970: 1_783_008_000)
+    )
+    let otherModels = UsageThresholdNotification(
+        provider: .cursor,
+        window: .monthly,
+        percentRemaining: 18,
+        threshold: 20,
+        resetsAt: Date(timeIntervalSince1970: 1_783_008_000)
+    )
+
+    #expect(cursorModels.title == "Cursor Models usage below 20%")
+    #expect(otherModels.title == "Cursor Other Models usage below 20%")
+}
+
+@Test
 func thresholdNotifierSendsForMiniMaxWindow() async {
     // The generic `ThresholdNotifier` path picks up `ProviderID.miniMax`
     // via `notificationDisplayName` without any special-case — prove it
@@ -68,6 +89,41 @@ func thresholdNotifierSendsForMiniMaxWindow() async {
             percentRemaining: 18,
             threshold: 20,
             resetsAt: fiveHourReset
+        ),
+    ])
+}
+
+@Test
+func thresholdNotifierSendsForCursorOtherModelsWindow() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_789_424_885)
+
+    let previous = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: reset),
+        monthly: UsageWindow(percentRemaining: 25, resetsAt: reset)
+    )
+    let current = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: reset),
+        monthly: UsageWindow(percentRemaining: 18, resetsAt: reset)
+    )
+
+    await notifier.evaluate(
+        previous: previous,
+        current: current,
+        provider: .cursor,
+        threshold: 20
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .cursor,
+            window: .monthly,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: reset
         ),
     ])
 }
