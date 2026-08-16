@@ -10,6 +10,11 @@ private let expiredCursorJWT =
 private let cursorNow = Date(timeIntervalSince1970: 1_786_902_874)
 
 @Test
+func cursorReaderAccessTokenKeyMatchesObservedIDEStore() {
+    #expect(CursorIDECredentialReader.accessTokenKey == "cursorAuth/accessToken")
+}
+
+@Test
 func cursorReaderDerivesCookieFromFreshIDEToken() throws {
     let databaseURL = try writeCursorStateDatabase(token: freshCursorJWT)
     let reader = CursorIDECredentialReader(databaseURL: databaseURL)
@@ -77,7 +82,7 @@ private func writeCursorStateDatabase(token: String?) throws -> URL {
         throw CocoaError(.fileWriteUnknown)
     }
     if let token {
-        let sql = "INSERT INTO ItemTable (key, value) VALUES ('cursorAuth/accessToken', ?);"
+        let sql = "INSERT INTO ItemTable (key, value) VALUES ('\(CursorIDECredentialReader.accessTokenKey)', ?);"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
             throw CocoaError(.fileWriteUnknown)

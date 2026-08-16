@@ -64,7 +64,7 @@ public struct CursorIDECredentialReader: CursorCredentialReading {
         }
         defer { sqlite3_close(database) }
 
-        let query = "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' LIMIT 1"
+        let query = "SELECT value FROM ItemTable WHERE key = '\(Self.accessTokenKey)' LIMIT 1"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK, let statement else {
             return .stale(reason: .credentialUnavailable)
