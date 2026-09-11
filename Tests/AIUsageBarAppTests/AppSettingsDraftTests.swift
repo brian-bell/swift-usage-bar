@@ -93,7 +93,7 @@ struct AppSettingsDraftGeneralTabTests {
             )
 
             var draft = AppSettingsDraft.capture(from: model)
-            draft.thresholdPercent += 1
+            draft.warningThresholds = [25]
 
             #expect(!draft.apply(to: model))
             #expect(launchManager.requests.isEmpty)
@@ -322,42 +322,42 @@ struct AppSettingsDraftProvidersTabTests {
 struct AppSettingsDraftNotificationsTabTests {
     @Test
     @MainActor
-    func captureReadsTheThresholdPercent() {
+    func captureReadsTheWarningThresholds() {
         withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
-            settingsStore.thresholdPercent = 42
+            settingsStore.warningThresholds = [42, 10]
             let model = shellModel(settingsStore: settingsStore)
 
-            #expect(AppSettingsDraft.capture(from: model).thresholdPercent == 42)
+            #expect(AppSettingsDraft.capture(from: model).warningThresholds == [42, 10])
         }
     }
 
-    @Test(arguments: [1, 20, 100])
+    @Test(arguments: [[15], [30, 10], []] as [[Int]])
     @MainActor
-    func applyCommitsThresholdsAcrossTheStepperRange(_ threshold: Int) {
+    func applyCommitsWarningListsAcrossTheEditableShapes(_ thresholds: [Int]) {
         withIsolatedDefaults { defaults in
             let settingsStore = SettingsStore(defaults: defaults)
             let model = shellModel(settingsStore: settingsStore)
 
             var draft = AppSettingsDraft.capture(from: model)
-            draft.thresholdPercent = threshold
+            draft.warningThresholds = thresholds
             draft.apply(to: model)
 
-            #expect(model.thresholdPercent == threshold)
-            #expect(settingsStore.thresholdPercent == threshold)
+            #expect(model.warningThresholds == thresholds)
+            #expect(settingsStore.warningThresholds == thresholds)
         }
     }
 
     @Test
     @MainActor
-    func applyLeavesAnUnchangedThresholdUntouched() {
+    func applyLeavesAnUnchangedWarningListUntouched() {
         withIsolatedDefaults { defaults in
             let model = shellModel(settingsStore: SettingsStore(defaults: defaults))
             let changes = ObservationChangeRecorder()
 
             let draft = AppSettingsDraft.capture(from: model)
             withObservationTracking {
-                _ = model.thresholdPercent
+                _ = model.warningThresholds
             } onChange: {
                 changes.record()
             }
@@ -365,6 +365,73 @@ struct AppSettingsDraftNotificationsTabTests {
 
             #expect(changes.count == 0)
         }
+    }
+
+    @Test
+    @MainActor
+    func placeholderStartsWithTheSingleDefaultWarning() {
+        #expect(AppSettingsDraft.placeholder.warningThresholds == [15])
+        #expect(AppSettingsDraft.placeholder.canAddWarning)
+    }
+
+    @Test
+    @MainActor
+    func addWarningSuggestsOneStepAboveTheHighestWarning() {
+        var draft = AppSettingsDraft.placeholder
+
+        draft.addWarning()
+
+        #expect(draft.warningThresholds == [15, 30])
+    }
+
+    @Test
+    @MainActor
+    func addWarningOnAnEmptyListLandsBackOnTheDefault() {
+        var draft = AppSettingsDraft.placeholder
+        draft.removeWarning(at: 0)
+        #expect(draft.warningThresholds.isEmpty)
+
+        draft.addWarning()
+
+        #expect(draft.warningThresholds == [15])
+    }
+
+    @Test
+    @MainActor
+    func addWarningNudgesTheSuggestionBelowAnOccupiedClampedValue() {
+        var draft = AppSettingsDraft.placeholder
+        draft.warningThresholds = [90, 100]
+
+        #expect(draft.suggestedWarningThreshold == 99)
+
+        draft.addWarning()
+
+        #expect(draft.warningThresholds == [90, 100, 99])
+    }
+
+    @Test
+    @MainActor
+    func addWarningStopsAtTheMaximumOfFive() {
+        var draft = AppSettingsDraft.placeholder
+        draft.warningThresholds = [10, 20, 30, 40, 50]
+
+        #expect(!draft.canAddWarning)
+
+        draft.addWarning()
+
+        #expect(draft.warningThresholds == [10, 20, 30, 40, 50])
+    }
+
+    @Test
+    @MainActor
+    func removeWarningDropsTheRowAndIgnoresStaleIndices() {
+        var draft = AppSettingsDraft.placeholder
+        draft.warningThresholds = [30, 15, 5]
+
+        draft.removeWarning(at: 1)
+        draft.removeWarning(at: 7)
+
+        #expect(draft.warningThresholds == [30, 5])
     }
 }
 
@@ -386,14 +453,14 @@ struct AppSettingsDraftAllTabsTests {
             draft.launchAtLoginEnabled = true                           // General
             draft.providerVisibility[.openCodeGo] = true                // Providers
             draft.openCodeGoWorkspace = "wrk_01KEXAMPLE123"             // Providers
-            draft.thresholdPercent = 15                                 // Notifications
+            draft.warningThresholds = [30, 15]                          // Notifications
             draft.apply(to: model)
 
             #expect(model.pollInterval == 300)
             #expect(model.launchAtLoginEnabled)
             #expect(model.isProviderVisible(.openCodeGo))
             #expect(model.openCodeGoWorkspaceID == "wrk_01KEXAMPLE123")
-            #expect(model.thresholdPercent == 15)
+            #expect(model.warningThresholds == [30, 15])
         }
     }
 
@@ -407,7 +474,7 @@ struct AppSettingsDraftAllTabsTests {
 
             var draft = captured
             draft.pollInterval = 600
-            draft.thresholdPercent = 5
+            draft.warningThresholds = [5]
             draft.providerVisibility[.claude] = false
             draft.openCodeGoWorkspace = "wrk_01KEXAMPLE123"
             draft.launchAtLoginEnabled = true

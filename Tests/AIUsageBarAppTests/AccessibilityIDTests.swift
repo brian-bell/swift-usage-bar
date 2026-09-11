@@ -72,7 +72,15 @@ func accessibilityIDCatalogUsesHierarchicalKebabCase() {
     #expect(AccessibilityID.settingsPollInterval == "settings.general.pollInterval")
     #expect(AccessibilityID.settingsLaunchAtLogin == "settings.general.launchAtLogin")
     #expect(AccessibilityID.settingsLaunchAtLoginError == "settings.general.launchAtLoginError")
-    #expect(AccessibilityID.settingsThreshold == "settings.notifications.threshold")
+    #expect(AccessibilityID.settingsWarningAdd == "settings.notifications.warning.add")
+    #expect(
+        AccessibilityID.settingsWarningThreshold(0)
+            == "settings.notifications.warning.0.threshold"
+    )
+    #expect(
+        AccessibilityID.settingsWarningRemove(4)
+            == "settings.notifications.warning.4.remove"
+    )
     #expect(
         AccessibilityID.settingsProviderToggle(.miniMax)
             == "settings.provider.minimax.toggle"

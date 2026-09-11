@@ -1,3 +1,4 @@
+import SwiftUI
 import Testing
 import UsageCore
 
@@ -54,5 +55,48 @@ extension HostedUITests {
         // Footer buttons live outside the panes and keep their identifiers.
         #expect(ax.exists(AccessibilityID.settingsCancel))
         #expect(ax.exists(AccessibilityID.settingsOK))
+    }
+
+    @Test
+    func notificationsSettingsPaneRendersOneRowPerWarningPlusAdd() throws {
+        // The pane is hosted standalone: the hosted window can't switch
+        // TabView tabs (see the suite doc), and the add/remove *behavior* is
+        // covered at the draft level (`AppSettingsDraftNotificationsTabTests`).
+        //
+        // As on the other panes, SwiftUI flattens every in-pane identifier to
+        // the pane's own (`settings.tab.notifications`), so rows are counted
+        // by label + role rather than matched by their per-row identifiers.
+        let host = onMain {
+            UITestHost.settings(
+                NotificationsPaneHost(draft: AppSettingsDraft(
+                    pollInterval: 120,
+                    providerVisibility: [:],
+                    warningThresholds: [30, 15, 5],
+                    openCodeGoWorkspace: "",
+                    launchAtLoginEnabled: false
+                ))
+            )
+        }
+        defer { onMain { host.close() } }
+        let ax = AXQuery(windowTitle: host.windowTitle)
+
+        #expect(
+            pollUntil { ax.snapshot(label: "Add warning")?.role == "AXButton" },
+            "Add-warning button never published. Tree:\n\(ax.dumpIdentifiers())"
+        )
+        // One stepper + one remove button per seeded warning.
+        #expect(ax.snapshots(label: "Alert below").filter { $0.role == "AXIncrementor" }.count == 3)
+        #expect(ax.snapshots(label: "Remove warning").filter { $0.role == "AXButton" }.count == 3)
+        #expect(ax.firstValue(containing: "One alert per level") != nil)
+    }
+}
+
+/// Hosts the Notifications pane standalone with a staged draft — the hosted
+/// window can't switch `TabView` tabs, so the pane renders on its own.
+private struct NotificationsPaneHost: View {
+    @State var draft: AppSettingsDraft
+
+    var body: some View {
+        NotificationsSettingsPane(draft: $draft)
     }
 }

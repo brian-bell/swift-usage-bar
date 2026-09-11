@@ -79,7 +79,7 @@ func thresholdNotifierSendsForMiniMaxWindow() async {
         previous: previous,
         current: current,
         provider: .miniMax,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -114,7 +114,7 @@ func thresholdNotifierSendsForCursorOtherModelsWindow() async {
         previous: previous,
         current: current,
         provider: .cursor,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -147,7 +147,7 @@ func thresholdNotifierSendsWhenWindowCrossesBelowThreshold() async {
         previous: previous,
         current: current,
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -172,13 +172,13 @@ func thresholdNotifierDeduplicatesSameProviderWindowResetCycle() async {
         previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80, weeklyReset: weeklyReset),
         current: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80, weeklyReset: weeklyReset),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80, weeklyReset: weeklyReset),
         current: usage(fiveHour: 15, fiveHourReset: reset, weekly: 80, weeklyReset: weeklyReset),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications().count == 1)
@@ -194,19 +194,19 @@ func thresholdNotifierDoesNotRearmAfterRisingAboveThresholdInSameCycle() async {
         previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
         current: usage(fiveHour: 24, fiveHourReset: reset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 24, fiveHourReset: reset, weekly: 80),
         current: usage(fiveHour: 17, fiveHourReset: reset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -225,7 +225,7 @@ func thresholdNotifierUsesInclusivePreviousAndExclusiveCurrentThresholdBoundary(
         previous: usage(fiveHour: 20, fiveHourReset: fiveHourReset, weekly: 25, weeklyReset: weeklyReset),
         current: usage(fiveHour: 19, fiveHourReset: fiveHourReset, weekly: 20, weeklyReset: weeklyReset),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -245,7 +245,7 @@ func thresholdNotifierTracksProvidersAndWindowsIndependently() async {
             previous: usage(fiveHour: 25, fiveHourReset: fiveHourReset, weekly: 25, weeklyReset: weeklyReset),
             current: usage(fiveHour: 18, fiveHourReset: fiveHourReset, weekly: 17, weeklyReset: weeklyReset),
             provider: provider,
-            threshold: 20
+            thresholds: [20]
         )
     }
 
@@ -279,7 +279,7 @@ func thresholdNotifierIncludesMonthlyAndExcludesFable() async {
         previous: previous,
         current: current,
         provider: .openCodeGo,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -305,13 +305,13 @@ func thresholdNotifierRearmsOnlyWindowWhoseResetCycleChanges() async {
         previous: usage(fiveHour: 25, fiveHourReset: firstFiveHourReset, weekly: 25, weeklyReset: weeklyReset),
         current: usage(fiveHour: 18, fiveHourReset: firstFiveHourReset, weekly: 17, weeklyReset: weeklyReset),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 25, fiveHourReset: firstFiveHourReset, weekly: 25, weeklyReset: weeklyReset),
         current: usage(fiveHour: 16, fiveHourReset: secondFiveHourReset, weekly: 17, weeklyReset: weeklyReset),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -332,13 +332,13 @@ func thresholdNotifierSendsForNewResetCycleAlreadyBelowThreshold() async {
         previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
         current: usage(fiveHour: 16, fiveHourReset: secondReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -358,13 +358,13 @@ func thresholdNotifierRefiresForNewResetCycleWhenRoundedUsageIsUnchanged() async
         previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
         provider: .claude,
-        threshold: 20,
+        thresholds: [20],
         at: firstReset.addingTimeInterval(1)
     )
 
@@ -397,13 +397,13 @@ func thresholdNotifierDoesNotRefireWhenResetTimestampMovesBeforeCurrentCycleEnds
         previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
         provider: .claude,
-        threshold: 20,
+        thresholds: [20],
         at: firstReset.addingTimeInterval(-1)
     )
 
@@ -429,13 +429,13 @@ func thresholdNotifierRefiresWhenUsageChangedAndReturnsToLastNotifiedPercentage(
         previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 25, fiveHourReset: secondReset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -467,20 +467,20 @@ func thresholdNotifierRefiresAfterUsageChangesLaterInSuppressedResetCycle() asyn
         previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
         provider: .claude,
-        threshold: 20,
+        thresholds: [20],
         at: firstReset.addingTimeInterval(-1)
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
         current: usage(fiveHour: 17, fiveHourReset: secondReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -519,7 +519,7 @@ func thresholdNotifierSendsWhenUnavailableWindowReappearsBelowThreshold() async 
         previous: previous,
         current: current,
         provider: .codex,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -544,25 +544,25 @@ func thresholdNotifierTreatsNilAndChangedKnownResetCyclesAsDistinct() async {
         previous: usage(fiveHour: 25, fiveHourReset: nil, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: nil, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 25, fiveHourReset: nil, weekly: 80),
         current: usage(fiveHour: 17, fiveHourReset: nil, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 25, fiveHourReset: nil, weekly: 80),
         current: usage(fiveHour: 16, fiveHourReset: knownReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 25, fiveHourReset: knownReset, weekly: 80),
         current: usage(fiveHour: 15, fiveHourReset: earlierReset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -581,7 +581,7 @@ func thresholdNotifierDoesNotNotifyWithoutPreviousUsage() async {
         previous: nil,
         current: usage(fiveHour: 18, weekly: 17),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications().isEmpty)
@@ -598,7 +598,7 @@ func thresholdNotifierDoesNotDoubleSendConcurrentCrossingForSameCycle() async {
             previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
             current: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
             provider: .claude,
-            threshold: 20
+            thresholds: [20]
         )
     }
     await sender.waitForSendCount(1)
@@ -607,7 +607,7 @@ func thresholdNotifierDoesNotDoubleSendConcurrentCrossingForSameCycle() async {
         previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
         current: usage(fiveHour: 17, fiveHourReset: reset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sendCount == 1)
@@ -628,7 +628,7 @@ func thresholdNotifierIgnoresOlderDeliveryThatCompletesAfterNewerDelivery() asyn
             previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
             current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
             provider: .claude,
-            threshold: 20
+            thresholds: [20]
         )
     }
     await sender.waitForSendCount(1)
@@ -638,7 +638,7 @@ func thresholdNotifierIgnoresOlderDeliveryThatCompletesAfterNewerDelivery() asyn
             previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
             current: usage(fiveHour: 17, fiveHourReset: secondReset, weekly: 80),
             provider: .claude,
-            threshold: 20
+            thresholds: [20]
         )
     }
     await sender.waitForSendCount(2)
@@ -652,7 +652,7 @@ func thresholdNotifierIgnoresOlderDeliveryThatCompletesAfterNewerDelivery() asyn
         previous: usage(fiveHour: 17, fiveHourReset: secondReset, weekly: 80),
         current: usage(fiveHour: 17, fiveHourReset: thirdReset, weekly: 80),
         provider: .claude,
-        threshold: 20,
+        thresholds: [20],
         at: secondReset.addingTimeInterval(-1)
     )
 
@@ -669,13 +669,13 @@ func thresholdNotifierRetriesCycleAfterSenderFailure() async {
         previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
         current: usage(fiveHour: 17, fiveHourReset: reset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sendAttempts == 2)
@@ -695,13 +695,13 @@ func thresholdNotifierUsesLatestThresholdWithoutSynthesizingCrossings() async {
         previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 35, weeklyReset: otherReset),
         current: usage(fiveHour: 18, fiveHourReset: reset, weekly: 25, weeklyReset: otherReset),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 25, weeklyReset: otherReset),
         current: usage(fiveHour: 17, fiveHourReset: reset, weekly: 24, weeklyReset: otherReset),
         provider: .claude,
-        threshold: 30
+        thresholds: [30]
     )
 
     #expect(await sender.sentNotifications() == [
@@ -719,19 +719,144 @@ func thresholdNotifierAllowsRealCrossingAfterThresholdChanges() async {
         previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
         current: usage(fiveHour: 18, fiveHourReset: reset, weekly: 80),
         provider: .claude,
-        threshold: 20
+        thresholds: [20]
     )
     await notifier.evaluate(
         previous: usage(fiveHour: 35, fiveHourReset: reset, weekly: 80),
         current: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
         provider: .claude,
-        threshold: 30
+        thresholds: [30]
     )
 
     #expect(await sender.sentNotifications() == [
         thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 18, threshold: 20, resetsAt: reset),
         thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 25, threshold: 30, resetsAt: reset),
     ])
+}
+
+@Test
+func thresholdNotifierFiresOnlyTheMostSevereLevelWhenSeveralCrossAtOnce() async {
+    // A 35→5 drop crosses both the 30 and 10 warnings in one evaluation.
+    // The window alerts once — at the lower level — rather than stacking a
+    // notification per crossed level. (The 30 warning leaves no state behind
+    // and can still alert on a later cycle; see the escalation test.)
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_783_008_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 35, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 5, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 10]
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 5, threshold: 10, resetsAt: reset),
+    ])
+}
+
+@Test
+func thresholdNotifierEscalatesToALowerLevelOnALaterPoll() async {
+    // The common path: each level fires when it becomes the most severe
+    // *newly* triggered one — 35→25 alerts the 30 warning, 25→5 alerts 10.
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_783_008_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 35, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 10]
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 5, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 10]
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 25, threshold: 30, resetsAt: reset),
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 5, threshold: 10, resetsAt: reset),
+    ])
+}
+
+@Test
+func thresholdNotifierDeduplicatesEachLevelPerResetCycle() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_783_008_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 35, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 20]
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 15, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 20]
+    )
+    // Same cycle, still below both levels: neither re-arms on usage alone.
+    await notifier.evaluate(
+        previous: usage(fiveHour: 15, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 12, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 20]
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 25, threshold: 30, resetsAt: reset),
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 15, threshold: 20, resetsAt: reset),
+    ])
+}
+
+@Test
+func thresholdNotifierRearmsEachLevelForANewResetCycle() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let firstReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let secondReset = Date(timeIntervalSince1970: 1_783_026_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 35, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 20]
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 25, fiveHourReset: secondReset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 20],
+        at: firstReset.addingTimeInterval(1)
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 25, threshold: 30, resetsAt: firstReset),
+        thresholdNotification(provider: .claude, window: .fiveHour, percentRemaining: 25, threshold: 30, resetsAt: secondReset),
+    ])
+}
+
+@Test
+func thresholdNotifierSendsNothingWhenTheWarningListIsEmpty() async {
+    // Removing every warning turns alerts off.
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_783_008_000)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 35, fiveHourReset: reset, weekly: 80),
+        current: usage(fiveHour: 5, fiveHourReset: reset, weekly: 80),
+        provider: .claude,
+        thresholds: []
+    )
+
+    #expect(await sender.sentNotifications().isEmpty)
 }
 
 private actor RecordingNotificationSender: NotificationSending {
@@ -909,7 +1034,7 @@ func thresholdNotifierIgnoresCredits() async {
         previous: previous,
         current: current,
         provider: .openCodeGo,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications().isEmpty)
@@ -934,7 +1059,7 @@ func thresholdNotifierNeverFiresForTheCreditsProvider() async {
         previous: creditsOnly(50.0),
         current: creditsOnly(0.01),
         provider: .openCodeCredits,
-        threshold: 20
+        thresholds: [20]
     )
 
     #expect(await sender.sentNotifications().isEmpty)
