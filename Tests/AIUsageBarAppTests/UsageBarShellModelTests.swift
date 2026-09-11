@@ -170,23 +170,40 @@ func shellModelPollIntervalBindingPublishesObservationChange() {
 
 @Test
 @MainActor
-func shellModelThresholdBindingPublishesObservationChange() {
+func shellModelWarningThresholdsBindingPublishesObservationChange() {
     withIsolatedDefaults { defaults in
         let settingsStore = SettingsStore(defaults: defaults)
         let model = shellModel(settingsStore: settingsStore)
         let observedChanges = ObservationChangeRecorder()
 
         withObservationTracking {
-            _ = model.thresholdPercent
+            _ = model.warningThresholds
         } onChange: {
             observedChanges.record()
         }
 
-        model.setThresholdPercent(35)
+        model.setWarningThresholds([35, 10])
 
         #expect(observedChanges.count == 1)
-        #expect(model.thresholdPercent == 35)
-        #expect(settingsStore.thresholdPercent == 35)
+        #expect(model.warningThresholds == [35, 10])
+        #expect(settingsStore.warningThresholds == [35, 10])
+    }
+}
+
+@Test
+@MainActor
+func shellModelSetWarningThresholdsNormalizesBeforeKeepingTheList() {
+    // The store already normalizes on write; the model must apply the same
+    // rules to its in-memory copy, or OK'ing a draft with duplicates would
+    // leave the dialog showing rows the store no longer holds.
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let model = shellModel(settingsStore: settingsStore)
+
+        model.setWarningThresholds([20, 20, 0, 101, 10, 30, 40, 50, 60])
+
+        #expect(model.warningThresholds == [20, 1, 100, 10, 30])
+        #expect(settingsStore.warningThresholds == [20, 1, 100, 10, 30])
     }
 }
 
@@ -316,7 +333,7 @@ func settingsDraftCapturesCurrentModelValues() {
     withIsolatedDefaults { defaults in
         let settingsStore = SettingsStore(defaults: defaults)
         settingsStore.pollInterval = 300
-        settingsStore.thresholdPercent = 35
+        settingsStore.warningThresholds = [35, 10]
         settingsStore.setProvider(.codex, visible: false)
         let launchManager = RecordingLaunchAtLoginManager(status: .enabled)
         let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
@@ -324,7 +341,7 @@ func settingsDraftCapturesCurrentModelValues() {
         let draft = AppSettingsDraft.capture(from: model)
 
         #expect(draft.pollInterval == 300)
-        #expect(draft.thresholdPercent == 35)
+        #expect(draft.warningThresholds == [35, 10])
         #expect(draft.visibility(for: .claude))
         #expect(!draft.visibility(for: .codex))
         #expect(draft.launchAtLoginEnabled)
@@ -344,14 +361,14 @@ func settingsDraftApplyPersistsChangedValues() {
 
         var draft = AppSettingsDraft.capture(from: model)
         draft.pollInterval = 600
-        draft.thresholdPercent = 10
+        draft.warningThresholds = [10]
         draft.providerVisibility[.codex] = false
         draft.apply(to: model)
 
         #expect(model.pollInterval == 600)
         #expect(settingsStore.pollInterval == 600)
-        #expect(model.thresholdPercent == 10)
-        #expect(settingsStore.thresholdPercent == 10)
+        #expect(model.warningThresholds == [10])
+        #expect(settingsStore.warningThresholds == [10])
         #expect(!model.isProviderVisible(.codex))
         #expect(appState.providerState(for: .codex) == .hidden)
         #expect(model.isProviderVisible(.claude))
@@ -367,7 +384,7 @@ func settingsDraftApplyDoesNotTouchUnchangedLaunchAtLogin() {
         let model = shellModel(settingsStore: settingsStore, launchAtLoginManager: launchManager)
 
         var draft = AppSettingsDraft.capture(from: model)
-        draft.thresholdPercent += 5
+        draft.warningThresholds = [25]
         let attemptedLaunchChange = draft.apply(to: model)
 
         #expect(launchManager.requests.isEmpty)

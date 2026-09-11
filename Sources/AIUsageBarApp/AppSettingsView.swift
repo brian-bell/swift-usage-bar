@@ -428,32 +428,72 @@ private extension ProviderStatusIndicator {
     }
 }
 
-private struct NotificationsSettingsPane: View {
+/// Internal (not fileprivate) so the hosted UI suite can host the pane
+/// standalone — AX can't switch TabView tabs in-process, per the suite doc.
+struct NotificationsSettingsPane: View {
     @Binding var draft: AppSettingsDraft
 
     var body: some View {
         SettingsPaneLayout {
             SettingsGroup {
-                SettingsRow("Alert below") {
-                    HStack(spacing: 6) {
-                        Text("\(draft.thresholdPercent)")
-                            .monospacedDigit()
-                        Stepper(
-                            "Alert below",
-                            value: $draft.thresholdPercent,
-                            in: 1...100,
-                            step: 1
-                        )
-                        .labelsHidden()
-                        .accessibilityIdentifier(AccessibilityID.settingsThreshold)
-                        Text("% remaining")
+                ForEach(Array(draft.warningThresholds.enumerated()), id: \.offset) { index, threshold in
+                    SettingsRow("Alert below") {
+                        HStack(spacing: 6) {
+                            Text("\(threshold)")
+                                .monospacedDigit()
+                            Stepper(
+                                "Alert below",
+                                value: thresholdBinding(at: index),
+                                in: WarningThresholds.validRange,
+                                step: 1
+                            )
+                            .labelsHidden()
+                            .accessibilityIdentifier(AccessibilityID.settingsWarningThreshold(index))
+                            Text("% remaining")
+
+                            Button {
+                                draft.removeWarning(at: index)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove warning")
+                            .accessibilityIdentifier(AccessibilityID.settingsWarningRemove(index))
+                        }
                     }
                 }
 
-                SettingsCaption("One alert per usage window each reset cycle. Stale data never alerts.")
+                Button("Add warning") {
+                    draft.addWarning()
+                }
+                .disabled(!draft.canAddWarning)
+                .accessibilityIdentifier(AccessibilityID.settingsWarningAdd)
+
+                SettingsCaption(
+                    "One alert per level, per usage window, each reset cycle. "
+                        + "Stale data never alerts. Remove every level to turn alerts off."
+                )
             }
         }
         .accessibilityIdentifier(AccessibilityID.settingsTabNotifications)
+    }
+
+    /// Index bindings outlive their row for one render pass when a row is
+    /// removed; guard so that pass reads nothing. Writes go through the
+    /// draft's `updateWarning` intent, which keeps rows off each other's
+    /// levels and ignores stale indices itself.
+    private func thresholdBinding(at index: Int) -> Binding<Int> {
+        Binding(
+            get: {
+                draft.warningThresholds.indices.contains(index)
+                    ? draft.warningThresholds[index]
+                    : WarningThresholds.defaultValue[0]
+            },
+            set: { newValue in
+                draft.updateWarning(at: index, to: newValue)
+            }
+        )
     }
 }
 

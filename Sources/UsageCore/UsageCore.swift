@@ -239,14 +239,22 @@ public actor ThresholdNotifier {
         self.sender = sender
     }
 
+    /// Evaluates one provider's fresh poll against every configured warning
+    /// level. A window alerts at most once per evaluation: when a drop crosses
+    /// several levels at once, only the most severe (lowest) triggered level
+    /// fires, so one poll earns one notification rather than a stack. Levels
+    /// that were crossed but suppressed leave no state behind — each level
+    /// still gets its own alert when it is the most severe *newly* triggered
+    /// one (e.g. warnings at 30 and 10: 35→25 alerts 30, a later 25→5 alerts
+    /// 10). An empty `thresholds` list turns alerts off.
     public func evaluate(
         previous: ProviderUsage?,
         current: ProviderUsage,
         provider: ProviderID,
-        threshold: Int,
+        thresholds: [Int],
         at evaluatedAt: Date = Date()
     ) async {
-        guard let previous else {
+        guard let previous, !thresholds.isEmpty else {
             return
         }
 
@@ -268,11 +276,23 @@ public actor ThresholdNotifier {
             let previousResetCycle = ResetCycle(resetsAt: window.previous.resetsAt)
             let currentResetCycle = ResetCycle(resetsAt: window.current.resetsAt)
             let previousResetCycleElapsed = window.previous.resetsAt.map { $0 <= evaluatedAt } ?? false
-            let crossedThreshold = (window.previous.percentRemaining.map { $0 >= threshold } ?? false)
-                && currentPercentRemaining < threshold
+
+            let triggered = thresholds.filter { threshold in
+                isTriggered(
+                    threshold: threshold,
+                    provider: provider,
+                    window: window,
+                    currentPercentRemaining: currentPercentRemaining,
+                    previousResetCycle: previousResetCycle,
+                    currentResetCycle: currentResetCycle
+                )
+            }
+            guard let threshold = triggered.min() else {
+                continue
+            }
+
             let newResetCycleAlreadyBelowThreshold = previousResetCycle != currentResetCycle
                 && currentPercentRemaining < threshold
-
             let key = ThresholdNotificationKey(
                 provider: provider,
                 window: window.kind,
@@ -284,17 +304,6 @@ public actor ThresholdNotifier {
                 window: window.kind,
                 threshold: threshold
             )
-            let retryingFailedDelivery = failedCycles.contains(key)
-                && currentPercentRemaining < threshold
-            let resumingPendingCycle = pendingCycles[pendingKey] == currentResetCycle
-                && currentPercentRemaining < threshold
-
-            guard crossedThreshold
-                || newResetCycleAlreadyBelowThreshold
-                || retryingFailedDelivery
-                || resumingPendingCycle else {
-                continue
-            }
 
             guard lastNotifiedPercentages[windowKey] == nil
                 || windowsWithChangedUsage.contains(windowKey)
@@ -333,6 +342,41 @@ public actor ThresholdNotifier {
                 failedCycles.insert(key)
             }
         }
+    }
+
+    private func isTriggered(
+        threshold: Int,
+        provider: ProviderID,
+        window: UsageWindowComparison,
+        currentPercentRemaining: Int,
+        previousResetCycle: ResetCycle,
+        currentResetCycle: ResetCycle
+    ) -> Bool {
+        let crossedThreshold = (window.previous.percentRemaining.map { $0 >= threshold } ?? false)
+            && currentPercentRemaining < threshold
+        let newResetCycleAlreadyBelowThreshold = previousResetCycle != currentResetCycle
+            && currentPercentRemaining < threshold
+
+        let key = ThresholdNotificationKey(
+            provider: provider,
+            window: window.kind,
+            threshold: threshold,
+            resetCycle: currentResetCycle
+        )
+        let pendingKey = ThresholdNotificationPendingKey(
+            provider: provider,
+            window: window.kind,
+            threshold: threshold
+        )
+        let retryingFailedDelivery = failedCycles.contains(key)
+            && currentPercentRemaining < threshold
+        let resumingPendingCycle = pendingCycles[pendingKey] == currentResetCycle
+            && currentPercentRemaining < threshold
+
+        return crossedThreshold
+            || newResetCycleAlreadyBelowThreshold
+            || retryingFailedDelivery
+            || resumingPendingCycle
     }
 }
 
@@ -617,7 +661,7 @@ public actor UsagePoller {
     private let clock: any UsageClock
     private let wakeEvents: (@Sendable () -> AsyncStream<Void>)?
     private let thresholdNotifier: ThresholdNotifier?
-    private let thresholdProvider: @Sendable () async -> Int
+    private let thresholdProvider: @Sendable () async -> [Int]
     private let lifecycle = PollLifecycle()
     private var interval: TimeInterval
     private var isRunning = false
@@ -643,7 +687,7 @@ public actor UsagePoller {
         interval: TimeInterval = UsagePoller.defaultInterval,
         wakeEvents: (@Sendable () -> AsyncStream<Void>)? = nil,
         thresholdNotifier: ThresholdNotifier? = nil,
-        thresholdProvider: @escaping @Sendable () async -> Int = { 20 }
+        thresholdProvider: @escaping @Sendable () async -> [Int] = { WarningThresholds.defaultValue }
     ) {
         self.providers = providers
         self.appState = appState
@@ -904,14 +948,14 @@ public actor UsagePoller {
         lifecycle: PollLifecycle,
         generation: UInt64,
         appState: AppState,
-        thresholdProvider: @escaping @Sendable () async -> Int,
+        thresholdProvider: @escaping @Sendable () async -> [Int],
         previous: ProviderUsage?,
         provider: ProviderID,
         evaluatedAt: Date
     ) {
         let taskID = UUID()
         thresholdEvaluationTasks[taskID] = Task {
-            let threshold = await thresholdProvider()
+            let thresholds = await thresholdProvider()
             guard lifecycle.isCurrent(generation), !Task.isCancelled else {
                 self.thresholdEvaluationDidFinish(taskID)
                 return
@@ -942,7 +986,7 @@ public actor UsagePoller {
                 previous: previous,
                 current: current,
                 provider: provider,
-                threshold: threshold,
+                thresholds: thresholds,
                 at: evaluatedAt
             )
             self.thresholdEvaluationDidFinish(taskID)

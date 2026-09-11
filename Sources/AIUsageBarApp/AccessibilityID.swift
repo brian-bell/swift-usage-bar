@@ -29,7 +29,17 @@ enum AccessibilityID {
     static let settingsPollInterval = "settings.general.pollInterval"
     static let settingsLaunchAtLogin = "settings.general.launchAtLogin"
     static let settingsLaunchAtLoginError = "settings.general.launchAtLoginError"
-    static let settingsThreshold = "settings.notifications.threshold"
+    static let settingsWarningAdd = "settings.notifications.warning.add"
+
+    /// 0-based row position in the warnings list (positional, like chain steps —
+    /// never the threshold value itself).
+    static func settingsWarningThreshold(_ index: Int) -> String {
+        "settings.notifications.warning.\(index).threshold"
+    }
+
+    static func settingsWarningRemove(_ index: Int) -> String {
+        "settings.notifications.warning.\(index).remove"
+    }
 
     static func providerToken(_ provider: ProviderID) -> String {
         switch provider {

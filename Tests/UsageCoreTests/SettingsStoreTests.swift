@@ -14,7 +14,7 @@ func settingsStoreReturnsDefaultsWhenNothingHasBeenSaved() {
         #expect(!store.isProviderVisible(.openCodeCredits))
         #expect(!store.isProviderVisible(.miniMax))
         #expect(!store.isProviderVisible(.cursor))
-        #expect(store.thresholdPercent == 20)
+        #expect(store.warningThresholds == [15])
         #expect(!store.launchAtLoginEnabled)
     }
 }
@@ -111,11 +111,52 @@ func openCodeGoWorkspaceNormalizerAcceptsIDsAndWorkspaceURLs() {
 }
 
 @Test
-func settingsStoreRoundTripsThresholdPercent() {
+func settingsStoreRoundTripsWarningThresholds() {
     withIsolatedDefaults { defaults in
-        SettingsStore(defaults: defaults).thresholdPercent = 35
+        SettingsStore(defaults: defaults).warningThresholds = [30, 10]
 
-        #expect(SettingsStore(defaults: defaults).thresholdPercent == 35)
+        #expect(SettingsStore(defaults: defaults).warningThresholds == [30, 10])
+    }
+}
+
+@Test
+func settingsStoreRoundTripsAnEmptyWarningListSoAlertsCanBeTurnedOff() {
+    // An empty list is a real value (alerts off), not "unset" — it must not
+    // fall back to the default on the next read.
+    withIsolatedDefaults { defaults in
+        SettingsStore(defaults: defaults).warningThresholds = []
+
+        #expect(SettingsStore(defaults: defaults).warningThresholds == [])
+    }
+}
+
+@Test
+func settingsStoreMigratesALegacySingleThresholdIntoTheWarningList() {
+    withIsolatedDefaults { defaults in
+        // The pre-multiple-warnings key, pinned as a literal so the on-disk
+        // migration contract can't drift if the constant is ever renamed.
+        defaults.set(35, forKey: "settings.thresholdPercent")
+
+        #expect(SettingsStore(defaults: defaults).warningThresholds == [35])
+    }
+}
+
+@Test
+func settingsStoreIgnoresTheLegacyThresholdOnceWarningsHaveBeenSaved() {
+    withIsolatedDefaults { defaults in
+        defaults.set(35, forKey: "settings.thresholdPercent")
+        SettingsStore(defaults: defaults).warningThresholds = [20, 5]
+
+        #expect(SettingsStore(defaults: defaults).warningThresholds == [20, 5])
+    }
+}
+
+@Test
+func settingsStoreNormalizesWarningsIntoRangeWithoutDuplicatesAndCappedAtFive() {
+    withIsolatedDefaults { defaults in
+        SettingsStore(defaults: defaults).warningThresholds = [0, 101, 30, 30, 10, 20, 40, 50, 60]
+
+        #expect(SettingsStore(defaults: defaults).warningThresholds == [1, 100, 30, 10, 20])
     }
 }
 

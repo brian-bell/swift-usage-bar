@@ -19,7 +19,7 @@ final class UsageBarShellModel {
     private let now: @MainActor () -> Date
 
     private(set) var pollInterval: TimeInterval
-    private(set) var thresholdPercent: Int
+    private(set) var warningThresholds: [Int]
     private(set) var launchAtLoginEnabled: Bool
     private(set) var openCodeGoWorkspaceID: String?
     private var providerVisibility: [ProviderID: Bool]
@@ -39,7 +39,7 @@ final class UsageBarShellModel {
         self.launchAtLoginManager = launchAtLoginManager
         self.now = now
         self.pollInterval = settingsStore.pollInterval
-        self.thresholdPercent = settingsStore.thresholdPercent
+        self.warningThresholds = settingsStore.warningThresholds
         self.launchAtLoginEnabled = launchAtLoginManager.status.isRegistered
         self.openCodeGoWorkspaceID = settingsStore.openCodeGoWorkspaceID
         self.providerVisibility = Dictionary(uniqueKeysWithValues: ProviderID.allCases.map { provider in
@@ -90,9 +90,13 @@ final class UsageBarShellModel {
         appState.setProvider(provider, visible: visible)
     }
 
-    func setThresholdPercent(_ thresholdPercent: Int) {
-        self.thresholdPercent = thresholdPercent
-        settingsStore.thresholdPercent = thresholdPercent
+    func setWarningThresholds(_ warningThresholds: [Int]) {
+        // Normalize here, not just in the store: the persisted copy has always
+        // been deduped/clamped/capped, and the in-memory copy must not diverge
+        // from it (the Settings dialog re-captures from the model).
+        let normalized = WarningThresholds.normalized(warningThresholds)
+        self.warningThresholds = normalized
+        settingsStore.warningThresholds = normalized
     }
 
     func setOpenCodeGoWorkspace(_ rawValue: String?) {
@@ -231,7 +235,7 @@ extension UsageBarShellModel {
             interval: settingsStore.pollInterval,
             wakeEvents: { WorkspaceWakeEvents.stream() },
             thresholdNotifier: notifier,
-            thresholdProvider: { settingsStore.thresholdPercent }
+            thresholdProvider: { settingsStore.warningThresholds }
         )
 
         return UsageBarShellModel(

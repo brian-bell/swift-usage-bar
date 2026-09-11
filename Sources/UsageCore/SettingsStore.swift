@@ -25,10 +25,36 @@ public enum OpenCodeGoWorkspace {
     }
 }
 
+/// Validation rules for the user's warning list, shared by the store (which
+/// normalizes on the way in and out) and the Settings draft (which gates the
+/// Add button). Keeping them here means the range, dedupe, and cap hold no
+/// matter which layer a value passes through.
+public enum WarningThresholds {
+    public static let maximumCount = 5
+    public static let defaultValue = [15]
+    public static let validRange = 1...100
+
+    public static func normalized(_ values: [Int]) -> [Int] {
+        var seen: Set<Int> = []
+        var result: [Int] = []
+        for value in values {
+            let clamped = min(validRange.upperBound, max(validRange.lowerBound, value))
+            guard seen.insert(clamped).inserted else {
+                continue
+            }
+            result.append(clamped)
+            guard result.count < maximumCount else {
+                break
+            }
+        }
+        return result
+    }
+}
+
 public final class SettingsStore: @unchecked Sendable {
     private enum Defaults {
         static let pollInterval = UsagePoller.defaultInterval
-        static let thresholdPercent = 20
+        static let warningThresholds = WarningThresholds.defaultValue
         static let launchAtLoginEnabled = false
     }
 
@@ -51,16 +77,28 @@ public final class SettingsStore: @unchecked Sendable {
         }
     }
 
-    public var thresholdPercent: Int {
+    /// Percent-remaining levels that each arm one alert per usage window per
+    /// reset cycle. Empty means alerts are off — a stored empty array is a
+    /// real value, not "unset", so it never falls back to the default.
+    public var warningThresholds: [Int] {
         get {
-            guard defaults.object(forKey: Keys.thresholdPercent) != nil else {
-                return Defaults.thresholdPercent
+            if let stored = defaults.array(forKey: Keys.warningThresholds) as? [Int] {
+                return WarningThresholds.normalized(stored)
             }
 
-            return defaults.integer(forKey: Keys.thresholdPercent)
+            // Read-time migration: a pre-multiple-warnings install has only the
+            // scalar threshold; it becomes the single warning. The legacy key
+            // is left in place and simply goes unread once warnings are saved.
+            if defaults.object(forKey: Keys.legacyThresholdPercent) != nil {
+                return WarningThresholds.normalized(
+                    [defaults.integer(forKey: Keys.legacyThresholdPercent)]
+                )
+            }
+
+            return Defaults.warningThresholds
         }
         set {
-            defaults.set(newValue, forKey: Keys.thresholdPercent)
+            defaults.set(WarningThresholds.normalized(newValue), forKey: Keys.warningThresholds)
         }
     }
 
@@ -105,7 +143,10 @@ public final class SettingsStore: @unchecked Sendable {
 
 private enum Keys {
     static let pollInterval = "settings.pollInterval"
-    static let thresholdPercent = "settings.thresholdPercent"
+    static let warningThresholds = "settings.warningThresholds"
+    /// Pre-multiple-warnings key, read only for migration into
+    /// `warningThresholds`. The string must never change.
+    static let legacyThresholdPercent = "settings.thresholdPercent"
     static let launchAtLoginEnabled = "settings.launchAtLoginEnabled"
     static let openCodeGoWorkspaceID = "settings.openCodeGo.workspaceID"
 

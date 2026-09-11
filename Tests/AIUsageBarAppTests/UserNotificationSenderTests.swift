@@ -22,11 +22,30 @@ func userNotificationSenderRechecksAuthorizationBeforeEachDelivery() async throw
     #expect(center.addedRequestCount() == 1)
 }
 
+@Test
+func userNotificationSenderDistinguishesRequestsByWarningLevel() async throws {
+    // Two warning levels firing for the same window in the same reset cycle
+    // must not collapse into one request: UNUserNotificationCenter replaces a
+    // pending request that shares an identifier.
+    let center = RecordingNotificationCenterClient(statuses: [.authorized, .authorized])
+    let sender = UserNotificationSender(center: center)
+    let resetsAt = Date(timeIntervalSince1970: 1_783_008_000)
+
+    try await sender.send(usageThresholdNotification(threshold: 30, resetsAt: resetsAt))
+    try await sender.send(usageThresholdNotification(threshold: 10, resetsAt: resetsAt))
+
+    let identifiers = center.addedRequestIdentifiers()
+    #expect(identifiers == [
+        "usage-threshold.claude.five-hour.30.1783008000",
+        "usage-threshold.claude.five-hour.10.1783008000",
+    ])
+}
+
 private final class RecordingNotificationCenterClient: NotificationCenterClient, @unchecked Sendable {
     private let lock = NSLock()
     private var statuses: [NotificationAuthorizationStatus]
     private var statusCheckCount = 0
-    private var addedRequestIdentifiers: [String] = []
+    private var addedIdentifiers: [String] = []
 
     var authorizationStatusCheckCount: Int {
         lock.withLock {
@@ -54,23 +73,32 @@ private final class RecordingNotificationCenterClient: NotificationCenterClient,
 
     func add(_ request: UNNotificationRequest) async throws {
         lock.withLock {
-            addedRequestIdentifiers.append(request.identifier)
+            addedIdentifiers.append(request.identifier)
         }
     }
 
     func addedRequestCount() -> Int {
         lock.withLock {
-            addedRequestIdentifiers.count
+            addedIdentifiers.count
+        }
+    }
+
+    func addedRequestIdentifiers() -> [String] {
+        lock.withLock {
+            addedIdentifiers
         }
     }
 }
 
-private func usageThresholdNotification() -> UsageThresholdNotification {
+private func usageThresholdNotification(
+    threshold: Int = 20,
+    resetsAt: Date? = Date(timeIntervalSince1970: 1_783_008_000)
+) -> UsageThresholdNotification {
     UsageThresholdNotification(
         provider: .claude,
         window: .fiveHour,
         percentRemaining: 18,
-        threshold: 20,
-        resetsAt: Date(timeIntervalSince1970: 1_783_008_000)
+        threshold: threshold,
+        resetsAt: resetsAt
     )
 }

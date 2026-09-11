@@ -80,6 +80,13 @@ struct AXQuery {
         allSnapshots().first { $0.label == label }
     }
 
+    /// Every node with this exact label. Needed when a pane renders several
+    /// identical controls (the warnings list) whose per-row identifiers are
+    /// flattened to the pane's identifier by SwiftUI (see the suite doc).
+    func snapshots(label: String) -> [AXNodeSnapshot] {
+        allSnapshots().filter { $0.label == label }
+    }
+
     func firstLabel(containing needle: String) -> String? {
         allSnapshots()
             .compactMap { $0.label }

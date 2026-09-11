@@ -7,7 +7,7 @@ import UsageCore
 struct AppSettingsDraft: Equatable {
     var pollInterval: TimeInterval
     var providerVisibility: [ProviderID: Bool]
-    var thresholdPercent: Int
+    var warningThresholds: [Int]
     var openCodeGoWorkspace: String
     var launchAtLoginEnabled: Bool
 
@@ -19,13 +19,77 @@ struct AppSettingsDraft: Equatable {
                 (provider, !provider.isHiddenByDefault)
             }
         ),
-        thresholdPercent: 20,
+        warningThresholds: WarningThresholds.defaultValue,
         openCodeGoWorkspace: "",
         launchAtLoginEnabled: false
     )
 
     func visibility(for provider: ProviderID) -> Bool {
         providerVisibility[provider] ?? true
+    }
+
+    var canAddWarning: Bool {
+        warningThresholds.count < WarningThresholds.maximumCount
+    }
+
+    /// The level a new row starts at: one step above the current highest
+    /// warning (adding a warning usually means wanting an earlier heads-up),
+    /// nudged down past any level already in use so rows never duplicate.
+    /// With an empty list this lands back on the default 15.
+    var suggestedWarningThreshold: Int {
+        var candidate = min(
+            (warningThresholds.max() ?? 0) + 15,
+            WarningThresholds.validRange.upperBound
+        )
+        while warningThresholds.contains(candidate),
+              candidate > WarningThresholds.validRange.lowerBound {
+            candidate -= 1
+        }
+        return candidate
+    }
+
+    mutating func addWarning() {
+        guard canAddWarning else {
+            return
+        }
+        warningThresholds.append(suggestedWarningThreshold)
+    }
+
+    /// Stepper intent for one warning row. A row can never land on another
+    /// row's level: a step onto a taken value keeps moving in the stepped
+    /// direction until it finds a free one (a step blocked at the range edge
+    /// is a no-op), so the list stays duplicate-free by construction rather
+    /// than relying on silent cleanup on OK.
+    mutating func updateWarning(at index: Int, to newValue: Int) {
+        guard warningThresholds.indices.contains(index) else {
+            return
+        }
+        let current = warningThresholds[index]
+        guard newValue != current else {
+            return
+        }
+
+        var candidate = newValue
+        let others = warningThresholds.enumerated().compactMap { offset, element in
+            offset == index ? nil : element
+        }
+        if others.contains(candidate) {
+            let step = newValue > current ? 1 : -1
+            repeat {
+                candidate += step
+            } while others.contains(candidate)
+        }
+        guard WarningThresholds.validRange.contains(candidate) else {
+            return
+        }
+        warningThresholds[index] = candidate
+    }
+
+    mutating func removeWarning(at index: Int) {
+        guard warningThresholds.indices.contains(index) else {
+            return
+        }
+        warningThresholds.remove(at: index)
     }
 }
 
@@ -37,7 +101,7 @@ extension AppSettingsDraft {
             providerVisibility: Dictionary(
                 uniqueKeysWithValues: ProviderID.allCases.map { ($0, model.isProviderVisible($0)) }
             ),
-            thresholdPercent: model.thresholdPercent,
+            warningThresholds: model.warningThresholds,
             openCodeGoWorkspace: model.openCodeGoWorkspaceID ?? "",
             launchAtLoginEnabled: model.launchAtLoginEnabled
         )
@@ -64,8 +128,8 @@ extension AppSettingsDraft {
             }
         }
 
-        if model.thresholdPercent != thresholdPercent {
-            model.setThresholdPercent(thresholdPercent)
+        if model.warningThresholds != warningThresholds {
+            model.setWarningThresholds(warningThresholds)
         }
 
         let normalizedWorkspace = OpenCodeGoWorkspace.normalizedID(from: openCodeGoWorkspace)

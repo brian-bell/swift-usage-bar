@@ -202,7 +202,8 @@ func usagePollerSendsThresholdNotificationForFreshCrossing() async {
         providers: [.claude: claude],
         appState: appState,
         clock: clock,
-        thresholdNotifier: notifier
+        thresholdNotifier: notifier,
+        thresholdProvider: { [20] }
     )
 
     await poller.start()
@@ -235,7 +236,8 @@ func usagePollerUsesPreviousUsageCapturedBeforeFetchForNotificationCrossing() as
         providers: [.claude: claude],
         appState: appState,
         clock: clock,
-        thresholdNotifier: notifier
+        thresholdNotifier: notifier,
+        thresholdProvider: { [20] }
     )
 
     await poller.start()
@@ -286,7 +288,7 @@ func usagePollerReadsInjectedThresholdProviderDuringEvaluation() async {
         appState: appState,
         clock: clock,
         thresholdNotifier: notifier,
-        thresholdProvider: { 30 }
+        thresholdProvider: { [30] }
     )
 
     await poller.start()
@@ -331,10 +333,10 @@ func usagePollerClassifiesResetUsingPollCompletionTimeWhenThresholdLookupIsDelay
         ),
         current: previousUsage,
         provider: .claude,
-        threshold: 20,
+        thresholds: [20],
         at: firstReset.addingTimeInterval(-2)
     )
-    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let thresholdProvider = SuspendingThresholdProvider(thresholds: [20])
     let claude = RecordingUsageProvider(results: [
         .fresh(currentUsage, asOf: firstReset.addingTimeInterval(-1)),
     ])
@@ -344,7 +346,7 @@ func usagePollerClassifiesResetUsingPollCompletionTimeWhenThresholdLookupIsDelay
         clock: clock,
         thresholdNotifier: notifier,
         thresholdProvider: {
-            await thresholdProvider.threshold()
+            await thresholdProvider.thresholds()
         }
     )
 
@@ -422,7 +424,7 @@ func usagePollerDoesNotNotifyWhenStoppedDuringThresholdLookup() async {
     let appState = await AppState(providerStates: [.claude: .fresh(previousUsage, asOf: Date(timeIntervalSince1970: 4_600))])
     let sender = RecordingThresholdNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
-    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let thresholdProvider = SuspendingThresholdProvider(thresholds: [20])
     let claude = RecordingUsageProvider(results: [.fresh(sampleUsage(fiveHour: 18, weekly: 81), asOf: Date(timeIntervalSince1970: 4_650))])
     let poller = UsagePoller(
         providers: [.claude: claude],
@@ -430,7 +432,7 @@ func usagePollerDoesNotNotifyWhenStoppedDuringThresholdLookup() async {
         clock: clock,
         thresholdNotifier: notifier,
         thresholdProvider: {
-            await thresholdProvider.threshold()
+            await thresholdProvider.thresholds()
         }
     )
 
@@ -460,7 +462,7 @@ func usagePollerAppliesOtherProviderResultsWhileThresholdLookupIsSuspended() asy
     ])
     let sender = RecordingThresholdNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
-    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let thresholdProvider = SuspendingThresholdProvider(thresholds: [20])
     let claude = RecordingUsageProvider(results: [.fresh(currentClaudeUsage, asOf: Date(timeIntervalSince1970: 4_750))])
     let codex = BlockingUsageProvider(result: .fresh(currentCodexUsage, asOf: Date(timeIntervalSince1970: 4_751)))
     let poller = UsagePoller(
@@ -469,7 +471,7 @@ func usagePollerAppliesOtherProviderResultsWhileThresholdLookupIsSuspended() asy
         clock: clock,
         thresholdNotifier: notifier,
         thresholdProvider: {
-            await thresholdProvider.threshold()
+            await thresholdProvider.thresholds()
         }
     )
 
@@ -501,7 +503,7 @@ func usagePollerSkipsSupersededThresholdEvaluation() async {
     ])
     let sender = RecordingThresholdNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
-    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let thresholdProvider = SuspendingThresholdProvider(thresholds: [20])
     let claude = RecordingUsageProvider(results: [
         .fresh(crossingUsage, asOf: Date(timeIntervalSince1970: 4_850)),
         .fresh(recoveredUsage, asOf: Date(timeIntervalSince1970: 4_851)),
@@ -512,7 +514,7 @@ func usagePollerSkipsSupersededThresholdEvaluation() async {
         clock: clock,
         thresholdNotifier: notifier,
         thresholdProvider: {
-            await thresholdProvider.threshold()
+            await thresholdProvider.thresholds()
         }
     )
 
@@ -540,7 +542,7 @@ func usagePollerSendsWhenSupersededThresholdEvaluationIsStillBelowThreshold() as
     ])
     let sender = RecordingThresholdNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
-    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let thresholdProvider = SuspendingThresholdProvider(thresholds: [20])
     let claude = RecordingUsageProvider(results: [
         .fresh(crossingUsage, asOf: Date(timeIntervalSince1970: 4_901)),
         .fresh(stillBelowUsage, asOf: Date(timeIntervalSince1970: 4_902)),
@@ -551,7 +553,7 @@ func usagePollerSendsWhenSupersededThresholdEvaluationIsStillBelowThreshold() as
         clock: clock,
         thresholdNotifier: notifier,
         thresholdProvider: {
-            await thresholdProvider.threshold()
+            await thresholdProvider.thresholds()
         }
     )
 
@@ -586,7 +588,7 @@ func usagePollerSendsWhenSupersededByStaleRefreshPreservingLastUsage() async {
     ])
     let sender = RecordingThresholdNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
-    let thresholdProvider = SuspendingThresholdProvider(threshold: 20)
+    let thresholdProvider = SuspendingThresholdProvider(thresholds: [20])
     let claude = RecordingUsageProvider(results: [
         .fresh(crossingUsage, asOf: Date(timeIntervalSince1970: 4_951)),
         .stale(last: nil, reason: .networkError),
@@ -597,7 +599,7 @@ func usagePollerSendsWhenSupersededByStaleRefreshPreservingLastUsage() async {
         clock: clock,
         thresholdNotifier: notifier,
         thresholdProvider: {
-            await thresholdProvider.threshold()
+            await thresholdProvider.thresholds()
         }
     )
 
@@ -1308,21 +1310,21 @@ private actor RecordingThresholdNotificationSender: NotificationSending {
 }
 
 private actor SuspendingThresholdProvider {
-    private let resolvedThreshold: Int
+    private let resolvedThresholds: [Int]
     private var requestCount = 0
     private var released = false
     private var requestWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-    private var thresholdContinuations: [CheckedContinuation<Int, Never>] = []
+    private var thresholdContinuations: [CheckedContinuation<[Int], Never>] = []
 
-    init(threshold: Int) {
-        self.resolvedThreshold = threshold
+    init(thresholds: [Int]) {
+        self.resolvedThresholds = thresholds
     }
 
-    func threshold() async -> Int {
+    func thresholds() async -> [Int] {
         requestCount += 1
         resumeRequestWaiters()
         if released {
-            return resolvedThreshold
+            return resolvedThresholds
         }
 
         return await withCheckedContinuation { continuation in
@@ -1345,7 +1347,7 @@ private actor SuspendingThresholdProvider {
         let continuations = thresholdContinuations
         thresholdContinuations.removeAll()
         for continuation in continuations {
-            continuation.resume(returning: resolvedThreshold)
+            continuation.resume(returning: resolvedThresholds)
         }
     }
 

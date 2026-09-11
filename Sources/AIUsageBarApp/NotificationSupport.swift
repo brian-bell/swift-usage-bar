@@ -72,10 +72,14 @@ final class UserNotificationSender: NotificationSending, @unchecked Sendable {
 
     private static func identifier(for notification: UsageThresholdNotification) -> String {
         let resetComponent = notification.resetsAt.map { String(Int($0.timeIntervalSince1970)) } ?? "unknown"
+        // The threshold is part of the identity: two warning levels firing for
+        // the same window in the same reset cycle are distinct requests —
+        // without it the second would replace the first undelivered.
         return [
             "usage-threshold",
             notification.provider.identifierComponent,
             notification.window.identifierComponent,
+            String(notification.threshold),
             resetComponent,
         ].joined(separator: ".")
     }
