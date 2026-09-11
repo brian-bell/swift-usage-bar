@@ -192,6 +192,23 @@ func shellModelWarningThresholdsBindingPublishesObservationChange() {
 
 @Test
 @MainActor
+func shellModelSetWarningThresholdsNormalizesBeforeKeepingTheList() {
+    // The store already normalizes on write; the model must apply the same
+    // rules to its in-memory copy, or OK'ing a draft with duplicates would
+    // leave the dialog showing rows the store no longer holds.
+    withIsolatedDefaults { defaults in
+        let settingsStore = SettingsStore(defaults: defaults)
+        let model = shellModel(settingsStore: settingsStore)
+
+        model.setWarningThresholds([20, 20, 0, 101, 10, 30, 40, 50, 60])
+
+        #expect(model.warningThresholds == [20, 1, 100, 10, 30])
+        #expect(settingsStore.warningThresholds == [20, 1, 100, 10, 30])
+    }
+}
+
+@Test
+@MainActor
 func shellModelLaunchAtLoginBindingPublishesObservationChange() {
     withIsolatedDefaults { defaults in
         let settingsStore = SettingsStore(defaults: defaults)

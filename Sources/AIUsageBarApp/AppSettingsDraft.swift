@@ -55,6 +55,36 @@ struct AppSettingsDraft: Equatable {
         warningThresholds.append(suggestedWarningThreshold)
     }
 
+    /// Stepper intent for one warning row. A row can never land on another
+    /// row's level: a step onto a taken value keeps moving in the stepped
+    /// direction until it finds a free one (a step blocked at the range edge
+    /// is a no-op), so the list stays duplicate-free by construction rather
+    /// than relying on silent cleanup on OK.
+    mutating func updateWarning(at index: Int, to newValue: Int) {
+        guard warningThresholds.indices.contains(index) else {
+            return
+        }
+        let current = warningThresholds[index]
+        guard newValue != current else {
+            return
+        }
+
+        var candidate = newValue
+        let others = warningThresholds.enumerated().compactMap { offset, element in
+            offset == index ? nil : element
+        }
+        if others.contains(candidate) {
+            let step = newValue > current ? 1 : -1
+            repeat {
+                candidate += step
+            } while others.contains(candidate)
+        }
+        guard WarningThresholds.validRange.contains(candidate) else {
+            return
+        }
+        warningThresholds[index] = candidate
+    }
+
     mutating func removeWarning(at index: Int) {
         guard warningThresholds.indices.contains(index) else {
             return

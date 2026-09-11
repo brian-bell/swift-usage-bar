@@ -433,6 +433,64 @@ struct AppSettingsDraftNotificationsTabTests {
 
         #expect(draft.warningThresholds == [30, 5])
     }
+
+    @Test
+    @MainActor
+    func updateWarningSetsAFreeValueDirectly() {
+        var draft = AppSettingsDraft.placeholder
+        draft.warningThresholds = [15, 30]
+
+        draft.updateWarning(at: 0, to: 20)
+
+        #expect(draft.warningThresholds == [20, 30])
+    }
+
+    @Test
+    @MainActor
+    func updateWarningStepsPastTakenValuesInTheSteppedDirection() {
+        // A row can never land on another row's level: the step keeps moving
+        // until it finds a free value, so the list stays duplicate-free by
+        // construction rather than by silent cleanup on OK.
+        var draft = AppSettingsDraft.placeholder
+        draft.warningThresholds = [15, 16, 30]
+
+        // Stepping up onto a taken value hops to the next free one above.
+        draft.updateWarning(at: 0, to: 16)
+        #expect(draft.warningThresholds == [17, 16, 30])
+
+        // Same upward skip from the other row's side.
+        draft.updateWarning(at: 1, to: 17)
+        #expect(draft.warningThresholds == [17, 18, 30])
+
+        // Stepping down onto a taken value hops below it.
+        draft.warningThresholds = [15, 16]
+        draft.updateWarning(at: 1, to: 15)
+        #expect(draft.warningThresholds == [15, 14])
+    }
+
+    @Test
+    @MainActor
+    func updateWarningIsANoOpWhenTheStepIsBlockedAtTheRangeEdge() {
+        var draft = AppSettingsDraft.placeholder
+        draft.warningThresholds = [99, 100]
+
+        draft.updateWarning(at: 0, to: 100)
+
+        #expect(draft.warningThresholds == [99, 100])
+    }
+
+    @Test
+    @MainActor
+    func updateWarningIgnoresStaleIndicesAndOutOfRangeValues() {
+        var draft = AppSettingsDraft.placeholder
+        draft.warningThresholds = [15]
+
+        draft.updateWarning(at: 3, to: 20)
+        draft.updateWarning(at: 0, to: 0)
+        draft.updateWarning(at: 0, to: 101)
+
+        #expect(draft.warningThresholds == [15])
+    }
 }
 
 @Suite("Settings draft — all tabs together")

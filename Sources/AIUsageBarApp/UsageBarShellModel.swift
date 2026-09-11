@@ -91,8 +91,12 @@ final class UsageBarShellModel {
     }
 
     func setWarningThresholds(_ warningThresholds: [Int]) {
-        self.warningThresholds = warningThresholds
-        settingsStore.warningThresholds = warningThresholds
+        // Normalize here, not just in the store: the persisted copy has always
+        // been deduped/clamped/capped, and the in-memory copy must not diverge
+        // from it (the Settings dialog re-captures from the model).
+        let normalized = WarningThresholds.normalized(warningThresholds)
+        self.warningThresholds = normalized
+        settingsStore.warningThresholds = normalized
     }
 
     func setOpenCodeGoWorkspace(_ rawValue: String?) {

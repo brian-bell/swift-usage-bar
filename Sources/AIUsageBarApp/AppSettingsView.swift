@@ -480,7 +480,9 @@ struct NotificationsSettingsPane: View {
     }
 
     /// Index bindings outlive their row for one render pass when a row is
-    /// removed; guard so that pass reads/writes nothing.
+    /// removed; guard so that pass reads nothing. Writes go through the
+    /// draft's `updateWarning` intent, which keeps rows off each other's
+    /// levels and ignores stale indices itself.
     private func thresholdBinding(at index: Int) -> Binding<Int> {
         Binding(
             get: {
@@ -489,10 +491,7 @@ struct NotificationsSettingsPane: View {
                     : WarningThresholds.defaultValue[0]
             },
             set: { newValue in
-                guard draft.warningThresholds.indices.contains(index) else {
-                    return
-                }
-                draft.warningThresholds[index] = newValue
+                draft.updateWarning(at: index, to: newValue)
             }
         )
     }
