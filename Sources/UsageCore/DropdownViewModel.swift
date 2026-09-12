@@ -185,11 +185,12 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
 /// presentational — no scaling, no threshold participation.
 /// `amountLabel` is always the Current Balance (wallet). When monthly
 /// remaining is chartable, `remainingLabel` is unclamped (overspend
-/// renders "$-10.00 remaining") while `barFraction` clamps to 0...1.
-/// `limitLabel` fills the windows' countdown slot with the allowance the
-/// bar is charted against ("$50 monthly limit"), using raw `Int`
-/// interpolation for the dollar figure — limits are small whole dollars, so
-/// a grouping-separator surprise at $1,000+ would be more confusing than
+/// renders "$-10.00 remaining") and sits under `limitLabel` on the
+/// right; `barFraction` clamps to 0...1. `limitLabel` fills the
+/// windows' countdown slot with the allowance the bar is charted
+/// against ("$50 monthly limit"), using raw `Int` interpolation for
+/// the dollar figure — limits are small whole dollars, so a
+/// grouping-separator surprise at $1,000+ would be more confusing than
 /// helpful. Remaining comes from `CreditBalance.monthlyRemainingUSD`.
 /// When that property is `nil` the row keeps the wallet and drops the
 /// remaining line, bar, and limit (`barFraction == nil`: an empty bar

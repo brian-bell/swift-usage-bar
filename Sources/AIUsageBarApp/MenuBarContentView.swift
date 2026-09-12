@@ -129,7 +129,7 @@ private struct CreditsRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(alignment: .top) {
                 Text(row.title)
                     .frame(width: 52, alignment: .leading)
                     .accessibilityIdentifier(AccessibilityID.menuBarProviderCredits(provider))
@@ -137,23 +137,22 @@ private struct CreditsRowView: View {
                     .monospacedDigit()
                     .accessibilityIdentifier(AccessibilityID.menuBarProviderCreditsAmount(provider))
                 Spacer()
-                if let limitLabel = row.limitLabel {
-                    Text(limitLabel)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier(AccessibilityID.menuBarProviderCreditsLimit(provider))
+                VStack(alignment: .trailing, spacing: 2) {
+                    if let limitLabel = row.limitLabel {
+                        Text(limitLabel)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier(AccessibilityID.menuBarProviderCreditsLimit(provider))
+                    }
+                    if let remainingLabel = row.remainingLabel {
+                        Text(remainingLabel)
+                            .monospacedDigit()
+                            .accessibilityIdentifier(
+                                AccessibilityID.menuBarProviderCreditsRemaining(provider)
+                            )
+                    }
                 }
             }
             .font(.caption)
-
-            if let remainingLabel = row.remainingLabel {
-                Text(remainingLabel)
-                    .monospacedDigit()
-                    .font(.caption)
-                    .padding(.leading, 52)
-                    .accessibilityIdentifier(
-                        AccessibilityID.menuBarProviderCreditsRemaining(provider)
-                    )
-            }
 
             if let barFraction = row.barFraction {
                 ProgressView(value: barFraction)

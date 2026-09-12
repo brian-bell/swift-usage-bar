@@ -85,7 +85,7 @@ struct HostedUITests {
         #expect(ax.firstValue(containing: "$42.50") != nil)
         #expect(ax.firstValue(containing: "$47.04 remaining") != nil)
         // The right-side slot (the windows' countdown position) states the
-        // allowance the bar is charted against.
+        // allowance the bar is charted against; remaining sits under it.
         #expect(ax.firstValue(containing: "$50 monthly limit") != nil)
         // The old "used this month" caption is gone — the remaining label
         // plus the bar carries the same information.

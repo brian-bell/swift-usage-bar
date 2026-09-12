@@ -56,10 +56,11 @@ The load-bearing facts:
   percent-remaining semantics the number doesn't have. If a bar is later
   wanted, `monthlyUsage / monthlyLimit` is the only defensible fraction.
   - **Superseded (2026-08-08 / 2026-09-12)**: the row now renders the
-    Current Balance (`$42.50`) plus `$47.04 remaining` (limit − used,
-    unclamped) over a linear bar filled `remaining / limit` (clamped
-    0…1), with `$50 monthly limit` in the right-side slot the windows
-    use for their countdown, the caption dropped.
+    Current Balance (`$42.50`) on the left, `$50 monthly limit` in the
+    right-side slot the windows use for their countdown, and
+    `$47.04 remaining` (limit − used, unclamped) under that limit,
+    over a linear bar filled `remaining / limit` (clamped 0…1), the
+    caption dropped.
     Without both monthly fields (or with a zero limit) it degrades to
     the bare balance with no remaining line and no bar. Credits still
     own no `WindowKey` and stay out of tone/threshold; the wallet
