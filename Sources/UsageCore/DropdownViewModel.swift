@@ -189,10 +189,11 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
 /// the bar is charted against ("$50 monthly limit"), using raw `Int`
 /// interpolation for the dollar figure — limits are small whole dollars, so
 /// a grouping-separator surprise at $1,000+ would be more confusing than
-/// helpful. When either monthly field is missing — or the limit is
-/// non-positive, which has no meaningful fraction — the row degrades to the
-/// wallet balance alone with `barFraction == nil` (an empty bar next to a
-/// real balance would falsely read "0 remaining") and `limitLabel == nil`.
+/// helpful. Remaining comes from `CreditBalance.monthlyRemainingUSD` so
+/// the menu bar (`Oc $13`) and this row (`$13.96 remaining`) cannot drift.
+/// When that property is `nil` the row degrades to the wallet balance
+/// alone with `barFraction == nil` (an empty bar next to a real balance
+/// would falsely read "0 remaining") and `limitLabel == nil`.
 public struct DropdownCreditsRow: Equatable, Sendable {
     public let title: String
     public let amountLabel: String
@@ -201,10 +202,8 @@ public struct DropdownCreditsRow: Equatable, Sendable {
 
     public init(credits: CreditBalance, locale: Locale) {
         self.title = "Credits"
-        if let monthlyUsed = credits.monthlyUsedUSD,
-           let monthlyLimit = credits.monthlyLimitUSD,
-           monthlyLimit > 0 {
-            let remaining = Double(monthlyLimit) - monthlyUsed
+        if let remaining = credits.monthlyRemainingUSD,
+           let monthlyLimit = credits.monthlyLimitUSD {
             self.amountLabel = "\(Self.formatCurrency(remaining, locale: locale)) remaining"
             self.barFraction = min(1, max(0, remaining / Double(monthlyLimit)))
             self.limitLabel = "$\(monthlyLimit) monthly limit"
