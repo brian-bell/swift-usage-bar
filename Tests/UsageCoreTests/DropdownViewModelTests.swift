@@ -422,16 +422,15 @@ func dropdownCreditsRowShowsWalletAndMonthlyAllowanceRemaining() {
 
     #expect(row.title == "Credits")
     #expect(row.amountLabel == "$42.50")
-    #expect(row.remainingLabel == "$47.04 remaining")
+    #expect(row.remainingLabel == "$47.04/$50 remaining")
     #expect(row.barFraction == (50.0 - 2.96) / 50.0)
-    #expect(row.limitLabel == "$50 monthly limit")
 }
 
 @Test
 func dropdownCreditsRowMatchesTheBillingFixture() throws {
     // Sanitized sentinels from opencode-go-usage-billing.html:
     // monthlyLimit:99, monthlyUsage:87654321 (10⁻⁸ dollars) →
-    // 99 − 0.87654321 = 98.12345679 → "$98.12 remaining" under any
+    // 99 − 0.87654321 = 98.12345679 → "$98.12/$99 remaining" under any
     // rounding mode. Wallet 12345678 / 10⁸ → "$0.12".
     let credits = try #require(
         try OpenCodeCreditsParser().parse(fixtureData("opencode-go-usage-billing.html"))
@@ -442,17 +441,16 @@ func dropdownCreditsRowMatchesTheBillingFixture() throws {
     )
 
     #expect(row.amountLabel == "$0.12")
-    #expect(row.remainingLabel == "$98.12 remaining")
+    #expect(row.remainingLabel == "$98.12/$99 remaining")
     #expect(row.barFraction == (99.0 - 87654321.0 / 100_000_000) / 99.0)
-    #expect(row.limitLabel == "$99 monthly limit")
 }
 
 @Test
 func dropdownCreditsRowFallsBackToBalanceWhenMonthlyFieldsAreNil() {
     // Without an allowance there is no fraction to chart: the row degrades
     // to the wallet balance alone — barFraction == nil suppresses the bar
-    // (an empty bar would falsely read "0 remaining") and limitLabel ==
-    // nil suppresses the right-side limit text. A zero balance still
+    // (an empty bar would falsely read "0 remaining") and remainingLabel
+    // == nil suppresses the right-side remaining text. A zero balance still
     // renders as "$0.00": zero-but-billing-configured is a real state,
     // not the same as "no credits".
     let row = DropdownCreditsRow(
@@ -467,14 +465,13 @@ func dropdownCreditsRowFallsBackToBalanceWhenMonthlyFieldsAreNil() {
     #expect(row.amountLabel == "$0.00")
     #expect(row.remainingLabel == nil)
     #expect(row.barFraction == nil)
-    #expect(row.limitLabel == nil)
 }
 
 @Test
 func dropdownCreditsRowFallsBackToBalanceWhenMonthlyUsedIsNil() {
     // "Remaining" is limit − used — without used, the limit alone cannot
-    // produce it, and a lone right-side "$50 monthly limit" next to a
-    // wallet balance would imply a comparison the row isn't making.
+    // produce it, and a lone right-side "$12.30/$50 remaining" next to a
+    // wallet balance would invent a remaining the row isn't computing.
     let row = DropdownCreditsRow(
         credits: CreditBalance(
             balanceUSD: 12.30,
@@ -487,7 +484,6 @@ func dropdownCreditsRowFallsBackToBalanceWhenMonthlyUsedIsNil() {
     #expect(row.amountLabel == "$12.30")
     #expect(row.remainingLabel == nil)
     #expect(row.barFraction == nil)
-    #expect(row.limitLabel == nil)
 }
 
 @Test
@@ -506,7 +502,6 @@ func dropdownCreditsRowFallsBackToBalanceWhenMonthlyLimitIsZero() {
     #expect(row.amountLabel == "$12.30")
     #expect(row.remainingLabel == nil)
     #expect(row.barFraction == nil)
-    #expect(row.limitLabel == nil)
 }
 
 @Test
@@ -524,15 +519,14 @@ func dropdownCreditsRowShowsFullAllowanceWhenNothingIsUsed() {
     )
 
     #expect(row.amountLabel == "$0.00")
-    #expect(row.remainingLabel == "$50.00 remaining")
+    #expect(row.remainingLabel == "$50.00/$50 remaining")
     #expect(row.barFraction == 1.0)
-    #expect(row.limitLabel == "$50 monthly limit")
 }
 
 @Test
 func dropdownCreditsRowKeepsLabelUnclampedWhenOverLimit() {
     // Same split the window rows pin: the label tells the truth about
-    // overspend ("$-10.00 remaining") while the bar clamps to empty.
+    // overspend ("$-10.00/$50 remaining") while the bar clamps to empty.
     let row = DropdownCreditsRow(
         credits: CreditBalance(
             balanceUSD: 5,
@@ -543,9 +537,8 @@ func dropdownCreditsRowKeepsLabelUnclampedWhenOverLimit() {
     )
 
     #expect(row.amountLabel == "$5.00")
-    #expect(row.remainingLabel == "$-10.00 remaining")
+    #expect(row.remainingLabel == "$-10.00/$50 remaining")
     #expect(row.barFraction == 0)
-    #expect(row.limitLabel == "$50 monthly limit")
 }
 
 @Test
@@ -601,10 +594,7 @@ func dropdownCreditsRowUsesLocaleDecimalSeparatorForRemaining() {
     )
 
     #expect(row.amountLabel == "$42,50")
-    #expect(row.remainingLabel == "$47,04 remaining")
-    // The limit side keeps raw Int interpolation (no locale separators) —
-    // limits are small whole dollars, per the original caption decision.
-    #expect(row.limitLabel == "$50 monthly limit")
+    #expect(row.remainingLabel == "$47,04/$50 remaining")
 }
 
 private let creditsProviderUsage = ProviderUsage(
@@ -639,9 +629,8 @@ func dropdownCreditsProviderRowShowsOnlyTheCreditsRow() throws {
     let credits = try #require(row.credits, "fresh credits usage should expose the credits row")
     #expect(credits.title == "Credits")
     #expect(credits.amountLabel == "$42.50")
-    #expect(credits.remainingLabel == "$47.04 remaining")
+    #expect(credits.remainingLabel == "$47.04/$50 remaining")
     #expect(credits.barFraction == (50.0 - 2.96) / 50.0)
-    #expect(credits.limitLabel == "$50 monthly limit")
 }
 
 @Test
@@ -660,7 +649,7 @@ func dropdownCreditsProviderRowPreservesCreditsWhenStaleWithLastUsage() throws {
     #expect(row.isStale)
     let credits = try #require(row.credits, "stale(last: usage) preserves last-known credits")
     #expect(credits.amountLabel == "$42.50")
-    #expect(credits.remainingLabel == "$47.04 remaining")
+    #expect(credits.remainingLabel == "$47.04/$50 remaining")
     #expect(credits.barFraction == (50.0 - 2.96) / 50.0)
 }
 
@@ -682,7 +671,6 @@ func dropdownCreditsProviderRowShowsPlaceholderWhenStaleWithNothing() throws {
     #expect(credits.amountLabel == "--")
     #expect(credits.remainingLabel == nil)
     #expect(credits.barFraction == 0, "placeholder renders an empty bar, matching the window rows")
-    #expect(credits.limitLabel == nil, "no data means no limit to state on the right")
     #expect(row.staleMessage == "Stale: no credits balance found")
 }
 

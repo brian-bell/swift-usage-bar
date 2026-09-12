@@ -129,7 +129,7 @@ private struct CreditsRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top) {
+            HStack {
                 Text(row.title)
                     .frame(width: 52, alignment: .leading)
                     .accessibilityIdentifier(AccessibilityID.menuBarProviderCredits(provider))
@@ -137,19 +137,13 @@ private struct CreditsRowView: View {
                     .monospacedDigit()
                     .accessibilityIdentifier(AccessibilityID.menuBarProviderCreditsAmount(provider))
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    if let limitLabel = row.limitLabel {
-                        Text(limitLabel)
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier(AccessibilityID.menuBarProviderCreditsLimit(provider))
-                    }
-                    if let remainingLabel = row.remainingLabel {
-                        Text(remainingLabel)
-                            .monospacedDigit()
-                            .accessibilityIdentifier(
-                                AccessibilityID.menuBarProviderCreditsRemaining(provider)
-                            )
-                    }
+                if let remainingLabel = row.remainingLabel {
+                    Text(remainingLabel)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier(
+                            AccessibilityID.menuBarProviderCreditsRemaining(provider)
+                        )
                 }
             }
             .font(.caption)

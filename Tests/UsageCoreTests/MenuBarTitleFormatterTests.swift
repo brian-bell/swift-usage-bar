@@ -366,7 +366,7 @@ func menuBarTitleFormatterRendersCreditsWalletNotAllowanceRemaining() {
         MenuBarTitleSegment(provider: .openCodeCredits, value: "$6", isStale: false),
     ])
     #expect(row.amountLabel == "$6.44")
-    #expect(row.remainingLabel == "$13.96 remaining")
+    #expect(row.remainingLabel == "$13.96/$50 remaining")
 }
 
 @Test

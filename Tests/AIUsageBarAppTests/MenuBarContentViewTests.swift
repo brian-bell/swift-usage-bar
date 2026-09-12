@@ -81,12 +81,10 @@ struct HostedUITests {
         // it goes through NumberFormatter with the system locale. A bare
         // existence check on the AX id only proves the row is wired up;
         // confirming the formatted value pins the formatter too. Fixture:
-        // wallet $42.50 plus limit 50 − used 2.96 → $47.04 remaining.
+        // wallet $42.50 plus limit 50 − used 2.96 → $47.04/$50 remaining.
         #expect(ax.firstValue(containing: "$42.50") != nil)
-        #expect(ax.firstValue(containing: "$47.04 remaining") != nil)
-        // The right-side slot (the windows' countdown position) states the
-        // allowance the bar is charted against; remaining sits under it.
-        #expect(ax.firstValue(containing: "$50 monthly limit") != nil)
+        #expect(ax.firstValue(containing: "$47.04/$50 remaining") != nil)
+        #expect(ax.firstValue(containing: "$50 monthly limit") == nil)
         // The old "used this month" caption is gone — the remaining label
         // plus the bar carries the same information.
         #expect(ax.firstValue(containing: "used this month") == nil)
@@ -96,7 +94,7 @@ struct HostedUITests {
         #expect(ax.exists(AccessibilityID.menuBarProviderCreditsAmount(.openCodeCredits)))
         #expect(ax.exists(AccessibilityID.menuBarProviderCreditsRemaining(.openCodeCredits)))
         #expect(ax.exists(AccessibilityID.menuBarProviderCreditsBar(.openCodeCredits)))
-        #expect(ax.exists(AccessibilityID.menuBarProviderCreditsLimit(.openCodeCredits)))
+        #expect(!ax.exists(AccessibilityID.menuBarProviderCreditsLimit(.openCodeCredits)))
         #expect(!ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeCredits)).caption"))
     }
 }

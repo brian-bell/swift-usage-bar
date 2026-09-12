@@ -56,11 +56,10 @@ The load-bearing facts:
   percent-remaining semantics the number doesn't have. If a bar is later
   wanted, `monthlyUsage / monthlyLimit` is the only defensible fraction.
   - **Superseded (2026-08-08 / 2026-09-12)**: the row now renders the
-    Current Balance (`$42.50`) on the left, `$50 monthly limit` in the
-    right-side slot the windows use for their countdown, and
-    `$47.04 remaining` (limit − used, unclamped) under that limit,
-    over a linear bar filled `remaining / limit` (clamped 0…1), the
-    caption dropped.
+    Current Balance (`$42.50`) on the left and `$47.04/$50 remaining`
+    (limit − used, unclamped) in the right-side slot the windows use
+    for their countdown, over a linear bar filled `remaining / limit`
+    (clamped 0…1), the caption dropped.
     Without both monthly fields (or with a zero limit) it degrades to
     the bare balance with no remaining line and no bar. Credits still
     own no `WindowKey` and stay out of tone/threshold; the wallet
@@ -179,10 +178,9 @@ TDD order; every step red → green.
 
    ```swift
    // As shipped in slice 2; since 2026-08-08 captionLabel is replaced by
-   // barFraction: Double? (nil = no bar) plus limitLabel: String?
-   // ("$50 monthly limit", nil on the balance-only fallback) and
-   // amountLabel reads the wallet; remainingLabel is
-   // "$47.04 remaining" — see the superseded Copy
+   // barFraction: Double? (nil = no bar) plus remainingLabel:
+   // "$47.04/$50 remaining" (nil on the balance-only fallback) and
+   // amountLabel reads the wallet — see the superseded Copy
    // bullet above.
    public struct DropdownCreditsRow: Equatable, Sendable {
        public let title: String        // "Credits"
@@ -222,8 +220,8 @@ TDD order; every step red → green.
 - Dropdown shows `Credits $47.04 · $2.96 of $50 used this month` under
   OpenCode Go when the live page carries a configured billing record;
   shows no credits row on the old fixture shape or `customerID:null`.
-  (Since 2026-09-12: `Credits $42.50` plus `$47.04 remaining` over an
-  allowance bar, caption removed. Menu bar is the wallet.)
+  (Since 2026-09-12: `Credits $42.50` plus `$47.04/$50 remaining`
+  over an allowance bar, caption removed. Menu bar is the wallet.)
 - Menu bar title, tone, and notifications byte-identical with and
   without credits (pinned by tests).
 - No payment metadata anywhere: grep for `customerID` in `Sources/`
