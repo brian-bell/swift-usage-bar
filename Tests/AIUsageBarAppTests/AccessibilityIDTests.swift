@@ -55,6 +55,10 @@ func accessibilityIDCatalogUsesHierarchicalKebabCase() {
             == "menubar.content.provider.opencodeCredits.credits.amount"
     )
     #expect(
+        AccessibilityID.menuBarProviderCreditsRemaining(.openCodeCredits)
+            == "menubar.content.provider.opencodeCredits.credits.remaining"
+    )
+    #expect(
         AccessibilityID.menuBarProviderCreditsBar(.openCodeCredits)
             == "menubar.content.provider.opencodeCredits.credits.bar"
     )

@@ -326,9 +326,9 @@ private func creditsState(balanceUSD: Double) -> ProviderState {
 
 @Test
 func menuBarTitleFormatterRendersCreditsAsWholeDollars() {
-    // The bar shows whole dollars, rounded DOWN — a balance display must
-    // never claim money the user doesn't have. Exact cents live in the
-    // dropdown. This path is the wallet fallback (no chartable allowance).
+    // The bar shows the Current Balance in whole dollars, rounded DOWN —
+    // a balance display must never claim money the user doesn't have.
+    // Exact cents live in the dropdown.
     for (balance, value) in [(47.03, "$47"), (47.60, "$47"), (0.92, "$0")] {
         #expect(MenuBarTitleFormatter.segments([
             .claude: .hidden,
@@ -341,12 +341,13 @@ func menuBarTitleFormatterRendersCreditsAsWholeDollars() {
 }
 
 @Test
-func menuBarTitleFormatterRendersCreditsAllowanceRemainingNotWallet() {
-    // The dropdown charts monthly remaining (limit − used). The menu bar
-    // must show that same figure — rounded down — so Oc $13 matches
-    // "$13.96 remaining" rather than the leftover wallet balance.
+func menuBarTitleFormatterRendersCreditsWalletNotAllowanceRemaining() {
+    // Live Billing "Current Balance" is the wallet (`$6.44`), not monthly
+    // remaining (`$13.96` of a `$50` limit). The menu bar must show that
+    // wallet, rounded down — Oc $6 — so it cannot be mistaken for the
+    // allowance. The dropdown carries both figures.
     let credits = CreditBalance(
-        balanceUSD: 6.40,
+        balanceUSD: 6.44,
         monthlyUsedUSD: 36.04,
         monthlyLimitUSD: 50
     )
@@ -355,24 +356,23 @@ func menuBarTitleFormatterRendersCreditsAllowanceRemainingNotWallet() {
         weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
         credits: credits
     )
+    let row = DropdownCreditsRow(credits: credits, locale: Locale(identifier: "en_US_POSIX"))
 
     #expect(MenuBarTitleFormatter.segments([
         .claude: .hidden,
         .codex: .hidden,
         .openCodeCredits: .fresh(usage, asOf: Date(timeIntervalSince1970: 20)),
     ]) == [
-        MenuBarTitleSegment(provider: .openCodeCredits, value: "$13", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "$6", isStale: false),
     ])
-    #expect(
-        DropdownCreditsRow(credits: credits, locale: Locale(identifier: "en_US_POSIX")).amountLabel
-            == "$13.96 remaining"
-    )
+    #expect(row.amountLabel == "$6.44")
+    #expect(row.remainingLabel == "$13.96/$50 remaining")
 }
 
 @Test
-func menuBarTitleFormatterRendersOverLimitCreditsRemainingUnclamped() {
-    // Same split the dropdown pins: the label tells the truth about
-    // overspend. Whole dollars still round down (toward −∞).
+func menuBarTitleFormatterRendersCreditsWalletWhenAllowanceIsOverLimit() {
+    // Overspend is a dropdown remaining-label fact (`$-10.00 remaining`).
+    // The menu bar still shows the wallet, rounded down toward −∞.
     let usage = ProviderUsage(
         fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
         weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
@@ -388,7 +388,7 @@ func menuBarTitleFormatterRendersOverLimitCreditsRemainingUnclamped() {
         .codex: .hidden,
         .openCodeCredits: .fresh(usage, asOf: Date(timeIntervalSince1970: 20)),
     ]) == [
-        MenuBarTitleSegment(provider: .openCodeCredits, value: "$-10", isStale: false),
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "$5", isStale: false),
     ])
 }
 
