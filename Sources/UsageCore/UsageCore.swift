@@ -245,6 +245,10 @@ public actor ThresholdNotifier {
     private var windowsWithChangedUsage: Set<ThresholdNotificationWindowKey> = []
     private var latestSuccessfulDeliveryGenerations: [ThresholdNotificationWindowKey: UInt64] = [:]
     private var nextDeliveryGeneration: UInt64 = 0
+    /// Furthest `resetsAt` seen for a level that has already alerted. Remaining-
+    /// seconds sources revise this later without ending the cycle; the hold
+    /// follows that estimate, not only the original fired key.
+    private var latestObservedResets: [ThresholdNotificationPendingKey: Date] = [:]
 
     public init(sender: any NotificationSending) {
         self.sender = sender
@@ -257,7 +261,10 @@ public actor ThresholdNotifier {
     /// that were crossed but suppressed leave no state behind — each level
     /// still gets its own alert when it is the most severe *newly* triggered
     /// one (e.g. warnings at 30 and 10: 35→25 alerts 30, a later 25→5 alerts
-    /// 10). An empty `thresholds` list turns alerts off.
+    /// 10). A level that has already alerted does not fire again until the
+    /// latest observed `resetsAt` for that level elapses — a drifting
+    /// deadline plus a usage tick is not a new cycle. An empty `thresholds`
+    /// list turns alerts off.
     public func evaluate(
         previous: ProviderUsage?,
         current: ProviderUsage,
@@ -319,6 +326,34 @@ public actor ThresholdNotifier {
             guard lastNotifiedPercentages[windowKey] == nil
                 || windowsWithChangedUsage.contains(windowKey)
                 || (newResetCycleAlreadyBelowThreshold && previousResetCycleElapsed) else {
+                rememberObservedReset(
+                    for: pendingKey,
+                    previousResetCycle: previousResetCycle,
+                    currentResetCycle: currentResetCycle,
+                    evaluatedAt: evaluatedAt
+                )
+                if newResetCycleAlreadyBelowThreshold {
+                    pendingCycles[pendingKey] = currentResetCycle
+                }
+                continue
+            }
+
+            // `firedCycles` keys include the exact `resetsAt`. A jittered
+            // timestamp is a new key, so same-cycle insert-dedup would miss
+            // it — block any fire for this level until the latest observed
+            // deadline (not only the original fired key) has elapsed.
+            guard !hasUnresetFire(
+                for: pendingKey,
+                previousResetCycle: previousResetCycle,
+                currentResetCycle: currentResetCycle,
+                evaluatedAt: evaluatedAt
+            ) else {
+                rememberObservedReset(
+                    for: pendingKey,
+                    previousResetCycle: previousResetCycle,
+                    currentResetCycle: currentResetCycle,
+                    evaluatedAt: evaluatedAt
+                )
                 if newResetCycleAlreadyBelowThreshold {
                     pendingCycles[pendingKey] = currentResetCycle
                 }
@@ -347,6 +382,11 @@ public actor ThresholdNotifier {
                     latestSuccessfulDeliveryGenerations[windowKey] = deliveryGeneration
                     lastNotifiedPercentages[windowKey] = currentPercentRemaining
                     windowsWithChangedUsage.remove(windowKey)
+                    if case .known(let resetAt) = currentResetCycle {
+                        latestObservedResets[pendingKey] = resetAt
+                    } else {
+                        latestObservedResets.removeValue(forKey: pendingKey)
+                    }
                 }
             } catch {
                 firedCycles.remove(key)
@@ -389,6 +429,83 @@ public actor ThresholdNotifier {
             || retryingFailedDelivery
             || resumingPendingCycle
     }
+
+    /// True when this warning level has already been delivered (or is
+    /// in-flight) for a reset cycle that has not ended. The hold follows the
+    /// furthest observed deadline, not only the original fired key: a later
+    /// remaining-seconds estimate keeps the block after the stale stamp
+    /// passes. Unknown cycles only collide with other unknown cycles — a
+    /// later known `resetsAt` is a distinct cycle, matching the
+    /// nil-versus-known pin.
+    private func hasUnresetFire(
+        for pendingKey: ThresholdNotificationPendingKey,
+        previousResetCycle: ResetCycle,
+        currentResetCycle: ResetCycle,
+        evaluatedAt: Date
+    ) -> Bool {
+        let matching = firedCycles.filter { $0.matches(pendingKey) }
+        guard !matching.isEmpty else {
+            return false
+        }
+
+        if matching.contains(where: { $0.resetCycle == currentResetCycle }) {
+            return true
+        }
+        if matching.contains(where: {
+            if case .known(let resetAt) = $0.resetCycle {
+                return resetAt > evaluatedAt
+            }
+            return false
+        }) {
+            return true
+        }
+        if let latest = latestObservedResets[pendingKey], latest > evaluatedAt {
+            return true
+        }
+        if case .known(let resetAt) = previousResetCycle, resetAt > evaluatedAt {
+            return true
+        }
+        return false
+    }
+
+    /// Extends the hold to later known deadlines seen while this level is
+    /// already armed. `current` is recorded only while the original fired
+    /// deadline is still open — after that, a later stamp is the next cycle
+    /// and must not stretch the hold.
+    private func rememberObservedReset(
+        for pendingKey: ThresholdNotificationPendingKey,
+        previousResetCycle: ResetCycle,
+        currentResetCycle: ResetCycle,
+        evaluatedAt: Date
+    ) {
+        guard firedCycles.contains(where: { $0.matches(pendingKey) }) else {
+            return
+        }
+        extendObservedReset(for: pendingKey, previousResetCycle)
+        let originalDeadlineStillOpen = firedCycles.contains { key in
+            guard key.matches(pendingKey), case .known(let resetAt) = key.resetCycle else {
+                return false
+            }
+            return resetAt > evaluatedAt
+        }
+        if originalDeadlineStillOpen {
+            extendObservedReset(for: pendingKey, currentResetCycle)
+        }
+    }
+
+    private func extendObservedReset(
+        for pendingKey: ThresholdNotificationPendingKey,
+        _ cycle: ResetCycle
+    ) {
+        guard case .known(let resetAt) = cycle else {
+            return
+        }
+        if let existing = latestObservedResets[pendingKey] {
+            latestObservedResets[pendingKey] = max(existing, resetAt)
+        } else {
+            latestObservedResets[pendingKey] = resetAt
+        }
+    }
 }
 
 private struct ThresholdNotificationKey: Hashable, Sendable {
@@ -396,6 +513,12 @@ private struct ThresholdNotificationKey: Hashable, Sendable {
     let window: UsageWindowKind
     let threshold: Int
     let resetCycle: ResetCycle
+
+    func matches(_ pendingKey: ThresholdNotificationPendingKey) -> Bool {
+        provider == pendingKey.provider
+            && window == pendingKey.window
+            && threshold == pendingKey.threshold
+    }
 }
 
 private struct ThresholdNotificationWindowKey: Hashable, Sendable {
