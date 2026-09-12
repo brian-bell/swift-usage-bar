@@ -444,13 +444,33 @@ func thresholdNotifierDoesNotRefireWhenResetTimestampJittersBeforeUsageResets() 
         thresholds: [20],
         at: beforeReset.addingTimeInterval(120)
     )
-    // The window has now reset: same remaining, new cycle — re-arm.
+    let nextCycleReset = jitteredReset.addingTimeInterval(18_000)
+    // Original `firstReset` has elapsed, but the latest observed deadline
+    // is still `jitteredReset` — do not re-arm yet.
     await notifier.evaluate(
         previous: usage(fiveHour: 17, fiveHourReset: jitteredReset, weekly: 80),
-        current: usage(fiveHour: 17, fiveHourReset: jitteredReset.addingTimeInterval(18_000), weekly: 80),
+        current: usage(fiveHour: 17, fiveHourReset: nextCycleReset, weekly: 80),
         provider: .claude,
         thresholds: [20],
         at: firstReset.addingTimeInterval(1)
+    )
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: firstReset
+        ),
+    ])
+
+    // Latest observed deadline has now elapsed: new cycle may re-arm.
+    await notifier.evaluate(
+        previous: usage(fiveHour: 17, fiveHourReset: jitteredReset, weekly: 80),
+        current: usage(fiveHour: 17, fiveHourReset: nextCycleReset, weekly: 80),
+        provider: .claude,
+        thresholds: [20],
+        at: jitteredReset.addingTimeInterval(1)
     )
 
     #expect(await sender.sentNotifications() == [
@@ -466,7 +486,7 @@ func thresholdNotifierDoesNotRefireWhenResetTimestampJittersBeforeUsageResets() 
             window: .fiveHour,
             percentRemaining: 17,
             threshold: 20,
-            resetsAt: jitteredReset.addingTimeInterval(18_000)
+            resetsAt: nextCycleReset
         ),
     ])
 }
@@ -586,6 +606,23 @@ func thresholdNotifierRefiresAfterUsageChangesLaterInSuppressedResetCycle() asyn
         provider: .claude,
         thresholds: [20],
         at: firstReset.addingTimeInterval(1)
+    )
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: firstReset
+        ),
+    ])
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
+        current: usage(fiveHour: 17, fiveHourReset: secondReset, weekly: 80),
+        provider: .claude,
+        thresholds: [20],
+        at: secondReset.addingTimeInterval(1)
     )
 
     #expect(await sender.sentNotifications() == [
