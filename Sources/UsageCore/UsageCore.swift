@@ -246,7 +246,9 @@ public actor ThresholdNotifier {
     /// that were crossed but suppressed leave no state behind — each level
     /// still gets its own alert when it is the most severe *newly* triggered
     /// one (e.g. warnings at 30 and 10: 35→25 alerts 30, a later 25→5 alerts
-    /// 10). An empty `thresholds` list turns alerts off.
+    /// 10). A level that has already alerted does not fire again until that
+    /// window's reset time elapses — a drifting `resetsAt` plus a usage tick
+    /// is not a new cycle. An empty `thresholds` list turns alerts off.
     public func evaluate(
         previous: ProviderUsage?,
         current: ProviderUsage,
@@ -308,6 +310,21 @@ public actor ThresholdNotifier {
             guard lastNotifiedPercentages[windowKey] == nil
                 || windowsWithChangedUsage.contains(windowKey)
                 || (newResetCycleAlreadyBelowThreshold && previousResetCycleElapsed) else {
+                if newResetCycleAlreadyBelowThreshold {
+                    pendingCycles[pendingKey] = currentResetCycle
+                }
+                continue
+            }
+
+            // `firedCycles` keys include the exact `resetsAt`. A jittered
+            // timestamp is a new key, so same-cycle insert-dedup would miss
+            // it — block any fire for this level until the cycle we already
+            // warned for has actually reset.
+            guard !hasUnresetFire(
+                for: pendingKey,
+                currentResetCycle: currentResetCycle,
+                evaluatedAt: evaluatedAt
+            ) else {
                 if newResetCycleAlreadyBelowThreshold {
                     pendingCycles[pendingKey] = currentResetCycle
                 }
@@ -378,6 +395,29 @@ public actor ThresholdNotifier {
             || retryingFailedDelivery
             || resumingPendingCycle
     }
+
+    /// True when this warning level has already been delivered (or is
+    /// in-flight) for a reset cycle that has not ended. Unknown cycles only
+    /// collide with other unknown cycles — a later known `resetsAt` is a
+    /// distinct cycle, matching the nil-versus-known pin.
+    private func hasUnresetFire(
+        for pendingKey: ThresholdNotificationPendingKey,
+        currentResetCycle: ResetCycle,
+        evaluatedAt: Date
+    ) -> Bool {
+        firedCycles.contains { key in
+            guard key.matches(pendingKey) else {
+                return false
+            }
+            if key.resetCycle == currentResetCycle {
+                return true
+            }
+            if case .known(let resetAt) = key.resetCycle, resetAt > evaluatedAt {
+                return true
+            }
+            return false
+        }
+    }
 }
 
 private struct ThresholdNotificationKey: Hashable, Sendable {
@@ -385,6 +425,12 @@ private struct ThresholdNotificationKey: Hashable, Sendable {
     let window: UsageWindowKind
     let threshold: Int
     let resetCycle: ResetCycle
+
+    func matches(_ pendingKey: ThresholdNotificationPendingKey) -> Bool {
+        provider == pendingKey.provider
+            && window == pendingKey.window
+            && threshold == pendingKey.threshold
+    }
 }
 
 private struct ThresholdNotificationWindowKey: Hashable, Sendable {

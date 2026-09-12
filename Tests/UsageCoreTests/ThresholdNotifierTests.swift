@@ -419,6 +419,110 @@ func thresholdNotifierDoesNotRefireWhenResetTimestampMovesBeforeCurrentCycleEnds
 }
 
 @Test
+func thresholdNotifierDoesNotRefireWhenResetTimestampJittersBeforeUsageResets() async {
+    // Providers that derive `resetsAt` from remaining-seconds (or whose
+    // clocks drift) mint a new timestamp every poll. A 1-point usage tick
+    // plus that jitter is not a new cycle — the warning already fired, and
+    // the window has not reset yet.
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let firstReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let jitteredReset = firstReset.addingTimeInterval(90)
+    let beforeReset = firstReset.addingTimeInterval(-3_600)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+        provider: .claude,
+        thresholds: [20],
+        at: beforeReset
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 18, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 17, fiveHourReset: jitteredReset, weekly: 80),
+        provider: .claude,
+        thresholds: [20],
+        at: beforeReset.addingTimeInterval(120)
+    )
+    // The window has now reset: same remaining, new cycle — re-arm.
+    await notifier.evaluate(
+        previous: usage(fiveHour: 17, fiveHourReset: jitteredReset, weekly: 80),
+        current: usage(fiveHour: 17, fiveHourReset: jitteredReset.addingTimeInterval(18_000), weekly: 80),
+        provider: .claude,
+        thresholds: [20],
+        at: firstReset.addingTimeInterval(1)
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 18,
+            threshold: 20,
+            resetsAt: firstReset
+        ),
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 17,
+            threshold: 20,
+            resetsAt: jitteredReset.addingTimeInterval(18_000)
+        ),
+    ])
+}
+
+@Test
+func thresholdNotifierDoesNotRefireEachLevelUntilThatLevelResets() async {
+    // Same jitter-before-reset trap at the 30 warning: 35→25 alerts 30,
+    // then 25→24 with a drifted `resetsAt` must not alert 30 again.
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let firstReset = Date(timeIntervalSince1970: 1_783_008_000)
+    let jitteredReset = firstReset.addingTimeInterval(90)
+    let beforeReset = firstReset.addingTimeInterval(-3_600)
+
+    await notifier.evaluate(
+        previous: usage(fiveHour: 35, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 20],
+        at: beforeReset
+    )
+    await notifier.evaluate(
+        previous: usage(fiveHour: 25, fiveHourReset: firstReset, weekly: 80),
+        current: usage(fiveHour: 24, fiveHourReset: jitteredReset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 20],
+        at: beforeReset.addingTimeInterval(120)
+    )
+    // Crossing the next level still alerts — only the already-fired 30 is held.
+    await notifier.evaluate(
+        previous: usage(fiveHour: 24, fiveHourReset: jitteredReset, weekly: 80),
+        current: usage(fiveHour: 15, fiveHourReset: jitteredReset, weekly: 80),
+        provider: .claude,
+        thresholds: [30, 20],
+        at: beforeReset.addingTimeInterval(240)
+    )
+
+    #expect(await sender.sentNotifications() == [
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 25,
+            threshold: 30,
+            resetsAt: firstReset
+        ),
+        thresholdNotification(
+            provider: .claude,
+            window: .fiveHour,
+            percentRemaining: 15,
+            threshold: 20,
+            resetsAt: jitteredReset
+        ),
+    ])
+}
+
+@Test
 func thresholdNotifierRefiresWhenUsageChangedAndReturnsToLastNotifiedPercentage() async {
     let sender = RecordingNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)
@@ -480,7 +584,8 @@ func thresholdNotifierRefiresAfterUsageChangesLaterInSuppressedResetCycle() asyn
         previous: usage(fiveHour: 18, fiveHourReset: secondReset, weekly: 80),
         current: usage(fiveHour: 17, fiveHourReset: secondReset, weekly: 80),
         provider: .claude,
-        thresholds: [20]
+        thresholds: [20],
+        at: firstReset.addingTimeInterval(1)
     )
 
     #expect(await sender.sentNotifications() == [
