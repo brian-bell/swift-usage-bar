@@ -40,6 +40,17 @@ public struct CreditBalance: Equatable, Sendable {
         self.monthlyUsedUSD = monthlyUsedUSD
         self.monthlyLimitUSD = monthlyLimitUSD
     }
+
+    /// Allowance remaining (`limit − used`) when both monthly fields exist
+    /// and the limit is positive. `nil` otherwise — the menu bar and the
+    /// credits dropdown both degrade to `balanceUSD` in that case, so they
+    /// cannot show different dollar figures for the same payload.
+    public var monthlyRemainingUSD: Double? {
+        guard let monthlyUsedUSD, let monthlyLimitUSD, monthlyLimitUSD > 0 else {
+            return nil
+        }
+        return Double(monthlyLimitUSD) - monthlyUsedUSD
+    }
 }
 
 public struct ProviderUsage: Equatable, Sendable {
@@ -2628,13 +2639,18 @@ private extension ProviderUsage {
         case .openCodeGo:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")/\(monthly?.percentRemaining.map(String.init) ?? "--")"
         case .openCodeCredits:
-            // Rounded down: a balance display must never claim money the
-            // user doesn't have (percent segments round to nearest, but
-            // that convention overstates a dollar figure by up to $0.50).
-            // Int(exactly:) instead of Int(): a finite-but-huge upstream
-            // balance (> Int.max after rounding) must degrade to the
-            // placeholder, not trap and crash the whole menu bar.
-            return credits.flatMap { Int(exactly: $0.balanceUSD.rounded(.down)) }.map { "$\($0)" } ?? "--"
+            // Same figure the dropdown charts: monthly remaining when the
+            // allowance is chartable, otherwise the wallet balance.
+            // Rounded down: never claim more remaining than the payload
+            // has (percent segments round to nearest, but that convention
+            // overstates a dollar figure by up to $0.50). Int(exactly:)
+            // instead of Int(): a finite-but-huge upstream value
+            // (> Int.max after rounding) must degrade to the placeholder,
+            // not trap and crash the whole menu bar.
+            return credits.flatMap { credit in
+                let dollars = credit.monthlyRemainingUSD ?? credit.balanceUSD
+                return Int(exactly: dollars.rounded(.down)).map { "$\($0)" }
+            } ?? "--"
         case .miniMax:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
         case .cursor:

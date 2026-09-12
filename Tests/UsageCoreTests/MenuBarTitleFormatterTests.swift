@@ -328,7 +328,7 @@ private func creditsState(balanceUSD: Double) -> ProviderState {
 func menuBarTitleFormatterRendersCreditsAsWholeDollars() {
     // The bar shows whole dollars, rounded DOWN — a balance display must
     // never claim money the user doesn't have. Exact cents live in the
-    // dropdown.
+    // dropdown. This path is the wallet fallback (no chartable allowance).
     for (balance, value) in [(47.03, "$47"), (47.60, "$47"), (0.92, "$0")] {
         #expect(MenuBarTitleFormatter.segments([
             .claude: .hidden,
@@ -338,6 +338,58 @@ func menuBarTitleFormatterRendersCreditsAsWholeDollars() {
             MenuBarTitleSegment(provider: .openCodeCredits, value: value, isStale: false),
         ])
     }
+}
+
+@Test
+func menuBarTitleFormatterRendersCreditsAllowanceRemainingNotWallet() {
+    // The dropdown charts monthly remaining (limit − used). The menu bar
+    // must show that same figure — rounded down — so Oc $13 matches
+    // "$13.96 remaining" rather than the leftover wallet balance.
+    let credits = CreditBalance(
+        balanceUSD: 6.40,
+        monthlyUsedUSD: 36.04,
+        monthlyLimitUSD: 50
+    )
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        credits: credits
+    )
+
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .openCodeCredits: .fresh(usage, asOf: Date(timeIntervalSince1970: 20)),
+    ]) == [
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "$13", isStale: false),
+    ])
+    #expect(
+        DropdownCreditsRow(credits: credits, locale: Locale(identifier: "en_US_POSIX")).amountLabel
+            == "$13.96 remaining"
+    )
+}
+
+@Test
+func menuBarTitleFormatterRendersOverLimitCreditsRemainingUnclamped() {
+    // Same split the dropdown pins: the label tells the truth about
+    // overspend. Whole dollars still round down (toward −∞).
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        credits: CreditBalance(
+            balanceUSD: 5,
+            monthlyUsedUSD: 60,
+            monthlyLimitUSD: 50
+        )
+    )
+
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .openCodeCredits: .fresh(usage, asOf: Date(timeIntervalSince1970: 20)),
+    ]) == [
+        MenuBarTitleSegment(provider: .openCodeCredits, value: "$-10", isStale: false),
+    ])
 }
 
 @Test
