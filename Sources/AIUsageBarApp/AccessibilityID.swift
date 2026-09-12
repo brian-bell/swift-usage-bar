@@ -94,6 +94,10 @@ enum AccessibilityID {
         "\(menuBarProviderCredits(provider)).amount"
     }
 
+    static func menuBarProviderCreditsRemaining(_ provider: ProviderID) -> String {
+        "\(menuBarProviderCredits(provider)).remaining"
+    }
+
     static func menuBarProviderCreditsBar(_ provider: ProviderID) -> String {
         "\(menuBarProviderCredits(provider)).bar"
     }

@@ -183,32 +183,34 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
 
 /// Workspace credit balance, formatted for the dropdown. The row is purely
 /// presentational — no scaling, no threshold participation.
-/// Mirrors the window rows' label/bar split: `amountLabel` is unclamped
-/// (overspend renders "$-10.00 remaining") while `barFraction` clamps to
-/// 0...1. `limitLabel` fills the windows' countdown slot with the allowance
-/// the bar is charted against ("$50 monthly limit"), using raw `Int`
+/// `amountLabel` is always the Current Balance (wallet). When monthly
+/// remaining is chartable, `remainingLabel` is unclamped (overspend
+/// renders "$-10.00 remaining") while `barFraction` clamps to 0...1.
+/// `limitLabel` fills the windows' countdown slot with the allowance the
+/// bar is charted against ("$50 monthly limit"), using raw `Int`
 /// interpolation for the dollar figure — limits are small whole dollars, so
 /// a grouping-separator surprise at $1,000+ would be more confusing than
-/// helpful. Remaining comes from `CreditBalance.monthlyRemainingUSD` so
-/// the menu bar (`Oc $13`) and this row (`$13.96 remaining`) cannot drift.
-/// When that property is `nil` the row degrades to the wallet balance
-/// alone with `barFraction == nil` (an empty bar next to a real balance
-/// would falsely read "0 remaining") and `limitLabel == nil`.
+/// helpful. Remaining comes from `CreditBalance.monthlyRemainingUSD`.
+/// When that property is `nil` the row keeps the wallet and drops the
+/// remaining line, bar, and limit (`barFraction == nil`: an empty bar
+/// next to a real balance would falsely read "0 remaining").
 public struct DropdownCreditsRow: Equatable, Sendable {
     public let title: String
     public let amountLabel: String
+    public let remainingLabel: String?
     public let barFraction: Double?
     public let limitLabel: String?
 
     public init(credits: CreditBalance, locale: Locale) {
         self.title = "Credits"
+        self.amountLabel = Self.formatCurrency(credits.balanceUSD, locale: locale)
         if let remaining = credits.monthlyRemainingUSD,
            let monthlyLimit = credits.monthlyLimitUSD {
-            self.amountLabel = "\(Self.formatCurrency(remaining, locale: locale)) remaining"
+            self.remainingLabel = "\(Self.formatCurrency(remaining, locale: locale)) remaining"
             self.barFraction = min(1, max(0, remaining / Double(monthlyLimit)))
             self.limitLabel = "$\(monthlyLimit) monthly limit"
         } else {
-            self.amountLabel = Self.formatCurrency(credits.balanceUSD, locale: locale)
+            self.remainingLabel = nil
             self.barFraction = nil
             self.limitLabel = nil
         }
@@ -230,13 +232,21 @@ public struct DropdownCreditsRow: Equatable, Sendable {
     static let placeholder = DropdownCreditsRow(
         title: "Credits",
         amountLabel: "--",
+        remainingLabel: nil,
         barFraction: 0,
         limitLabel: nil
     )
 
-    private init(title: String, amountLabel: String, barFraction: Double?, limitLabel: String?) {
+    private init(
+        title: String,
+        amountLabel: String,
+        remainingLabel: String?,
+        barFraction: Double?,
+        limitLabel: String?
+    ) {
         self.title = title
         self.amountLabel = amountLabel
+        self.remainingLabel = remainingLabel
         self.barFraction = barFraction
         self.limitLabel = limitLabel
     }

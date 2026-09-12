@@ -13,8 +13,8 @@ func creditBalanceMonthlyRemainingIsLimitMinusUsed() {
 
 @Test
 func creditBalanceMonthlyRemainingIsNilWithoutAChartableAllowance() {
-    // The menu bar and dropdown share this nil: both degrade to the
-    // wallet balance when remaining cannot be charted.
+    // The dropdown omits remaining / bar / limit when this is nil and
+    // shows the wallet alone. The menu bar always uses balanceUSD.
     #expect(CreditBalance(balanceUSD: 6.40).monthlyRemainingUSD == nil)
     #expect(
         CreditBalance(balanceUSD: 6.40, monthlyUsedUSD: nil, monthlyLimitUSD: 50)

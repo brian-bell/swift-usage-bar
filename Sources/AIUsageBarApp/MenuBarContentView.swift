@@ -145,11 +145,21 @@ private struct CreditsRowView: View {
             }
             .font(.caption)
 
+            if let remainingLabel = row.remainingLabel {
+                Text(remainingLabel)
+                    .monospacedDigit()
+                    .font(.caption)
+                    .padding(.leading, 52)
+                    .accessibilityIdentifier(
+                        AccessibilityID.menuBarProviderCreditsRemaining(provider)
+                    )
+            }
+
             if let barFraction = row.barFraction {
                 ProgressView(value: barFraction)
                     .progressViewStyle(.linear)
                     .accessibilityIdentifier(AccessibilityID.menuBarProviderCreditsBar(provider))
-                    .accessibilityValue(row.amountLabel)
+                    .accessibilityValue(row.remainingLabel ?? row.amountLabel)
             }
         }
     }
