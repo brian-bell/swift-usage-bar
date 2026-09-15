@@ -266,7 +266,7 @@ struct AppSettingsDraftProvidersTabTests {
 
             #expect(model.xaiTeamID == "00000000-0000-4000-8000-000000000001")
             #expect(settingsStore.xaiTeamID == "00000000-0000-4000-8000-000000000001")
-            #expect(try keyStore.read(mode: .background) == "xai-mgmt")
+            #expect((try? keyStore.read(mode: .background)) == "xai-mgmt")
         }
     }
 
@@ -285,7 +285,7 @@ struct AppSettingsDraftProvidersTabTests {
             draft.xaiManagementKey = ""
             draft.apply(to: model)
 
-            #expect(try keyStore.read(mode: .background) == "keep-me")
+            #expect((try? keyStore.read(mode: .background)) == "keep-me")
         }
     }
 
