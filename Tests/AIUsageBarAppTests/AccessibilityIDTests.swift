@@ -11,6 +11,7 @@ func accessibilityIDProviderTokensMatchCatalog() {
     #expect(AccessibilityID.providerToken(.openCodeCredits) == "opencodeCredits")
     #expect(AccessibilityID.providerToken(.miniMax) == "minimax")
     #expect(AccessibilityID.providerToken(.cursor) == "cursor")
+    #expect(AccessibilityID.providerToken(.kimi) == "kimi")
 }
 
 @Test

@@ -89,6 +89,7 @@ func liveProvidersState(
             .openCodeCredits: .hidden,
             .miniMax: .hidden,
             .cursor: .hidden,
+            .kimi: .hidden,
         ],
         lastSuccessfulRefreshes: [
             .claude: lastSuccess,
@@ -97,6 +98,31 @@ func liveProvidersState(
         lastDataSources: [
             .claude: .claudeWebSession,
             .codex: .codexAPI,
+        ]
+    )
+}
+
+let uiTestKimiUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    credits: CreditBalance(balanceUSD: 12.34)
+)
+
+/// Kimi visible and fresh, wallet-only (no monthly remaining / bar).
+@MainActor
+func kimiFreshState(
+    asOf: Date = uiTestNow,
+    lastSuccess: Date = uiTestNow.addingTimeInterval(-120)
+) -> AppState {
+    AppState(
+        providerStates: [
+            .kimi: .fresh(uiTestKimiUsage, asOf: asOf),
+        ],
+        lastSuccessfulRefreshes: [
+            .kimi: lastSuccess,
+        ],
+        lastDataSources: [
+            .kimi: .kimiOpenPlatformBalance,
         ]
     )
 }

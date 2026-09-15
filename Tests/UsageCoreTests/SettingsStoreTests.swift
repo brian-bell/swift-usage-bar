@@ -14,6 +14,7 @@ func settingsStoreReturnsDefaultsWhenNothingHasBeenSaved() {
         #expect(!store.isProviderVisible(.openCodeCredits))
         #expect(!store.isProviderVisible(.miniMax))
         #expect(!store.isProviderVisible(.cursor))
+        #expect(!store.isProviderVisible(.kimi))
         #expect(store.warningThresholds == [15])
         #expect(!store.launchAtLoginEnabled)
     }
@@ -26,13 +27,17 @@ func providerIDIsHiddenByDefaultReportsMembershipInTheSingleSourceOfTruth() {
     // AppSettingsDraft) all read from this membership. Pin it directly so
     // adding a fifth default-hidden provider — or un-hiding one — can't
     // drift between sites silently.
-    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .openCodeCredits, .miniMax, .cursor])
+    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .openCodeCredits, .miniMax, .cursor, .kimi])
     #expect(!ProviderID.claude.isHiddenByDefault)
     #expect(!ProviderID.codex.isHiddenByDefault)
     #expect(ProviderID.openCodeGo.isHiddenByDefault)
     #expect(ProviderID.openCodeCredits.isHiddenByDefault)
     #expect(ProviderID.miniMax.isHiddenByDefault)
     #expect(ProviderID.cursor.isHiddenByDefault)
+    #expect(ProviderID.kimi.isHiddenByDefault)
+    #expect(ProviderID.kimi.reportsCreditsBalance)
+    #expect(ProviderID.openCodeCredits.reportsCreditsBalance)
+    #expect(!ProviderID.miniMax.reportsCreditsBalance)
 }
 
 @Test

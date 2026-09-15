@@ -321,12 +321,12 @@ public extension ProviderDataSource {
                 return "Desktop helper unavailable"
             case .claudeWebSession, .claudeOAuthAPI, .codexAPI,
                  .openCodeGoChromeCookie, .openCodeCreditsChromeCookie,
-                 .minimaxTokenPlanAPI, .cursorUsageSummary:
+                 .minimaxTokenPlanAPI, .cursorUsageSummary, .kimiOpenPlatformBalance:
                 return "Network error"
             }
         case .tokenExpired:
             switch self {
-            case .minimaxTokenPlanAPI:
+            case .minimaxTokenPlanAPI, .kimiOpenPlatformBalance:
                 // An `sk-…` API key doesn't expire on the wire the way an
                 // OAuth token does — the server rejects it, so name the cause.
                 return "Key rejected"
@@ -337,7 +337,7 @@ public extension ProviderDataSource {
             }
         case .sessionExpired:
             switch self {
-            case .minimaxTokenPlanAPI:
+            case .minimaxTokenPlanAPI, .kimiOpenPlatformBalance:
                 return "Key rejected"
             case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache,
                  .codexAPI, .codexAppServer, .openCodeGoChromeCookie,
@@ -362,7 +362,8 @@ public extension ProviderDataSource {
                 return "No cache file"
             case .codexAppServer:
                 return "Desktop sign-in unavailable"
-            case .claudeOAuthAPI, .codexAPI, .minimaxTokenPlanAPI, .cursorUsageSummary:
+            case .claudeOAuthAPI, .codexAPI, .minimaxTokenPlanAPI, .cursorUsageSummary,
+                 .kimiOpenPlatformBalance:
                 return "No credential found"
             }
         }
@@ -400,6 +401,11 @@ private extension ProviderID {
             return """
                 Reads the Cursor IDE session token from state.vscdb and the dashboard \
                 usage-summary. All access is read-only.
+                """
+        case .kimi:
+            return """
+                Reads only the OpenCode auth.json key for Moonshot AI (Kimi Open Platform). \
+                All access is read-only.
                 """
         }
     }
@@ -465,6 +471,13 @@ private extension ProviderID {
         case (.cursor, .credentialUnavailable):
             return prefix + "Sign in to the Cursor app on this Mac, then choose Refresh Now "
                 + "from the menu bar."
+        case (.kimi, .credentialUnavailable):
+            return prefix + "No Kimi key found. Sign in to the Moonshot AI provider in "
+                + "OpenCode (run: opencode auth login) \u{2014} AIUsageBar borrows that key "
+                + "read-only \u{2014} then choose Refresh Now from the menu bar."
+        case (.kimi, .tokenExpired), (.kimi, .sessionExpired):
+            return prefix + "The Kimi key was rejected. Re-authenticate the Moonshot AI "
+                + "provider in OpenCode, then choose Refresh Now from the menu bar."
         case (_, .networkError):
             return prefix + "Check your network connection, then choose Refresh Now from "
                 + "the menu bar."
@@ -491,6 +504,8 @@ private extension ProviderID {
             return "MiniMax"
         case .cursor:
             return "Cursor"
+        case .kimi:
+            return "Kimi"
         }
     }
 }
@@ -517,6 +532,8 @@ private extension StaleReason {
                 return "MiniMax key rejected"
             case .cursor:
                 return "Cursor session expired"
+            case .kimi:
+                return "Kimi key rejected"
             }
         case .credentialUnavailable:
             switch provider {
@@ -532,6 +549,8 @@ private extension StaleReason {
                 return "No MiniMax key found"
             case .cursor:
                 return "No Cursor sign-in found"
+            case .kimi:
+                return "No Kimi key found"
             }
         case .sessionExpired:
             switch provider {
@@ -545,12 +564,14 @@ private extension StaleReason {
                 return "MiniMax key rejected"
             case .cursor:
                 return "Cursor session expired"
+            case .kimi:
+                return "Kimi key rejected"
             }
         case .workspaceSelectionRequired:
             switch provider {
             case .openCodeGo, .openCodeCredits:
                 return "Choose a workspace in Settings"
-            case .claude, .codex, .miniMax, .cursor:
+            case .claude, .codex, .miniMax, .cursor, .kimi:
                 return "Workspace selection required"
             }
         }

@@ -160,7 +160,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: provider.monthlyDropdownTitle)
                 : nil
             self.fable = nil
-            self.credits = provider == .openCodeCredits ? .placeholder : nil
+            self.credits = provider.reportsCreditsBalance ? .placeholder : nil
             self.statusTone = nil
         case .hidden:
             self.isStale = false
@@ -175,7 +175,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: provider.monthlyDropdownTitle)
                 : nil
             self.fable = nil
-            self.credits = provider == .openCodeCredits ? .placeholder : nil
+            self.credits = provider.reportsCreditsBalance ? .placeholder : nil
             self.statusTone = nil
         }
     }
@@ -352,6 +352,8 @@ private extension ProviderID {
             return "MiniMax"
         case .cursor:
             return "Cursor"
+        case .kimi:
+            return "Kimi"
         }
     }
 
@@ -405,13 +407,15 @@ private extension ProviderID {
             return true
         case .cursor:
             return false
+        case .kimi:
+            return false
         }
     }
 
-    /// Everything except the credits provider has a weekly window; its row
-    /// is the dollar balance alone.
+    /// Credits-style providers have no weekly window; their row is the
+    /// dollar balance alone.
     var showsWeeklyWindow: Bool {
-        self != .openCodeCredits
+        !reportsCreditsBalance
     }
 }
 
@@ -435,6 +439,8 @@ private extension StaleReason {
                 // must say so; the generic "token expired" makes it look
                 // like an OAuth/Keychain expiry.
                 return "MiniMax key rejected; re-authenticate in OpenCode"
+            case .kimi:
+                return "Kimi key rejected; re-authenticate in OpenCode"
             case .claude, .codex, .openCodeGo, .openCodeCredits, .cursor:
                 return "token expired"
             }
@@ -444,7 +450,7 @@ private extension StaleReason {
                 // For credits, "no credential" is most often "no billing
                 // configured on the workspace" — the cookie itself was fine.
                 return "no credits balance found"
-            case .claude, .codex, .openCodeGo, .miniMax, .cursor:
+            case .claude, .codex, .openCodeGo, .miniMax, .cursor, .kimi:
                 return "credential unavailable"
             }
         case .workspaceSelectionRequired:
@@ -453,10 +459,10 @@ private extension StaleReason {
                 return "select an OpenCode Go workspace in Settings"
             case .openCodeCredits:
                 return "select an OpenCode workspace in Settings"
-            case .claude, .codex, .miniMax, .cursor:
+            case .claude, .codex, .miniMax, .cursor, .kimi:
                 // Unreachable in practice (no other provider surfaces this
                 // reason today), but the alternative would be to point
-                // Claude/Codex/MiniMax at a Settings field that only
+                // Claude/Codex/MiniMax/Kimi at a Settings field that only
                 // exists for OpenCode Go.
                 return "workspace selection required"
             }
@@ -475,6 +481,8 @@ private extension StaleReason {
                 return "MiniMax key rejected; re-authenticate in OpenCode"
             case .cursor:
                 return "Cursor session expired; sign in again in the Cursor app"
+            case .kimi:
+                return "Kimi key rejected; re-authenticate in OpenCode"
             }
         }
     }

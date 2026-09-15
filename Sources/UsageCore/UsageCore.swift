@@ -18,11 +18,12 @@ public struct UsageWindow: Equatable, Sendable {
     }
 }
 
-/// Workspace credit balance, sourced from OpenCode's billing record. The type
-/// is intentionally numeric-only: it has no fields for payment metadata
-/// (customer id, payment method, subscription, …), so a parser that pulls
-/// the three values out of the raw page cannot accidentally surface anything
-/// else — the structural limit on the type is the privacy guarantee.
+/// Credit / remaining-balance snapshot. The type is intentionally
+/// numeric-only: it has no fields for payment metadata (customer id,
+/// payment method, subscription, voucher/cash split, …), so a parser that
+/// pulls the numbers out of a raw payload cannot accidentally surface
+/// anything else — the structural limit on the type is the privacy
+/// guarantee.
 public struct CreditBalance: Equatable, Sendable {
     /// Dollars remaining on the workspace balance. Raw — rounding to cents
     /// happens at the formatter, not here, so two captures compare equal.
@@ -59,13 +60,11 @@ public struct ProviderUsage: Equatable, Sendable {
     public let monthly: UsageWindow?
     // Model-scoped weekly window (Claude's "Fable" limit), when the API reports one.
     public let fable: UsageWindow?
-    /// Workspace credit balance, set only by the OpenCode Credits provider —
-    /// it renders as that provider's menu-bar segment and dropdown row, and
-    /// is excluded from tone and threshold notifications (a dollar balance
-    /// has no percent window). The type is numeric-only by design (no
-    /// payment metadata), so a parser that extracts the three numeric
-    /// values cannot accidentally surface anything else. See
-    /// `docs/PLAN-opencode-credits.md`.
+    /// Dollar remaining-balance, set only by credits-style providers
+    /// (OpenCode Credits, Kimi Open Platform). It renders as that
+    /// provider's menu-bar segment and dropdown row, and is excluded from
+    /// tone and threshold notifications (a dollar balance has no percent
+    /// window). The type is numeric-only by design (no payment metadata).
     public let credits: CreditBalance?
 
     public init(
@@ -117,6 +116,7 @@ public enum ProviderID: CaseIterable, Hashable, Sendable {
     case openCodeCredits
     case miniMax
     case cursor
+    case kimi
 
     /// Providers that ship hidden: their menu-bar row, dropdown entry, and
     /// default Settings visibility all skip them until they are explicitly
@@ -124,8 +124,19 @@ public enum ProviderID: CaseIterable, Hashable, Sendable {
     /// site that needs to special-case a default-hidden provider reads from
     /// here rather than maintaining its own list.
     public static let defaultHiddenProviders: Set<ProviderID> = [
-        .openCodeGo, .openCodeCredits, .miniMax, .cursor,
+        .openCodeGo, .openCodeCredits, .miniMax, .cursor, .kimi,
     ]
+
+    /// Providers whose product is a dollar remaining-balance, not percent
+    /// windows. They stay out of tone and threshold notifications.
+    public var reportsCreditsBalance: Bool {
+        switch self {
+        case .openCodeCredits, .kimi:
+            return true
+        case .claude, .codex, .openCodeGo, .miniMax, .cursor:
+            return false
+        }
+    }
 
     /// Whether this provider ships hidden. The opposite direction of
     /// `isProviderVisible` for an unrecorded UserDefaults key.
@@ -204,6 +215,8 @@ private extension ProviderID {
             return "MiniMax"
         case .cursor:
             return "Cursor"
+        case .kimi:
+            return "Kimi"
         }
     }
 }
@@ -2761,7 +2774,7 @@ private extension ProviderUsage {
             return weekly.percentRemaining.map(String.init) ?? "--"
         case .openCodeGo:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")/\(monthly?.percentRemaining.map(String.init) ?? "--")"
-        case .openCodeCredits:
+        case .openCodeCredits, .kimi:
             // Current Balance (wallet), not monthly remaining. Rounded
             // down: a balance display must never claim money the user
             // doesn't have (percent segments round to nearest, but that
@@ -2796,6 +2809,8 @@ private func remainingPlaceholder(for provider: ProviderID) -> String {
         return "--/--"
     case .cursor:
         return "--/--"
+    case .kimi:
+        return "--"
     }
 }
 
@@ -2814,6 +2829,8 @@ private extension ProviderID {
             return "Mx"
         case .cursor:
             return "Cu"
+        case .kimi:
+            return "Km"
         }
     }
 }

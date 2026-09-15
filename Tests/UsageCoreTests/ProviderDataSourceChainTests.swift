@@ -20,6 +20,7 @@ func providerDataSourceChainListsEachProvidersSourcesInFallbackOrder() {
     #expect(ProviderID.openCodeCredits.dataSourceChain == [.openCodeCreditsChromeCookie])
     #expect(ProviderID.miniMax.dataSourceChain == [.minimaxTokenPlanAPI])
     #expect(ProviderID.cursor.dataSourceChain == [.cursorUsageSummary])
+    #expect(ProviderID.kimi.dataSourceChain == [.kimiOpenPlatformBalance])
 }
 
 @Test
@@ -37,6 +38,16 @@ func minimaxTokenPlanAPIDataSourceNamesMatchTheProviderStatusConvention() {
     #expect(ProviderDataSource.minimaxTokenPlanAPI.provider == .miniMax)
     #expect(ProviderDataSource.minimaxTokenPlanAPI.displayName == "MiniMax token plan API")
     #expect(ProviderDataSource.minimaxTokenPlanAPI.chainStepName == "MiniMax token plan API (OpenCode key)")
+}
+
+@Test
+func kimiOpenPlatformBalanceDataSourceNamesMatchTheProviderStatusConvention() {
+    #expect(ProviderDataSource.kimiOpenPlatformBalance.provider == .kimi)
+    #expect(ProviderDataSource.kimiOpenPlatformBalance.displayName == "Kimi Open Platform balance API")
+    #expect(
+        ProviderDataSource.kimiOpenPlatformBalance.chainStepName
+            == "Kimi Open Platform \u{00B7} OpenCode key"
+    )
 }
 
 @Test
@@ -323,6 +334,10 @@ func minimaxTokenPlanAPIChainStepPhraseRoutesPerSource() {
     )
     #expect(
         ProviderDataSource.minimaxTokenPlanAPI.chainFailureSummary(for: .sessionExpired)
+            == "Key rejected"
+    )
+    #expect(
+        ProviderDataSource.kimiOpenPlatformBalance.chainFailureSummary(for: .tokenExpired)
             == "Key rejected"
     )
     // The other HTTPS API sources keep their generic wording.

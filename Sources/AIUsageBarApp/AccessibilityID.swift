@@ -55,6 +55,8 @@ enum AccessibilityID {
             return "minimax"
         case .cursor:
             return "cursor"
+        case .kimi:
+            return "kimi"
         }
     }
 

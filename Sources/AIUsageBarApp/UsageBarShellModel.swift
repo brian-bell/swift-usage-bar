@@ -291,6 +291,10 @@ extension UsageBarShellModel {
                 credentialReader: CursorIDECredentialReader(),
                 transport: CursorUsageHTTPTransport()
             ),
+            .kimi: KimiOpenPlatformUsageProvider(
+                credentialReader: MoonshotAuthFileCredentialReader(),
+                transport: KimiOpenPlatformHTTPTransport()
+            ),
         ]
     }
 

@@ -26,6 +26,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
     case minimaxTokenPlanAPI
     /// Cursor: dashboard usage-summary authenticated by the IDE `state.vscdb` JWT.
     case cursorUsageSummary
+    /// Kimi Open Platform: remaining-balance API authenticated by an OpenCode auth.json key.
+    case kimiOpenPlatformBalance
 
     public var provider: ProviderID {
         switch self {
@@ -41,6 +43,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return .miniMax
         case .cursorUsageSummary:
             return .cursor
+        case .kimiOpenPlatformBalance:
+            return .kimi
         }
     }
 
@@ -63,6 +67,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "MiniMax token plan API"
         case .cursorUsageSummary:
             return "Cursor usage-summary API"
+        case .kimiOpenPlatformBalance:
+            return "Kimi Open Platform balance API"
         }
     }
 
@@ -83,6 +89,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "MiniMax token plan API (OpenCode key)"
         case .cursorUsageSummary:
             return "Cursor usage-summary \u{00B7} Local IDE session"
+        case .kimiOpenPlatformBalance:
+            return "Kimi Open Platform \u{00B7} OpenCode key"
         }
     }
 }
@@ -105,6 +113,8 @@ public extension ProviderID {
             return [.minimaxTokenPlanAPI]
         case .cursor:
             return [.cursorUsageSummary]
+        case .kimi:
+            return [.kimiOpenPlatformBalance]
         }
     }
 }

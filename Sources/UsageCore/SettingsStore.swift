@@ -170,6 +170,8 @@ private extension ProviderID {
             return "miniMax"
         case .cursor:
             return "cursor"
+        case .kimi:
+            return "kimi"
         }
     }
 }
