@@ -11,17 +11,19 @@ the code disagree, the code and its tests win.
 
 **AIUsageBar**: a native macOS menu bar app (SwiftUI `MenuBarExtra`, macOS
 14+) showing **percent remaining** for Claude, Codex, OpenCode Go, MiniMax,
-and Cursor, plus the **OpenCode workspace credit balance** as its own provider
-(menu bar `Oc $47`, hidden by default, toggled independently of OpenCode
-Go). Cursor is hidden by default and shows Cursor Models / Other Models as
-`Cu 62/81` (the first slot is omitted when the payload has no first-party
-pool), plus a third slot for Grok Bot (`Cu 62/81/56`) whenever the same-host
-Sand request reports an included weekly allowance — omitted rather than
-dashed when it doesn't. Dropdown labels are `Cursor` / `Other` / `Bot`.
-Providers borrow existing local state read-only (Keychain, Chrome
-cookies, OpenCode's `auth.json`, a statusline cache file, Cursor's
-`state.vscdb`) and degrade to a greyed "stale" state instead of erroring. Per-provider retrieval order and
-fallbacks: `ProviderID.dataSourceChain` in
+and Cursor, plus remaining-balance providers for the **OpenCode workspace
+credit balance** (`Oc $47`) and **Kimi Open Platform** (`Km $12`,
+`api.moonshot.ai` only). Both balance providers are hidden by default;
+OpenCode Credits toggles independently of OpenCode Go. Cursor is hidden by
+default and shows Cursor Models / Other Models as `Cu 62/81` (the first
+slot is omitted when the payload has no first-party pool), plus a third
+slot for Grok Bot (`Cu 62/81/56`) whenever the same-host Sand request
+reports an included weekly allowance — omitted rather than dashed when it
+doesn't. Dropdown labels are `Cursor` / `Other` / `Bot`. Providers borrow
+existing local state read-only (Keychain, Chrome cookies, OpenCode's
+`auth.json`, a statusline cache file, Cursor's `state.vscdb`) and degrade
+to a greyed "stale" state instead of erroring. Per-provider retrieval
+order and fallbacks: `ProviderID.dataSourceChain` in
 `Sources/UsageCore/ProviderDataSource.swift` and `docs/endpoints.md`.
 Credits stay out of tone and threshold notifications (a dollar balance has
 no percent window); both OpenCode providers share the one workspace-ID
@@ -84,9 +86,12 @@ fake shell-model wiring from `Tests/AIUsageBarAppTests/Support/`, never
   OpenCode credits: any change to the credits parser, formatter, or row
   layout must be backed by a sanitized observed fixture (the credit values
   are scrubbed to obviously-synthetic sentinels — see
-  `Tests/Fixtures/opencode-go-usage-billing.html`). Never surface payment
-  metadata (customer id, payment method, subscription, …) from the billing
-  record; `CreditBalance` is numeric-only by construction, and that is the
-  privacy guarantee.
+  `Tests/Fixtures/opencode-go-usage-billing.html`). Kimi Open Platform:
+  any change to the balance parser must be backed by
+  `Tests/Fixtures/kimi-open-platform-balance.json` (synthetic
+  `available_balance` only; voucher/cash stay in the fixture and are not
+  decoded). Never surface payment metadata (customer id, payment method,
+  subscription, voucher/cash split, …); `CreditBalance` is numeric-only
+  by construction, and that is the privacy guarantee.
 - Never commit real credentials or unsanitized captures.
 - Feature branches only; never commit or push directly to `main`.

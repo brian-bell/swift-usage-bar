@@ -12,7 +12,7 @@ Access is strictly **read-only**: the app borrows state your CLIs already mainta
 - Dropdown with per-window progress bars and reset countdowns ("resets in 2h 14m", or weekday + time when more than a day out)
 - Polls every 2 minutes (configurable: 1/2/5/10 min), plus on Mac wake and on manual refresh
 - Notification when a window drops below a threshold (default 20%, configurable) — fired once per window per reset cycle
-- Per-provider show/hide toggles, launch-at-login, and staged OK/Cancel edits in Settings; OpenCode Go is off by default
+- Per-provider show/hide toggles, launch-at-login, and staged OK/Cancel edits in Settings; OpenCode Go, OpenCode Credits, MiniMax, Cursor, and Kimi are off by default
 - Menu-bar-only app (`LSUIElement`): no Dock icon
 
 ## How it gets the data
@@ -22,6 +22,7 @@ Access is strictly **read-only**: the app borrows state your CLIs already mainta
 | Claude | Reads Claude Code's Keychain credential (read-only, falling back to `~/.claude/.credentials.json` on Claude Code versions that store the credential there) and calls `GET https://api.anthropic.com/api/oauth/usage`, falling back to the statusline JSON cached locally by `scripts/claude-statusline-cache` when the API path is unavailable |
 | Codex | Codex CLI's Keychain credential (read-only) → `GET https://chatgpt.com/backend-api/wham/usage` |
 | OpenCode Go | Reads only Chrome's `auth` or `__Host-auth` cookie for `opencode.ai`, discovers the qualifying workspace (or uses the optional Settings override), then reads `https://opencode.ai/workspace/<workspace-id>/go` |
+| Kimi | Reads the OpenCode `auth.json` `moonshotai` key (read-only) → `GET https://api.moonshot.ai/v1/users/me/balance` (remaining USD balance; hidden by default) |
 
 Background polls read the Keychain in a prompt-proof mode: if macOS would need to ask for permission, the read fails silently, so a Keychain dialog can only appear from a manual **Refresh now**. The app never refreshes OAuth tokens or imported browser cookies. Claude can fall back to its statusline cache; other unavailable providers degrade to a greyed stale display while preserving their last-known usage.
 

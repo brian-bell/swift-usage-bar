@@ -348,6 +348,9 @@ func dropdownRowsOmitFiveHourPlaceholderForStaleCodexWithoutData() throws {
     (.cursor, .tokenExpired, "Stale: token expired"),
     (.cursor, .sessionExpired, "Stale: Cursor session expired; sign in again in the Cursor app"),
     (.cursor, .workspaceSelectionRequired, "Stale: workspace selection required"),
+    (.kimi, .tokenExpired, "Stale: Kimi key rejected; re-authenticate in OpenCode"),
+    (.kimi, .sessionExpired, "Stale: Kimi key rejected; re-authenticate in OpenCode"),
+    (.kimi, .workspaceSelectionRequired, "Stale: workspace selection required"),
 ])
 func dropdownStaleMessageNamesTheFailingProvider(
     provider: ProviderID,
@@ -732,6 +735,44 @@ func dropdownProviderRowHasNilCreditsForOtherProviders() throws {
         let row = try #require(model.rows.first { $0.provider == provider })
         #expect(row.credits == nil)
     }
+}
+
+@Test
+func dropdownKimiRowShowsWalletOnlyCredits() throws {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        credits: CreditBalance(balanceUSD: 12.34)
+    )
+    let model = DropdownViewModel(
+        states: [.kimi: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .kimi })
+    #expect(row.providerName == "Kimi")
+    #expect(row.fiveHour == nil)
+    #expect(row.weekly == nil)
+    #expect(row.monthly == nil)
+    let credits = try #require(row.credits)
+    #expect(credits.title == "Credits")
+    #expect(credits.amountLabel == "$12.34")
+    #expect(credits.remainingLabel == nil)
+    #expect(credits.barFraction == nil)
+}
+
+@Test
+func dropdownSkipsKimiUntilItHasReported() {
+    let model = DropdownViewModel(
+        states: [.claude: .fresh(claudeUsage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(!model.rows.contains { $0.provider == .kimi })
 }
 
 @Test

@@ -144,7 +144,7 @@ func menuBarLabelImageUsesReadableFontForSingleProvider(provider: ProviderID) th
         value = "62/81"
     case .codex, .openCodeGo:
         value = "90"
-    case .openCodeCredits:
+    case .openCodeCredits, .kimi:
         value = "$47"
     }
     let segment = MenuBarTitleSegment(provider: provider, value: value, isStale: false)

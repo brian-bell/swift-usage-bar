@@ -81,7 +81,7 @@ enum ProviderIconAsset {
         case .openCodeGo, .openCodeCredits:
             // Credits shares the OpenCode mark; the row title disambiguates.
             return "ProviderIcon-opencode-go"
-        case .miniMax, .cursor:
+        case .miniMax, .cursor, .kimi:
             return nil
         }
     }
@@ -120,6 +120,8 @@ struct ProviderIconView: View {
             return "M"
         case .cursor:
             return "C"
+        case .kimi:
+            return "K"
         }
     }
 }

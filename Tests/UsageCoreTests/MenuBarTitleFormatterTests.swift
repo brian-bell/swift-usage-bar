@@ -503,6 +503,25 @@ func menuBarTitleFormatterMarksStaleCreditsAndFallsBackToPlaceholder() {
 }
 
 @Test
+func menuBarTitleFormatterRendersKimiAsWholeDollars() {
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .kimi: creditsState(balanceUSD: 12.34),
+    ]) == [
+        MenuBarTitleSegment(provider: .kimi, value: "$12", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterSkipsKimiUntilItHasReported() {
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .fresh(codexUsage, asOf: Date(timeIntervalSince1970: 20)),
+    ]).contains { $0.provider == .kimi } == false)
+}
+
+@Test
 func menuBarTitleFormatterSkipsTheCreditsProviderUntilItHasReported() {
     // Default-hidden provider contract: no state → no segment, no
     // placeholder — identical to OpenCode Go and MiniMax.

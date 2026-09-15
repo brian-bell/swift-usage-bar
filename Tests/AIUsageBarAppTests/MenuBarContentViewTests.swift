@@ -99,6 +99,36 @@ struct HostedUITests {
     }
 
     @Test
+    func menuBarContentViewRendersKimiWalletOnlyCreditsRow() throws {
+        let settingsStore = SettingsStore(defaults: isolatedDefaults())
+        settingsStore.setProvider(.kimi, visible: true)
+
+        let host = onMain {
+            UITestHost.dropdown(
+                MenuBarContentView(
+                    model: shellModel(
+                        appState: kimiFreshState(),
+                        settingsStore: settingsStore
+                    )
+                )
+            )
+        }
+        defer { onMain { host.close() } }
+        let ax = AXQuery(windowTitle: host.windowTitle)
+
+        #expect(
+            pollUntil { ax.exists(AccessibilityID.menuBarProviderCredits(.kimi)) },
+            "Missing Kimi credits row. Tree:\n\(ax.dumpIdentifiers())"
+        )
+        #expect(!ax.exists(AccessibilityID.menuBarWindow(.kimi, .fiveHour)))
+        #expect(!ax.exists(AccessibilityID.menuBarWindow(.kimi, .weekly)))
+        #expect(ax.firstValue(containing: "$12.34") != nil)
+        #expect(ax.exists(AccessibilityID.menuBarProviderCreditsAmount(.kimi)))
+        #expect(!ax.exists(AccessibilityID.menuBarProviderCreditsRemaining(.kimi)))
+        #expect(!ax.exists(AccessibilityID.menuBarProviderCreditsBar(.kimi)))
+    }
+
+    @Test
     func menuBarContentViewRendersCursorGrokBotRow() throws {
         let settingsStore = SettingsStore(defaults: isolatedDefaults())
         settingsStore.setProvider(.cursor, visible: true)

@@ -122,3 +122,25 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 - `GET /api/usage?user=` and `POST /api/dashboard/get-filtered-usage-events` — event/legacy paths; not needed for the two pool percents.
 - Inferring Grok Bot from `usage-summary` `used`/`limit`, `totalPercentUsed`, or `onDemand` — those are a different meter (and `used`/`limit` already disagrees with the pool percents).
 - On-demand / overspend / payment metadata, extra browsers, manual cookie paste, multi-account.
+
+## Kimi Open Platform (remaining balance)
+
+- Product: pay-as-you-go Kimi models on the international Open Platform. **Not** Kimi Code (membership quota windows). Official meter is remaining USD balance — there is no percent window.
+- Auth source: read-only access to `${XDG_DATA_HOME:-~/.local/share}/opencode/auth.json`, key `moonshotai`, field `key`. Live evidence on the development machine (2026-09-14). The reader ignores the entry's `type` field and only requires a non-empty `key`. The file is read once per fetch; never written, never logged. `moonshotai-cn` and `kimi-for-coding` are different products and are not read.
+- Endpoint: `GET https://api.moonshot.ai/v1/users/me/balance` with `Authorization: Bearer <key>`, `Accept: application/json`, and `User-Agent: AIUsageBar/<version>`. Official docs: [Check Balance](https://platform.kimi.ai/docs/api/balance).
+- Live result (2026-09-14): HTTP 200 `application/json; charset=utf-8`. Sanitized fixture `Tests/Fixtures/kimi-open-platform-balance.json` (synthetic `12.34` / `10` / `2.34`; real balances never committed). Observed keys: top-level `code` (int), `data` (`available_balance` float, `voucher_balance` int, `cash_balance` float), `scode` (string `"0x0"`), `status` (bool).
+- Response shape (fields the app uses): `code == 0` and `status == true`, then `data.available_balance` (USD, JSON number). Zero and negative balances are real wallets (docs: `≤ 0` blocks inference). `voucher_balance`, `cash_balance`, and `scode` are ignored — `CreditBalance` is numeric-only by construction.
+- Mapping: `available_balance` → `CreditBalance.balanceUSD`. Percent windows stay `nil`, so Kimi stays out of tone and threshold notifications. Menu bar `Km $12` (whole dollars, rounded down); dropdown shows the wallet with cents and no monthly remaining/bar.
+- Failure mapping: missing/unreadable `auth.json` or empty/absent `moonshotai` key → `.credentialUnavailable`; HTTP 401 (official OpenAPI: invalid or missing API key; live 401 body is `error.{message,type}`, not parsed) → `.tokenExpired`; malformed body / `code != 0` / `status != true` / missing `available_balance` → `.parseFailure`; other transport failures → `.networkError`. AIUsageBar never refreshes the key.
+- Transport: shared `HTTPTransport` via `KimiOpenPlatformHTTPTransport`. Single GET to the fixed URL. HTTP 401 throws `KimiOpenPlatformTransportError.notAuthenticated`; other non-2xx throw `URLError(.badServerResponse)`. No cookie jar, no Origin/Referer, no host allow-list beyond the fixed endpoint.
+- Consumer: standalone **Kimi** provider (`KimiOpenPlatformUsageProvider`, chain `[.kimiOpenPlatformBalance]`, menu bar `Km`, hidden by default).
+
+### Rejected alternatives
+
+- `https://api.moonshot.cn` (CNY Open Platform) — extra region; MiniMax already rejected its China twin. Keys from `platform.kimi.com` 401 on `.ai`.
+- `https://api.kimi.com/coding/v1/usages` and `https://api.kimi.ai/coding/v1` — Kimi Code, a different product with different credentials and a percent-window meter.
+- `GET /v1/users/me` — undocumented; returns org/tier/RPM/TPM **caps**, not remaining. OpenUsage invents a percent from a disk high-water mark; incompatible here.
+- Env vars (`MOONSHOT_API_KEY` / `MOONSHOT_KEY`), Keychain, extra browsers, CodexBar config, OAuth refresh.
+- Reading `moonshotai-cn` or `kimi-for-coding` from `auth.json`.
+- Surfacing `voucher_balance` / `cash_balance` / deficit, or inventing a percent denominator.
+- One parser that accepts both Code `/usages` and Open Platform `/balance` bodies.

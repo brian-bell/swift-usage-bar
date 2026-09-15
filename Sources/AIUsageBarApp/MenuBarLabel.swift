@@ -146,6 +146,8 @@ enum MenuBarLabelImage {
             return "Mx"
         case .cursor:
             return "Cu"
+        case .kimi:
+            return "Km"
         }
     }
 }

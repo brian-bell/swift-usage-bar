@@ -281,6 +281,51 @@ func providerStatusRendersOffForHiddenProvider() throws {
 }
 
 @Test
+func providerStatusShowsKimiLiveChain() throws {
+    let model = ProviderStatusViewModel(
+        states: [.kimi: .fresh(statusUsage, asOf: statusNow)],
+        dataSources: [.kimi: .kimiOpenPlatformBalance],
+        chains: [.kimi: [
+            ProviderDataSourceStep(.kimiOpenPlatformBalance, .used),
+        ]],
+        lastUpdatedAt: [.kimi: statusNow.addingTimeInterval(-120)],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .kimi })
+    #expect(row.indicator == .live)
+    #expect(row.methodLabel == "Kimi Open Platform balance API")
+    #expect(row.text == "Live \u{00B7} Kimi Open Platform balance API \u{00B7} updated 2 min ago")
+    #expect(row.chain.steps.map(\.name) == ["Kimi Open Platform \u{00B7} OpenCode key"])
+    #expect(row.chain.recoveryCallout == nil)
+    #expect(row.chain.caption == """
+        Reads only the OpenCode auth.json key for Moonshot AI (Kimi Open Platform). \
+        All access is read-only.
+        """)
+}
+
+@Test
+func providerStatusShowsKimiKeyRejectedRecoveryCallout() throws {
+    let model = ProviderStatusViewModel(
+        states: [.kimi: .stale(last: statusUsage, reason: .tokenExpired)],
+        chains: [.kimi: [
+            ProviderDataSourceStep(.kimiOpenPlatformBalance, .failed(.tokenExpired)),
+        ]],
+        lastUpdatedAt: [.kimi: statusNow.addingTimeInterval(-600)],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .kimi })
+    #expect(row.methodLabel == "Kimi key rejected")
+    #expect(row.chain.steps.map(\.stateText) == ["Key rejected \u{00B7} 10 min ago"])
+    #expect(
+        row.chain.recoveryCallout
+            == "Showing last-known data. The Kimi key was rejected. Re-authenticate the Moonshot AI "
+                + "provider in OpenCode, then choose Refresh Now from the menu bar."
+    )
+}
+
+@Test
 func providerStatusSummarizesAMissingCreditsBalance() throws {
     // For credits, `.credentialUnavailable` most often means "billing not
     // configured on the workspace", not a missing cookie — the one-line
@@ -301,7 +346,7 @@ func providerStatusCoversEveryProviderInStableOrder() {
 
     #expect(model.rows.map(\.provider) == ProviderID.allCases)
     #expect(model.rows.map(\.providerName) == [
-        "Claude", "Codex", "OpenCode Go", "OpenCode Credits", "MiniMax", "Cursor",
+        "Claude", "Codex", "OpenCode Go", "OpenCode Credits", "MiniMax", "Cursor", "Kimi",
     ])
     #expect(model.rows.map(\.id) == ProviderID.allCases)
 }
@@ -432,6 +477,29 @@ func providerStatusMapsEveryStaleReasonToProviderSpecificPhrasing(
     )
 
     let row = try #require(model.rows.first { $0.provider == provider })
+    #expect(row.methodLabel == expected)
+}
+
+@Test(arguments: [
+    (StaleReason.parseFailure, "Unexpected response format"),
+    (.networkError, "Network error"),
+    (.tokenExpired, "Kimi key rejected"),
+    (.credentialUnavailable, "No Kimi key found"),
+    (.sessionExpired, "Kimi key rejected"),
+    (.workspaceSelectionRequired, "Workspace selection required"),
+])
+func providerStatusMapsKimiStaleReasonsToProviderSpecificPhrasing(
+    reason: StaleReason,
+    expected: String
+) throws {
+    let model = ProviderStatusViewModel(
+        states: [.kimi: .stale(last: statusUsage, reason: reason)],
+        dataSources: [:],
+        lastUpdatedAt: [:],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .kimi })
     #expect(row.methodLabel == expected)
 }
 
