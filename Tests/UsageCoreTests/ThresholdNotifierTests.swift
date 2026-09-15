@@ -1256,3 +1256,25 @@ func thresholdNotifierNeverFiresForKimi() async {
 
     #expect(await sender.sentNotifications().isEmpty)
 }
+
+@Test
+func thresholdNotifierNeverFiresForXAI() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let creditsOnly = { (balance: Double) in
+        ProviderUsage(
+            fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+            weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+            credits: CreditBalance(balanceUSD: balance)
+        )
+    }
+
+    await notifier.evaluate(
+        previous: creditsOnly(50.0),
+        current: creditsOnly(0.01),
+        provider: .xai,
+        thresholds: [20]
+    )
+
+    #expect(await sender.sentNotifications().isEmpty)
+}

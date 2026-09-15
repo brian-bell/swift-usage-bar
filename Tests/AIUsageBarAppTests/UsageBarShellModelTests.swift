@@ -462,6 +462,7 @@ func shellModelExposesProviderStatusRowsForTheSettingsProvidersTab() throws {
             .miniMax: .hidden,
             .cursor: .hidden,
             .kimi: .hidden,
+            .xai: .hidden,
         ],
         lastSuccessfulRefreshes: [
             .claude: referenceNow.addingTimeInterval(-120),
@@ -481,6 +482,7 @@ func shellModelExposesProviderStatusRowsForTheSettingsProvidersTab() throws {
     #expect(try #require(rows.first { $0.provider == .miniMax }).text == "Off")
     #expect(try #require(rows.first { $0.provider == .cursor }).text == "Off")
     #expect(try #require(rows.first { $0.provider == .kimi }).text == "Off")
+    #expect(try #require(rows.first { $0.provider == .xai }).text == "Off")
 }
 
 @Test

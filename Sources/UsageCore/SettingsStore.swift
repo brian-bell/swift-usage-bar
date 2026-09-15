@@ -127,6 +127,18 @@ public final class SettingsStore: @unchecked Sendable {
         }
     }
 
+    public var xaiTeamID: String? {
+        get {
+            XAITeamID.normalizedID(from: defaults.string(forKey: Keys.xaiTeamID))
+        }
+        set {
+            defaults.set(
+                XAITeamID.normalizedID(from: newValue),
+                forKey: Keys.xaiTeamID
+            )
+        }
+    }
+
     public func isProviderVisible(_ provider: ProviderID) -> Bool {
         let key = Keys.providerVisibility(provider)
         guard defaults.object(forKey: key) != nil else {
@@ -149,6 +161,7 @@ private enum Keys {
     static let legacyThresholdPercent = "settings.thresholdPercent"
     static let launchAtLoginEnabled = "settings.launchAtLoginEnabled"
     static let openCodeGoWorkspaceID = "settings.openCodeGo.workspaceID"
+    static let xaiTeamID = "settings.xai.teamID"
 
     static func providerVisibility(_ provider: ProviderID) -> String {
         "settings.provider.\(provider.keyComponent).visible"
@@ -172,6 +185,8 @@ private extension ProviderID {
             return "cursor"
         case .kimi:
             return "kimi"
+        case .xai:
+            return "xai"
         }
     }
 }

@@ -22,6 +22,8 @@ final class UsageBarShellModel {
     private(set) var warningThresholds: [Int]
     private(set) var launchAtLoginEnabled: Bool
     private(set) var openCodeGoWorkspaceID: String?
+    private(set) var xaiTeamID: String?
+    private let xaiManagementKeyStore: any XAIManagementKeyStoring
     private var providerVisibility: [ProviderID: Bool]
     private var settingsOpener: (@MainActor () -> Void)?
     var launchAtLoginError: String?
@@ -31,17 +33,20 @@ final class UsageBarShellModel {
         settingsStore: SettingsStore,
         usageController: any UsageControlling,
         launchAtLoginManager: any LaunchAtLoginManaging,
+        xaiManagementKeyStore: any XAIManagementKeyStoring = InMemoryXAIManagementKeyStore(),
         now: @escaping @MainActor () -> Date = Date.init
     ) {
         self.appState = appState
         self.settingsStore = settingsStore
         self.usageController = usageController
         self.launchAtLoginManager = launchAtLoginManager
+        self.xaiManagementKeyStore = xaiManagementKeyStore
         self.now = now
         self.pollInterval = settingsStore.pollInterval
         self.warningThresholds = settingsStore.warningThresholds
         self.launchAtLoginEnabled = launchAtLoginManager.status.isRegistered
         self.openCodeGoWorkspaceID = settingsStore.openCodeGoWorkspaceID
+        self.xaiTeamID = settingsStore.xaiTeamID
         self.providerVisibility = Dictionary(uniqueKeysWithValues: ProviderID.allCases.map { provider in
             (provider, settingsStore.isProviderVisible(provider))
         })
@@ -103,6 +108,24 @@ final class UsageBarShellModel {
         let normalized = OpenCodeGoWorkspace.normalizedID(from: rawValue)
         openCodeGoWorkspaceID = normalized
         settingsStore.openCodeGoWorkspaceID = normalized
+    }
+
+    func setXAITeamID(_ rawValue: String?) {
+        let normalized = XAITeamID.normalizedID(from: rawValue)
+        xaiTeamID = normalized
+        settingsStore.xaiTeamID = normalized
+    }
+
+    func setXAIManagementKey(_ rawValue: String) {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+        try? xaiManagementKeyStore.write(trimmed)
+    }
+
+    var hasStoredXAIManagementKey: Bool {
+        (try? xaiManagementKeyStore.read(mode: .background))?.isEmpty == false
     }
 
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
@@ -198,6 +221,8 @@ extension UsageBarShellModel {
             chains: chains,
             lastUpdatedAt: lastUpdatedAt,
             workspaceID: openCodeGoWorkspaceID,
+            xaiTeamID: xaiTeamID,
+            hasStoredXAIManagementKey: hasStoredXAIManagementKey,
             now: now()
         )
     }
@@ -227,7 +252,8 @@ extension UsageBarShellModel {
     static func live() -> UsageBarShellModel {
         let settingsStore = SettingsStore()
         let appState = AppState()
-        let providers = liveProviders(settingsStore: settingsStore)
+        let xaiKeyStore = KeychainXAIManagementKeyStore()
+        let providers = liveProviders(settingsStore: settingsStore, xaiKeyStore: xaiKeyStore)
         let notifier = ThresholdNotifier(sender: UserNotificationSender())
         let poller = UsagePoller(
             providers: providers,
@@ -242,11 +268,15 @@ extension UsageBarShellModel {
             appState: appState,
             settingsStore: settingsStore,
             usageController: UsagePollerController(poller: poller),
-            launchAtLoginManager: SystemLaunchAtLoginManager()
+            launchAtLoginManager: SystemLaunchAtLoginManager(),
+            xaiManagementKeyStore: xaiKeyStore
         )
     }
 
-    private static func liveProviders(settingsStore: SettingsStore) -> [ProviderID: any UsageProvider] {
+    private static func liveProviders(
+        settingsStore: SettingsStore,
+        xaiKeyStore: any XAIManagementKeyStoring
+    ) -> [ProviderID: any UsageProvider] {
         // Both OpenCode providers borrow the same Chrome session and share
         // one locked-down transport; each fetches and qualifies on its own.
         let openCodeSessionReader = ChromeOpenCodeSessionReader()
@@ -294,6 +324,13 @@ extension UsageBarShellModel {
             .kimi: KimiOpenPlatformUsageProvider(
                 credentialReader: MoonshotAuthFileCredentialReader(),
                 transport: KimiOpenPlatformHTTPTransport()
+            ),
+            .xai: XAIPrepaidUsageProvider(
+                credentialReader: XAIManagementCredentialReader(
+                    keyStore: xaiKeyStore,
+                    teamID: { settingsStore.xaiTeamID }
+                ),
+                transport: XAIPrepaidHTTPTransport()
             ),
         ]
     }

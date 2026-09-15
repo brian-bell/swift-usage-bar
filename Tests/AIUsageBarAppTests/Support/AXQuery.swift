@@ -59,6 +59,10 @@ struct AXQuery {
         snapshot(id: id) != nil
     }
 
+    func exists(role: String) -> Bool {
+        allSnapshots().contains { $0.role == role }
+    }
+
     func label(_ id: String) -> String? {
         snapshot(id: id)?.label
     }

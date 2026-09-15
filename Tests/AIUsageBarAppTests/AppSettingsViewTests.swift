@@ -73,6 +73,8 @@ extension HostedUITests {
                     providerVisibility: [:],
                     warningThresholds: [30, 15, 5],
                     openCodeGoWorkspace: "",
+                    xaiTeamID: "",
+                    xaiManagementKey: "",
                     launchAtLoginEnabled: false
                 ))
             )
@@ -88,6 +90,65 @@ extension HostedUITests {
         #expect(ax.snapshots(label: "Alert below").filter { $0.role == "AXIncrementor" }.count == 3)
         #expect(ax.snapshots(label: "Remove warning").filter { $0.role == "AXButton" }.count == 3)
         #expect(ax.firstValue(containing: "One alert per level") != nil)
+    }
+
+    @Test
+    func providersSettingsPaneScrollsSoXAICredentialFieldsStayReachable() throws {
+        // Eight provider cards plus an expanded xAI chain do not fit a short
+        // pane. Without a scroll view the team ID and management key sit below
+        // the fold and drop out of the AX tree (same clipping the Settings
+        // window hits on a 13" display). Host the pane standalone: the hosted
+        // window can't switch TabView tabs (see the suite doc).
+        let host = onMain {
+            let settingsStore = SettingsStore(defaults: isolatedDefaults())
+            for provider in ProviderID.allCases {
+                settingsStore.setProvider(provider, visible: true)
+            }
+            let model = shellModel(settingsStore: settingsStore)
+            var draft = AppSettingsDraft.capture(from: model)
+            for provider in ProviderID.allCases {
+                draft.providerVisibility[provider] = true
+            }
+            let rows = model
+                .providerStatusViewModel(stagedVisibility: draft.providerVisibility)
+                .rows
+            return UITestHost.settings(
+                ProvidersPaneHost(
+                    draft: draft,
+                    expandedProviders: [.xai],
+                    statusRows: rows
+                )
+                .frame(width: UITestHost.settingsWidth, height: 280)
+            )
+        }
+        defer { onMain { host.close() } }
+        let ax = AXQuery(windowTitle: host.windowTitle)
+
+        #expect(
+            pollUntil { ax.exists(role: "AXScrollArea") },
+            "Providers pane never published a scroll area. Tree:\n\(ax.dumpIdentifiers())"
+        )
+        #expect(
+            pollUntil { ax.snapshot(label: "xAI team ID") != nil },
+            "xAI team ID field missing. Tree:\n\(ax.dumpIdentifiers())"
+        )
+        #expect(ax.snapshot(label: "xAI management key") != nil)
+    }
+}
+
+/// Hosts the Providers pane standalone with a staged draft — the hosted
+/// window can't switch `TabView` tabs, so the pane renders on its own.
+private struct ProvidersPaneHost: View {
+    @State var draft: AppSettingsDraft
+    @State var expandedProviders: Set<ProviderID>
+    let statusRows: [ProviderStatusRow]
+
+    var body: some View {
+        ProvidersSettingsPane(
+            draft: $draft,
+            expandedProviders: $expandedProviders,
+            statusRows: statusRows
+        )
     }
 }
 

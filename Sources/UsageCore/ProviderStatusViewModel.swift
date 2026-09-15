@@ -42,6 +42,8 @@ public struct ProviderStatusRow: Equatable, Identifiable, Sendable {
         chain: [ProviderDataSourceStep],
         lastUpdatedAt: Date?,
         workspaceID: String?,
+        xaiTeamID: String?,
+        hasStoredXAIManagementKey: Bool,
         now: Date
     ) {
         self.provider = provider
@@ -82,7 +84,9 @@ public struct ProviderStatusRow: Equatable, Identifiable, Sendable {
             state: state,
             reportedSteps: chain,
             age: age,
-            workspaceID: workspaceID
+            workspaceID: workspaceID,
+            xaiTeamID: xaiTeamID,
+            hasStoredXAIManagementKey: hasStoredXAIManagementKey
         )
     }
 }
@@ -171,17 +175,31 @@ public struct ProviderChainSection: Equatable, Identifiable, Sendable {
     public let isOff: Bool
     public let showsWorkspaceField: Bool
     public let workspaceCaption: String?
+    public let showsXAICredentialFields: Bool
+    public let hasStoredXAIManagementKey: Bool
+    public let xaiCredentialCaption: String?
 
     public var workspaceFieldLabel: String { "Workspace" }
     public var workspaceFieldPlaceholder: String { "Optional wrk_\u{2026} ID or URL" }
     public var workspaceFieldAccessibilityLabel: String { "OpenCode workspace" }
+
+    public var teamIDFieldLabel: String { "Team ID" }
+    public var teamIDFieldPlaceholder: String { "UUID from console.x.ai" }
+    public var teamIDFieldAccessibilityLabel: String { "xAI team ID" }
+    public var managementKeyFieldLabel: String { "Management key" }
+    public var managementKeyFieldPlaceholder: String {
+        hasStoredXAIManagementKey ? "Stored in Keychain" : "Paste management key"
+    }
+    public var managementKeyFieldAccessibilityLabel: String { "xAI management key" }
 
     fileprivate init(
         provider: ProviderID,
         state: ProviderState?,
         reportedSteps: [ProviderDataSourceStep],
         age: String?,
-        workspaceID: String?
+        workspaceID: String?,
+        xaiTeamID: String?,
+        hasStoredXAIManagementKey: Bool
     ) {
         self.provider = provider
 
@@ -192,6 +210,9 @@ public struct ProviderChainSection: Equatable, Identifiable, Sendable {
             self.isOff = true
             self.showsWorkspaceField = false
             self.workspaceCaption = nil
+            self.showsXAICredentialFields = false
+            self.hasStoredXAIManagementKey = false
+            self.xaiCredentialCaption = nil
             return
         }
 
@@ -234,6 +255,21 @@ public struct ProviderChainSection: Equatable, Identifiable, Sendable {
         } else {
             self.workspaceCaption = nil
         }
+
+        self.showsXAICredentialFields = provider == .xai
+        self.hasStoredXAIManagementKey = showsXAICredentialFields && hasStoredXAIManagementKey
+        if showsXAICredentialFields {
+            let trimmed = xaiTeamID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let team = trimmed.isEmpty
+                ? "Team ID is required (from the console.x.ai URL)."
+                : "Using the team ID you set."
+            let key = self.hasStoredXAIManagementKey
+                ? " A management key is stored in the Keychain."
+                : " Paste a Management Key from Console \u{2192} Settings; inference keys are rejected."
+            self.xaiCredentialCaption = team + key
+        } else {
+            self.xaiCredentialCaption = nil
+        }
     }
 }
 
@@ -247,6 +283,8 @@ public struct ProviderStatusViewModel: Equatable, Sendable {
         chains: [ProviderID: [ProviderDataSourceStep]] = [:],
         lastUpdatedAt: [ProviderID: Date] = [:],
         workspaceID: String? = nil,
+        xaiTeamID: String? = nil,
+        hasStoredXAIManagementKey: Bool = false,
         now: Date = Date()
     ) {
         // Every provider gets a line: the Providers tab lists a toggle for each,
@@ -259,6 +297,8 @@ public struct ProviderStatusViewModel: Equatable, Sendable {
                 chain: chains[provider] ?? [],
                 lastUpdatedAt: lastUpdatedAt[provider],
                 workspaceID: workspaceID,
+                xaiTeamID: xaiTeamID,
+                hasStoredXAIManagementKey: hasStoredXAIManagementKey,
                 now: now
             )
         }
@@ -321,12 +361,13 @@ public extension ProviderDataSource {
                 return "Desktop helper unavailable"
             case .claudeWebSession, .claudeOAuthAPI, .codexAPI,
                  .openCodeGoChromeCookie, .openCodeCreditsChromeCookie,
-                 .minimaxTokenPlanAPI, .cursorUsageSummary, .kimiOpenPlatformBalance:
+                 .minimaxTokenPlanAPI, .cursorUsageSummary, .kimiOpenPlatformBalance,
+                 .xaiPrepaidBalance:
                 return "Network error"
             }
         case .tokenExpired:
             switch self {
-            case .minimaxTokenPlanAPI, .kimiOpenPlatformBalance:
+            case .minimaxTokenPlanAPI, .kimiOpenPlatformBalance, .xaiPrepaidBalance:
                 // An `sk-…` API key doesn't expire on the wire the way an
                 // OAuth token does — the server rejects it, so name the cause.
                 return "Key rejected"
@@ -337,7 +378,7 @@ public extension ProviderDataSource {
             }
         case .sessionExpired:
             switch self {
-            case .minimaxTokenPlanAPI, .kimiOpenPlatformBalance:
+            case .minimaxTokenPlanAPI, .kimiOpenPlatformBalance, .xaiPrepaidBalance:
                 return "Key rejected"
             case .claudeWebSession, .claudeOAuthAPI, .claudeStatuslineCache,
                  .codexAPI, .codexAppServer, .openCodeGoChromeCookie,
@@ -363,7 +404,7 @@ public extension ProviderDataSource {
             case .codexAppServer:
                 return "Desktop sign-in unavailable"
             case .claudeOAuthAPI, .codexAPI, .minimaxTokenPlanAPI, .cursorUsageSummary,
-                 .kimiOpenPlatformBalance:
+                 .kimiOpenPlatformBalance, .xaiPrepaidBalance:
                 return "No credential found"
             }
         }
@@ -408,6 +449,12 @@ private extension ProviderID {
             return """
                 Reads only the OpenCode auth.json key for Moonshot AI (Kimi Open Platform). \
                 All access is read-only.
+                """
+        case .xai:
+            return """
+                Reads the prepaid credit balance from xAI's Management API. Requires a \
+                management key (not an inference API key) and team ID. Cursor Grok Bot \
+                and SuperGrok are different products.
                 """
         }
     }
@@ -480,6 +527,13 @@ private extension ProviderID {
         case (.kimi, .tokenExpired), (.kimi, .sessionExpired):
             return prefix + "The Kimi key was rejected. Re-authenticate the Moonshot AI "
                 + "provider in OpenCode, then choose Refresh Now from the menu bar."
+        case (.xai, .credentialUnavailable):
+            return prefix + "Add an xAI team ID and Management Key in Settings (Console \u{2192} "
+                + "Settings \u{2192} Management Keys), then choose Refresh Now from the menu bar."
+        case (.xai, .tokenExpired), (.xai, .sessionExpired):
+            return prefix + "The xAI management key was rejected. Create a Management Key in "
+                + "console.x.ai (not an inference API key), then choose Refresh Now from "
+                + "the menu bar."
         case (_, .networkError):
             return prefix + "Check your network connection, then choose Refresh Now from "
                 + "the menu bar."
@@ -508,6 +562,8 @@ private extension ProviderID {
             return "Cursor"
         case .kimi:
             return "Kimi"
+        case .xai:
+            return "xAI"
         }
     }
 }
@@ -536,6 +592,8 @@ private extension StaleReason {
                 return "Cursor session expired"
             case .kimi:
                 return "Kimi key rejected"
+            case .xai:
+                return "xAI management key rejected"
             }
         case .credentialUnavailable:
             switch provider {
@@ -553,6 +611,8 @@ private extension StaleReason {
                 return "No Cursor sign-in found"
             case .kimi:
                 return "No Kimi key found"
+            case .xai:
+                return "No management key or team ID"
             }
         case .sessionExpired:
             switch provider {
@@ -568,12 +628,14 @@ private extension StaleReason {
                 return "Cursor session expired"
             case .kimi:
                 return "Kimi key rejected"
+            case .xai:
+                return "xAI management key rejected"
             }
         case .workspaceSelectionRequired:
             switch provider {
             case .openCodeGo, .openCodeCredits:
                 return "Choose a workspace in Settings"
-            case .claude, .codex, .miniMax, .cursor, .kimi:
+            case .claude, .codex, .miniMax, .cursor, .kimi, .xai:
                 return "Workspace selection required"
             }
         }

@@ -4,7 +4,7 @@ A native macOS menu bar app that shows how much of your **Claude**, **ChatGPT/Co
 
 The menu bar shows percent **remaining** (fuel-gauge semantics) in at most two rows, e.g. `Cl 62/81/56  Cx 90` over `Go 88/74/92`. Claude is 5-hour/weekly plus a third slot for the model-scoped weekly window (Fable) when the usage API reports one; unlike Go's optional monthly window, that slot is omitted rather than dashed when absent, so Claude reads `Cl 62/81` on the statusline-cache fallback. OpenCode Go uses 5-hour/weekly/monthly order and `--` for an unavailable optional window. The dropdown adds progress bars, exact percentages, reset countdowns, and a Refresh-now button with last-updated time. Settings live in the standard macOS Settings window (⌘,).
 
-Access is strictly **read-only**: the app borrows state your CLIs already maintain. It never writes to the Keychain, never refreshes OAuth tokens, and degrades to a greyed "stale" display when data is unavailable.
+Access is strictly **read-only** of CLI/browser/IDE state: the app borrows credentials your tools already maintain. It never writes those items, never refreshes OAuth tokens, and degrades to a greyed "stale" display when data is unavailable. The optional xAI provider stores only the **management** key you paste in Settings, in an AIUsageBar-owned Keychain item.
 
 ## Features
 
@@ -12,7 +12,7 @@ Access is strictly **read-only**: the app borrows state your CLIs already mainta
 - Dropdown with per-window progress bars and reset countdowns ("resets in 2h 14m", or weekday + time when more than a day out)
 - Polls every 2 minutes (configurable: 1/2/5/10 min), plus on Mac wake and on manual refresh
 - Notification when a window drops below a threshold (default 20%, configurable) — fired once per window per reset cycle
-- Per-provider show/hide toggles, launch-at-login, and staged OK/Cancel edits in Settings; OpenCode Go, OpenCode Credits, MiniMax, Cursor, and Kimi are off by default
+- Per-provider show/hide toggles, launch-at-login, and staged OK/Cancel edits in Settings; OpenCode Go, OpenCode Credits, MiniMax, Cursor, Kimi, and xAI are off by default
 - Menu-bar-only app (`LSUIElement`): no Dock icon
 
 ## How it gets the data
@@ -23,6 +23,7 @@ Access is strictly **read-only**: the app borrows state your CLIs already mainta
 | Codex | Codex CLI's Keychain credential (read-only) → `GET https://chatgpt.com/backend-api/wham/usage` |
 | OpenCode Go | Reads only Chrome's `auth` or `__Host-auth` cookie for `opencode.ai`, discovers the qualifying workspace (or uses the optional Settings override), then reads `https://opencode.ai/workspace/<workspace-id>/go` |
 | Kimi | Reads the OpenCode `auth.json` `moonshotai` key (read-only) → `GET https://api.moonshot.ai/v1/users/me/balance` (remaining USD balance; hidden by default) |
+| xAI | Settings team ID + management key (Keychain) → `GET https://management-api.x.ai/v1/billing/teams/{team_id}/prepaid/balance` (prepaid USD remaining; hidden by default). Not Cursor Grok Bot and not SuperGrok. |
 
 Background polls read the Keychain in a prompt-proof mode: if macOS would need to ask for permission, the read fails silently, so a Keychain dialog can only appear from a manual **Refresh now**. The app never refreshes OAuth tokens or imported browser cookies. Claude can fall back to its statusline cache; other unavailable providers degrade to a greyed stale display while preserving their last-known usage.
 

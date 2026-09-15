@@ -340,10 +340,27 @@ func workspaceCaptionSaysDiscoveryIsSkippedOnceAnIDIsSet() throws {
 
 @Test
 func onlyTheOpenCodeProvidersShowTheWorkspaceField() throws {
-    for provider in [ProviderID.claude, .codex, .miniMax, .cursor, .kimi] {
+    for provider in [ProviderID.claude, .codex, .miniMax, .cursor, .kimi, .xai] {
         let section = try chainSection(for: provider)
         #expect(!section.showsWorkspaceField)
         #expect(section.workspaceCaption == nil)
+    }
+}
+
+@Test
+func onlyXAIShowsManagementCredentialFields() throws {
+    let section = try chainSection(
+        for: .xai,
+        states: [.xai: .fresh(chainUsage, asOf: chainNow)],
+        chains: [.xai: [ProviderDataSourceStep(.xaiPrepaidBalance, .used)]]
+    )
+    #expect(section.showsXAICredentialFields)
+    #expect(section.teamIDFieldLabel == "Team ID")
+    #expect(section.managementKeyFieldLabel == "Management key")
+
+    for provider in [ProviderID.claude, .codex, .openCodeGo, .kimi] {
+        let other = try chainSection(for: provider)
+        #expect(!other.showsXAICredentialFields)
     }
 }
 

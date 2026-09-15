@@ -14,8 +14,9 @@ struct AppSettingsView: View {
     // `expandedProviders(remembering:)`, which is where that decision is tested.
     @State private var expandedProviders: Set<ProviderID> = []
 
-    // Tab panes lay out with plain stacks (rather than a grouped `Form`) so there is no scroll
-    // view, and therefore no scroll indicator — the window sizes to fit the tallest tab.
+    // Tab panes use plain stacks rather than a grouped Form (Form would scroll every
+    // tab). The window hugs content up to maxHeight; Providers is its own ScrollView
+    // so later cards — xAI team ID and management key — stay reachable.
     var body: some View {
         VStack(spacing: 0) {
             TabView(selection: $selectedTab) {
@@ -69,7 +70,10 @@ struct AppSettingsView: View {
         // Wider than the mockup's 460: at that width Codex's real status line
         // ("Live · ChatGPT API (local Codex credential) · updated 2 min ago") wraps once
         // the leading chevron, icon, and trailing switch take their share.
+        // maxHeight keeps the window on a 13" content area; without it, eight
+        // provider cards plus an expanded xAI chain grow off the display.
         .frame(width: 500)
+        .frame(maxHeight: 640)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             draft = .capture(from: model)
@@ -128,41 +132,47 @@ private struct GeneralSettingsPane: View {
     }
 }
 
-private struct ProvidersSettingsPane: View {
+/// Internal (not fileprivate) so the hosted UI suite can host the pane
+/// standalone — AX can't switch TabView tabs in-process, per the suite doc.
+struct ProvidersSettingsPane: View {
     @Binding var draft: AppSettingsDraft
     @Binding var expandedProviders: Set<ProviderID>
     let statusRows: [ProviderStatusRow]
 
     var body: some View {
-        SettingsPaneLayout {
-            // One card per provider inside a single group, separated by hairlines,
-            // as in the round-2 mockup.
-            SettingsGroup(spacing: 0) {
-                ForEach(Array(statusRows.enumerated()), id: \.element.id) { index, status in
-                    if index > 0 {
-                        Divider()
-                            .padding(.vertical, 2)
-                    }
+        ScrollView {
+            SettingsPaneLayout {
+                // One card per provider inside a single group, separated by hairlines,
+                // as in the round-2 mockup.
+                SettingsGroup(spacing: 0) {
+                    ForEach(Array(statusRows.enumerated()), id: \.element.id) { index, status in
+                        if index > 0 {
+                            Divider()
+                                .padding(.vertical, 2)
+                        }
 
-                    ProviderSettingsRow(
-                        status: status,
-                        isVisible: Binding(
-                            get: { draft.visibility(for: status.provider) },
-                            set: { draft.providerVisibility[status.provider] = $0 }
-                        ),
-                        isExpanded: Binding(
-                            get: { expandedProviders.contains(status.provider) },
-                            set: { isExpanded in
-                                if isExpanded {
-                                    expandedProviders.insert(status.provider)
-                                } else {
-                                    expandedProviders.remove(status.provider)
+                        ProviderSettingsRow(
+                            status: status,
+                            isVisible: Binding(
+                                get: { draft.visibility(for: status.provider) },
+                                set: { draft.providerVisibility[status.provider] = $0 }
+                            ),
+                            isExpanded: Binding(
+                                get: { expandedProviders.contains(status.provider) },
+                                set: { isExpanded in
+                                    if isExpanded {
+                                        expandedProviders.insert(status.provider)
+                                    } else {
+                                        expandedProviders.remove(status.provider)
+                                    }
                                 }
-                            }
-                        ),
-                        workspace: $draft.openCodeGoWorkspace
-                    )
-                    .padding(.vertical, 6)
+                            ),
+                            workspace: $draft.openCodeGoWorkspace,
+                            xaiTeamID: $draft.xaiTeamID,
+                            xaiManagementKey: $draft.xaiManagementKey
+                        )
+                        .padding(.vertical, 6)
+                    }
                 }
             }
         }
@@ -178,6 +188,8 @@ private struct ProviderSettingsRow: View {
     @Binding var isVisible: Bool
     @Binding var isExpanded: Bool
     @Binding var workspace: String
+    @Binding var xaiTeamID: String
+    @Binding var xaiManagementKey: String
 
     /// Width reserved for the chevron, so a provider with no disclosure (hidden)
     /// still lines its name up with the expandable cards above and below it.
@@ -215,7 +227,12 @@ private struct ProviderSettingsRow: View {
             }
 
             if isVisible, isExpanded {
-                ProviderChainView(chain: status.chain, workspace: $workspace)
+                ProviderChainView(
+                    chain: status.chain,
+                    workspace: $workspace,
+                    xaiTeamID: $xaiTeamID,
+                    xaiManagementKey: $xaiManagementKey
+                )
                     .padding(.leading, Self.chevronWidth + 22)
             }
         }
@@ -278,6 +295,8 @@ private struct ProviderStatusLineView: View {
 private struct ProviderChainView: View {
     let chain: ProviderChainSection
     @Binding var workspace: String
+    @Binding var xaiTeamID: String
+    @Binding var xaiManagementKey: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -321,6 +340,30 @@ private struct ProviderChainView: View {
 
                 if let workspaceCaption = chain.workspaceCaption {
                     SettingsCaption(workspaceCaption)
+                }
+            }
+
+            if chain.showsXAICredentialFields {
+                SettingsRow(chain.teamIDFieldLabel) {
+                    TextField(chain.teamIDFieldPlaceholder, text: $xaiTeamID)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .frame(width: 190)
+                        .accessibilityLabel(chain.teamIDFieldAccessibilityLabel)
+                        .accessibilityIdentifier(AccessibilityID.settingsProviderTeamID(chain.provider))
+                }
+
+                SettingsRow(chain.managementKeyFieldLabel) {
+                    SecureField(chain.managementKeyFieldPlaceholder, text: $xaiManagementKey)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .frame(width: 190)
+                        .accessibilityLabel(chain.managementKeyFieldAccessibilityLabel)
+                        .accessibilityIdentifier(AccessibilityID.settingsProviderManagementKey(chain.provider))
+                }
+
+                if let caption = chain.xaiCredentialCaption {
+                    SettingsCaption(caption)
                 }
             }
         }
@@ -514,7 +557,7 @@ private struct SettingsPaneLayout<Content: View>: View {
 
 /// The mockup's rounded, hairline-bordered container. Hand-rolled rather than
 /// `GroupBox` so the Providers tab can host edge-to-edge dividers between cards,
-/// and rather than a grouped `Form` so no scroll view is introduced.
+/// and rather than a grouped `Form`, which would add a second scroll view.
 private struct SettingsGroup<Content: View>: View {
     var spacing: CGFloat = 8
     @ViewBuilder var content: Content

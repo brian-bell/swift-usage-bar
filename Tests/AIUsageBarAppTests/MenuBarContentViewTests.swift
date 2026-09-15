@@ -129,6 +129,36 @@ struct HostedUITests {
     }
 
     @Test
+    func menuBarContentViewRendersXAIWalletOnlyCreditsRow() throws {
+        let settingsStore = SettingsStore(defaults: isolatedDefaults())
+        settingsStore.setProvider(.xai, visible: true)
+
+        let host = onMain {
+            UITestHost.dropdown(
+                MenuBarContentView(
+                    model: shellModel(
+                        appState: xaiFreshState(),
+                        settingsStore: settingsStore
+                    )
+                )
+            )
+        }
+        defer { onMain { host.close() } }
+        let ax = AXQuery(windowTitle: host.windowTitle)
+
+        #expect(
+            pollUntil { ax.exists(AccessibilityID.menuBarProviderCredits(.xai)) },
+            "Missing xAI credits row. Tree:\n\(ax.dumpIdentifiers())"
+        )
+        #expect(!ax.exists(AccessibilityID.menuBarWindow(.xai, .fiveHour)))
+        #expect(!ax.exists(AccessibilityID.menuBarWindow(.xai, .weekly)))
+        #expect(ax.firstValue(containing: "$10.00") != nil)
+        #expect(ax.exists(AccessibilityID.menuBarProviderCreditsAmount(.xai)))
+        #expect(!ax.exists(AccessibilityID.menuBarProviderCreditsRemaining(.xai)))
+        #expect(!ax.exists(AccessibilityID.menuBarProviderCreditsBar(.xai)))
+    }
+
+    @Test
     func menuBarContentViewRendersCursorGrokBotRow() throws {
         let settingsStore = SettingsStore(defaults: isolatedDefaults())
         settingsStore.setProvider(.cursor, visible: true)

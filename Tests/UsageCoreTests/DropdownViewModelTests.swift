@@ -351,6 +351,10 @@ func dropdownRowsOmitFiveHourPlaceholderForStaleCodexWithoutData() throws {
     (.kimi, .tokenExpired, "Stale: Kimi key rejected; re-authenticate in OpenCode"),
     (.kimi, .sessionExpired, "Stale: Kimi key rejected; re-authenticate in OpenCode"),
     (.kimi, .workspaceSelectionRequired, "Stale: workspace selection required"),
+    (.xai, .tokenExpired, "Stale: management key rejected; create a key in console.x.ai"),
+    (.xai, .sessionExpired, "Stale: management key rejected; create a key in console.x.ai"),
+    (.xai, .credentialUnavailable, "Stale: no management key or team ID"),
+    (.xai, .workspaceSelectionRequired, "Stale: workspace selection required"),
 ])
 func dropdownStaleMessageNamesTheFailingProvider(
     provider: ProviderID,
@@ -773,6 +777,44 @@ func dropdownSkipsKimiUntilItHasReported() {
     )
 
     #expect(!model.rows.contains { $0.provider == .kimi })
+}
+
+@Test
+func dropdownXAIRowShowsWalletOnlyCredits() throws {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        credits: CreditBalance(balanceUSD: 10)
+    )
+    let model = DropdownViewModel(
+        states: [.xai: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .xai })
+    #expect(row.providerName == "xAI")
+    #expect(row.fiveHour == nil)
+    #expect(row.weekly == nil)
+    #expect(row.monthly == nil)
+    let credits = try #require(row.credits)
+    #expect(credits.title == "Credits")
+    #expect(credits.amountLabel == "$10.00")
+    #expect(credits.remainingLabel == nil)
+    #expect(credits.barFraction == nil)
+}
+
+@Test
+func dropdownSkipsXAIUntilItHasReported() {
+    let model = DropdownViewModel(
+        states: [.claude: .fresh(claudeUsage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    #expect(!model.rows.contains { $0.provider == .xai })
 }
 
 @Test

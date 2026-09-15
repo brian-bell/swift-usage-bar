@@ -17,6 +17,7 @@ func providerIconAssetsLoadForAllProviders() throws {
         false, // .miniMax
         false, // .cursor
         false, // .kimi
+        false, // .xai
     ])
     for provider in ProviderID.allCases where ProviderIconAsset.hasAsset(for: provider) {
         let image = try #require(ProviderIconAsset.image(for: provider))

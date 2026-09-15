@@ -377,6 +377,8 @@ private extension ProviderID {
             return "Cursor"
         case .kimi:
             return "Kimi"
+        case .xai:
+            return "xAI"
         }
     }
 
@@ -430,7 +432,7 @@ private extension ProviderID {
             return true
         case .cursor:
             return false
-        case .kimi:
+        case .kimi, .xai:
             return false
         }
     }
@@ -464,6 +466,8 @@ private extension StaleReason {
                 return "MiniMax key rejected; re-authenticate in OpenCode"
             case .kimi:
                 return "Kimi key rejected; re-authenticate in OpenCode"
+            case .xai:
+                return "management key rejected; create a key in console.x.ai"
             case .claude, .codex, .openCodeGo, .openCodeCredits, .cursor:
                 return "token expired"
             }
@@ -473,6 +477,8 @@ private extension StaleReason {
                 // For credits, "no credential" is most often "no billing
                 // configured on the workspace" — the cookie itself was fine.
                 return "no credits balance found"
+            case .xai:
+                return "no management key or team ID"
             case .claude, .codex, .openCodeGo, .miniMax, .cursor, .kimi:
                 return "credential unavailable"
             }
@@ -482,10 +488,10 @@ private extension StaleReason {
                 return "select an OpenCode Go workspace in Settings"
             case .openCodeCredits:
                 return "select an OpenCode workspace in Settings"
-            case .claude, .codex, .miniMax, .cursor, .kimi:
+            case .claude, .codex, .miniMax, .cursor, .kimi, .xai:
                 // Unreachable in practice (no other provider surfaces this
                 // reason today), but the alternative would be to point
-                // Claude/Codex/MiniMax/Kimi at a Settings field that only
+                // Claude/Codex/MiniMax/Kimi/xAI at a Settings field that only
                 // exists for OpenCode Go.
                 return "workspace selection required"
             }
@@ -506,6 +512,8 @@ private extension StaleReason {
                 return "Cursor session expired; sign in again in the Cursor app"
             case .kimi:
                 return "Kimi key rejected; re-authenticate in OpenCode"
+            case .xai:
+                return "management key rejected; create a key in console.x.ai"
             }
         }
     }

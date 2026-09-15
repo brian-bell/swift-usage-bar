@@ -326,6 +326,27 @@ func providerStatusShowsKimiKeyRejectedRecoveryCallout() throws {
 }
 
 @Test
+func providerStatusShowsXAILiveChain() throws {
+    let model = ProviderStatusViewModel(
+        states: [.xai: .fresh(statusUsage, asOf: statusNow)],
+        dataSources: [.xai: .xaiPrepaidBalance],
+        chains: [.xai: [
+            ProviderDataSourceStep(.xaiPrepaidBalance, .used),
+        ]],
+        lastUpdatedAt: [.xai: statusNow.addingTimeInterval(-120)],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .xai })
+    #expect(row.indicator == .live)
+    #expect(row.methodLabel == "xAI prepaid balance API")
+    #expect(row.text == "Live \u{00B7} xAI prepaid balance API \u{00B7} updated 2 min ago")
+    #expect(row.chain.steps.map(\.name) == ["xAI prepaid \u{00B7} Management key"])
+    #expect(row.chain.showsXAICredentialFields)
+    #expect(row.chain.recoveryCallout == nil)
+}
+
+@Test
 func providerStatusSummarizesAMissingCreditsBalance() throws {
     // For credits, `.credentialUnavailable` most often means "billing not
     // configured on the workspace", not a missing cookie — the one-line
@@ -346,7 +367,7 @@ func providerStatusCoversEveryProviderInStableOrder() {
 
     #expect(model.rows.map(\.provider) == ProviderID.allCases)
     #expect(model.rows.map(\.providerName) == [
-        "Claude", "Codex", "OpenCode Go", "OpenCode Credits", "MiniMax", "Cursor", "Kimi",
+        "Claude", "Codex", "OpenCode Go", "OpenCode Credits", "MiniMax", "Cursor", "Kimi", "xAI",
     ])
     #expect(model.rows.map(\.id) == ProviderID.allCases)
 }
@@ -500,6 +521,29 @@ func providerStatusMapsKimiStaleReasonsToProviderSpecificPhrasing(
     )
 
     let row = try #require(model.rows.first { $0.provider == .kimi })
+    #expect(row.methodLabel == expected)
+}
+
+@Test(arguments: [
+    (StaleReason.parseFailure, "Unexpected response format"),
+    (.networkError, "Network error"),
+    (.tokenExpired, "xAI management key rejected"),
+    (.credentialUnavailable, "No management key or team ID"),
+    (.sessionExpired, "xAI management key rejected"),
+    (.workspaceSelectionRequired, "Workspace selection required"),
+])
+func providerStatusMapsXAIStaleReasonsToProviderSpecificPhrasing(
+    reason: StaleReason,
+    expected: String
+) throws {
+    let model = ProviderStatusViewModel(
+        states: [.xai: .stale(last: statusUsage, reason: reason)],
+        dataSources: [:],
+        lastUpdatedAt: [:],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .xai })
     #expect(row.methodLabel == expected)
 }
 
