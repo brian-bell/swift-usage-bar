@@ -236,10 +236,10 @@ func freshProviderShowsNoRecoveryCallout() throws {
     #expect(section.recoveryCallout == nil)
 }
 
-@Test(arguments: [
+private let recoveryCalloutCases: [(ProviderID, StaleReason, String)] = [
     (
-        ProviderID.claude,
-        StaleReason.tokenExpired,
+        .claude,
+        .tokenExpired,
         "Showing last-known data. Run Claude Code once to refresh its OAuth token, then choose "
             + "Refresh Now from the menu bar."
     ),
@@ -290,7 +290,9 @@ func freshProviderShowsNoRecoveryCallout() throws {
         "Showing last-known data. Several workspaces matched. Set a workspace ID below, then "
             + "choose Refresh Now from the menu bar."
     ),
-])
+]
+
+@Test(arguments: recoveryCalloutCases)
 func recoveryCalloutCopyIsProviderAndReasonSpecific(
     provider: ProviderID,
     reason: StaleReason,
