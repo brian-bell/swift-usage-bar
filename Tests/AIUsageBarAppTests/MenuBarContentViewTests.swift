@@ -97,4 +97,37 @@ struct HostedUITests {
         #expect(!ax.exists(AccessibilityID.menuBarProviderCreditsLimit(.openCodeCredits)))
         #expect(!ax.exists("\(AccessibilityID.menuBarProviderCredits(.openCodeCredits)).caption"))
     }
+
+    @Test
+    func menuBarContentViewRendersCursorGrokBotRow() throws {
+        let settingsStore = SettingsStore(defaults: isolatedDefaults())
+        settingsStore.setProvider(.cursor, visible: true)
+
+        let host = onMain {
+            UITestHost.dropdown(
+                MenuBarContentView(
+                    model: shellModel(
+                        appState: cursorGrokBotFreshState(),
+                        settingsStore: settingsStore
+                    )
+                )
+            )
+        }
+        defer { onMain { host.close() } }
+        let ax = AXQuery(windowTitle: host.windowTitle)
+
+        #expect(
+            pollUntil { ax.exists(AccessibilityID.menuBarWindow(.cursor, .grokBot)) },
+            "Missing Cursor Grok Bot row. Tree:\n\(ax.dumpIdentifiers())"
+        )
+        #expect(ax.exists(AccessibilityID.menuBarWindow(.cursor, .weekly)))
+        #expect(ax.exists(AccessibilityID.menuBarWindow(.cursor, .monthly)))
+        #expect(!ax.exists(AccessibilityID.menuBarWindow(.cursor, .fiveHour)))
+        #expect(!ax.exists(AccessibilityID.menuBarWindow(.cursor, .fable)))
+        #expect(ax.exists(AccessibilityID.menuBarWindowPercent(.cursor, .grokBot)))
+        #expect(ax.exists(AccessibilityID.menuBarWindowCountdown(.cursor, .grokBot)))
+        #expect(ax.exists(AccessibilityID.menuBarWindowBar(.cursor, .grokBot)))
+        #expect(ax.firstValue(containing: "88% remaining") != nil)
+        #expect(ax.firstValue(containing: "Bot") != nil)
+    }
 }

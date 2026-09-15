@@ -39,6 +39,13 @@ let uiTestMiniMaxUsage = ProviderUsage(
     weekly: UsageWindow(percentRemaining: 55, resetsAt: uiTestNow.addingTimeInterval(5 * 24 * 60 * 60))
 )
 
+let uiTestCursorGrokBotUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: 95, resetsAt: uiTestNow.addingTimeInterval(3 * 24 * 60 * 60)),
+    monthly: UsageWindow(percentRemaining: 90, resetsAt: uiTestNow.addingTimeInterval(3 * 24 * 60 * 60)),
+    grokBot: UsageWindow(percentRemaining: 88, resetsAt: uiTestNow.addingTimeInterval(90 * 60))
+)
+
 /// Legacy aliases used by existing shell-model tests.
 let claudeUsage = uiTestClaudeUsage
 let codexUsage = uiTestCodexUsage
@@ -118,6 +125,26 @@ func openCodeCreditsFreshState(
         ],
         lastDataSources: [
             .openCodeCredits: .openCodeCreditsChromeCookie,
+        ]
+    )
+}
+
+/// Cursor visible with Grok Bot, for the Bot-row hosted UI test. Other
+/// providers stay hidden so the AX tree is just the Cursor windows.
+@MainActor
+func cursorGrokBotFreshState(
+    asOf: Date = uiTestNow,
+    lastSuccess: Date = uiTestNow.addingTimeInterval(-120)
+) -> AppState {
+    AppState(
+        providerStates: [
+            .cursor: .fresh(uiTestCursorGrokBotUsage, asOf: asOf),
+        ],
+        lastSuccessfulRefreshes: [
+            .cursor: lastSuccess,
+        ],
+        lastDataSources: [
+            .cursor: .cursorUsageSummary,
         ]
     )
 }

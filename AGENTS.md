@@ -15,7 +15,10 @@ and Cursor, plus the **OpenCode workspace credit balance** as its own provider
 (menu bar `Oc $47`, hidden by default, toggled independently of OpenCode
 Go). Cursor is hidden by default and shows Cursor Models / Other Models as
 `Cu 62/81` (the first slot is omitted when the payload has no first-party
-pool). Dropdown labels are `Cursor` / `Other`. Providers borrow existing local state read-only (Keychain, Chrome
+pool), plus a third slot for Grok Bot (`Cu 62/81/56`) whenever the same-host
+Sand request reports an included weekly allowance — omitted rather than
+dashed when it doesn't. Dropdown labels are `Cursor` / `Other` / `Bot`.
+Providers borrow existing local state read-only (Keychain, Chrome
 cookies, OpenCode's `auth.json`, a statusline cache file, Cursor's
 `state.vscdb`) and degrade to a greyed "stale" state instead of erroring. Per-provider retrieval order and
 fallbacks: `ProviderID.dataSourceChain` in
@@ -25,8 +28,9 @@ no percent window); both OpenCode providers share the one workspace-ID
 setting. Claude's menu-bar value is `5h/weekly` plus a third slot for the
 model-scoped weekly window (`Cl 62/81/56`) whenever the payload carries
 one — omitted rather than dashed when it doesn't, matching the dropdown,
-which maps its Fable row from the same optional. Fable is a display-only
-window: like credits, it stays out of tone and threshold notifications.
+which maps its Fable row from the same optional. Fable and Grok Bot are
+display-only windows: like credits, they stay out of tone and threshold
+notifications. A Sand failure must not fail Cursor Models / Other.
 
 ## Build, test, run
 

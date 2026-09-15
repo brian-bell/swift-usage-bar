@@ -219,27 +219,11 @@ public struct CursorUsageSummaryParser: Sendable {
     /// Same conversion as `UsageCore.percentRemaining(fromUsedPercentage:)`:
     /// clamp, then `100 - Int(used.rounded())`.
     private static func percentRemaining(fromUsedPercentage usedPercentage: Double) -> Int {
-        if usedPercentage <= 0 {
-            return 100
-        }
-        if usedPercentage >= 100 {
-            return 0
-        }
-        return 100 - Int(usedPercentage.rounded())
+        cursorPercentRemaining(fromUsedPercentage: usedPercentage)
     }
 
     private static func parseReset(_ raw: String?) -> Date? {
-        guard let raw, !raw.isEmpty else {
-            return nil
-        }
-        let withFractional = ISO8601DateFormatter()
-        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFractional.date(from: raw) {
-            return date
-        }
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: raw)
+        parseCursorReset(raw)
     }
 
     private struct Response: Decodable {
@@ -257,12 +241,68 @@ public struct CursorUsageSummaryParser: Sendable {
     }
 }
 
+public struct CursorSandUsageResponse: Sendable, Equatable {
+    public let data: Data
+    public let receivedAt: Date
+
+    public init(data: Data, receivedAt: Date) {
+        self.data = data
+        self.receivedAt = receivedAt
+    }
+}
+
+/// Grok Bot weekly allowance from `POST /api/dashboard/get-sand-usage-status`.
+/// Pins only keys present in the sanitized live fixture
+/// (`Tests/Fixtures/cursor-sand-usage-status.json`). `includedLimitZero` and
+/// trial-expiry aliases used by peer apps are not decoded.
+public struct CursorSandUsageParser: Sendable {
+    public init() {}
+
+    public func parse(_ data: Data) throws -> UsageWindow? {
+        let response: Response
+        do {
+            response = try JSONDecoder().decode(Response.self, from: data)
+        } catch {
+            throw UsageParsingError.parseFailure
+        }
+
+        guard response.hasNonZeroIncludedLimit == true else {
+            return nil
+        }
+        guard let usagePercent = response.usagePercent else {
+            throw UsageParsingError.parseFailure
+        }
+        return try Self.window(
+            usedPercentage: usagePercent,
+            resetsAt: parseCursorReset(response.nextResetTimestampUtc)
+        )
+    }
+
+    private static func window(usedPercentage: Double, resetsAt: Date?) throws -> UsageWindow {
+        guard usedPercentage.isFinite else {
+            throw UsageParsingError.parseFailure
+        }
+        return UsageWindow(
+            percentRemaining: cursorPercentRemaining(fromUsedPercentage: usedPercentage),
+            resetsAt: resetsAt
+        )
+    }
+
+    private struct Response: Decodable {
+        let usagePercent: Double?
+        let hasNonZeroIncludedLimit: Bool?
+        let nextResetTimestampUtc: String?
+    }
+}
+
 public protocol CursorUsageTransporting: Sendable {
     func fetchUsageSummary(credential: CursorSessionCredential) async throws -> CursorUsageSummaryResponse
+    func fetchSandUsageStatus(credential: CursorSessionCredential) async throws -> CursorSandUsageResponse
 }
 
 public struct CursorUsageHTTPTransport: CursorUsageTransporting {
     public static let endpoint = URL(string: "https://cursor.com/api/usage-summary")!
+    public static let sandEndpoint = URL(string: "https://cursor.com/api/dashboard/get-sand-usage-status")!
 
     private let sender: any HTTPTransport
     private let now: @Sendable () -> Date
@@ -286,9 +326,37 @@ public struct CursorUsageHTTPTransport: CursorUsageTransporting {
         return CursorUsageSummaryResponse(data: data, receivedAt: now())
     }
 
+    public func fetchSandUsageStatus(credential: CursorSessionCredential) async throws -> CursorSandUsageResponse {
+        let (data, response) = try await sender.send(Self.sandRequest(for: credential))
+        if response.statusCode == 401 {
+            throw CursorUsageTransportError.notAuthenticated
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return CursorSandUsageResponse(data: data, receivedAt: now())
+    }
+
     private static func request(for credential: CursorSessionCredential) -> URLRequest {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "GET"
+        applyCursorSessionHeaders(&request, credential: credential)
+        return request
+    }
+
+    private static func sandRequest(for credential: CursorSessionCredential) -> URLRequest {
+        var request = URLRequest(url: sandEndpoint, timeoutInterval: 5)
+        request.httpMethod = "POST"
+        request.httpBody = Data("{}".utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyCursorSessionHeaders(&request, credential: credential)
+        return request
+    }
+
+    private static func applyCursorSessionHeaders(
+        _ request: inout URLRequest,
+        credential: CursorSessionCredential
+    ) {
         request.setValue(
             "WorkosCursorSessionToken=\(credential.cookieValue)",
             forHTTPHeaderField: "Cookie"
@@ -297,7 +365,6 @@ public struct CursorUsageHTTPTransport: CursorUsageTransporting {
         request.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
         request.setValue("https://cursor.com/dashboard/spending", forHTTPHeaderField: "Referer")
         request.setValue("AIUsageBar/\(UsageCore.version)", forHTTPHeaderField: "User-Agent")
-        return request
     }
 }
 
@@ -352,7 +419,12 @@ public struct CursorUsageProvider: UsageProvider {
         do {
             let response = try await transport.fetchUsageSummary(credential: credential)
             let usage = try parser.parse(response.data)
-            state = .fresh(usage, asOf: response.receivedAt)
+            let withGrokBot = await Self.attachingGrokBot(
+                to: usage,
+                credential: credential,
+                transport: transport
+            )
+            state = .fresh(withGrokBot, asOf: response.receivedAt)
         } catch CursorUsageTransportError.notAuthenticated {
             state = .stale(last: previous, reason: .tokenExpired)
         } catch UsageParsingError.parseFailure {
@@ -364,4 +436,44 @@ public struct CursorUsageProvider: UsageProvider {
         let step = ProviderDataSourceStep.singlePath(.cursorUsageSummary, state: state)
         return ProviderFetchReport(state: state, chain: [step])
     }
+
+    /// Best-effort Sand POST. Any failure — including HTTP 401 after a good
+    /// usage-summary — omits Grok Bot and leaves Cursor Models / Other intact.
+    private static func attachingGrokBot(
+        to usage: ProviderUsage,
+        credential: CursorSessionCredential,
+        transport: any CursorUsageTransporting
+    ) async -> ProviderUsage {
+        do {
+            let sand = try await transport.fetchSandUsageStatus(credential: credential)
+            let grokBot = try CursorSandUsageParser().parse(sand.data)
+            return usage.attachingGrokBot(grokBot)
+        } catch {
+            return usage
+        }
+    }
+}
+
+private func cursorPercentRemaining(fromUsedPercentage usedPercentage: Double) -> Int {
+    if usedPercentage <= 0 {
+        return 100
+    }
+    if usedPercentage >= 100 {
+        return 0
+    }
+    return 100 - Int(usedPercentage.rounded())
+}
+
+private func parseCursorReset(_ raw: String?) -> Date? {
+    guard let raw, !raw.isEmpty else {
+        return nil
+    }
+    let withFractional = ISO8601DateFormatter()
+    withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = withFractional.date(from: raw) {
+        return date
+    }
+    let plain = ISO8601DateFormatter()
+    plain.formatOptions = [.withInternetDateTime]
+    return plain.date(from: raw)
 }

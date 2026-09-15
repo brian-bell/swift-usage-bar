@@ -115,6 +115,13 @@ private struct ProviderUsageRowView: View {
                     window: .fable
                 )
             }
+            if let grokBot = row.grokBot {
+                UsageWindowRowView(
+                    row: grokBot,
+                    provider: row.provider,
+                    window: .grokBot
+                )
+            }
             if let credits = row.credits {
                 CreditsRowView(row: credits, provider: row.provider)
             }

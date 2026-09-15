@@ -294,6 +294,34 @@ func thresholdNotifierIncludesMonthlyAndExcludesFable() async {
 }
 
 @Test
+func thresholdNotifierExcludesGrokBot() async {
+    let sender = RecordingNotificationSender()
+    let notifier = ThresholdNotifier(sender: sender)
+    let reset = Date(timeIntervalSince1970: 1_800_000_000)
+    let previous = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: reset),
+        monthly: UsageWindow(percentRemaining: 80, resetsAt: reset),
+        grokBot: UsageWindow(percentRemaining: 25, resetsAt: reset)
+    )
+    let current = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 80, resetsAt: reset),
+        monthly: UsageWindow(percentRemaining: 80, resetsAt: reset),
+        grokBot: UsageWindow(percentRemaining: 1, resetsAt: reset)
+    )
+
+    await notifier.evaluate(
+        previous: previous,
+        current: current,
+        provider: .cursor,
+        thresholds: [20]
+    )
+
+    #expect(await sender.sentNotifications() == [])
+}
+
+@Test
 func thresholdNotifierRearmsOnlyWindowWhoseResetCycleChanges() async {
     let sender = RecordingNotificationSender()
     let notifier = ThresholdNotifier(sender: sender)

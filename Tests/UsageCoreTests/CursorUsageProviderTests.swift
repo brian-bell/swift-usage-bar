@@ -21,7 +21,131 @@ func cursorProviderReturnsFreshUsageOnSuccess() async throws {
     #expect(report.chain == [ProviderDataSourceStep(.cursorUsageSummary, .used)])
     #expect(report.source == .cursorUsageSummary)
     #expect(await transport.credentials == [credential])
+    #expect(await transport.sandCredentials == [credential])
+    #expect(expected.grokBot == nil)
     #expect(reader.modes == [.interactive])
+}
+
+@Test
+func cursorProviderAttachesGrokBotFromSandWithoutChangingTheWinningSource() async throws {
+    let receivedAt = Date(timeIntervalSince1970: 1_786_000_000)
+    let summary = try cursorFixtureData("cursor-usage-summary.json")
+    let sand = try cursorFixtureData("cursor-sand-usage-status.json")
+    let transport = FakeCursorTransport(
+        response: CursorUsageSummaryResponse(data: summary, receivedAt: receivedAt),
+        sandResponse: CursorSandUsageResponse(data: sand, receivedAt: receivedAt)
+    )
+    let credential = sampleCursorCredential()
+    let provider = CursorUsageProvider(
+        credentialReader: FakeCursorCredentialReader(result: .fresh(credential)),
+        transport: transport
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .background)
+    let grokBot = try CursorSandUsageParser().parse(sand)
+
+    #expect(report.source == .cursorUsageSummary)
+    #expect(report.chain == [ProviderDataSourceStep(.cursorUsageSummary, .used)])
+    guard case let .fresh(usage, asOf: asOf) = report.state else {
+        Issue.record("expected fresh Cursor usage, got \(report.state)")
+        return
+    }
+    #expect(asOf == receivedAt)
+    #expect(usage.weekly.percentRemaining == 95)
+    #expect(usage.monthly?.percentRemaining == 90)
+    #expect(usage.grokBot == grokBot)
+    #expect(await transport.credentials == [credential])
+    #expect(await transport.sandCredentials == [credential])
+}
+
+@Test
+func cursorProviderKeepsCursorPoolsWhenSandFails() async throws {
+    let receivedAt = Date(timeIntervalSince1970: 1_786_000_000)
+    let summary = try cursorFixtureData("cursor-usage-summary.json")
+    let failures: [any Error] = [
+        TestCursorError.boom,
+        CursorUsageTransportError.notAuthenticated,
+    ]
+    let credential = sampleCursorCredential()
+    let expected = try CursorUsageSummaryParser().parse(summary)
+
+    for sandError in failures {
+        let transport = FakeCursorTransport(
+            response: CursorUsageSummaryResponse(data: summary, receivedAt: receivedAt),
+            sandError: sandError
+        )
+        let provider = CursorUsageProvider(
+            credentialReader: FakeCursorCredentialReader(result: .fresh(credential)),
+            transport: transport
+        )
+
+        let report = await provider.fetchReport(previous: nil, mode: .background)
+
+        #expect(report.state == .fresh(expected, asOf: receivedAt))
+        #expect(report.source == .cursorUsageSummary)
+        #expect(await transport.sandCredentials == [credential])
+    }
+}
+
+@Test
+func cursorProviderOmitsGrokBotWhenSandBodyHasNoIncludedLimit() async throws {
+    let receivedAt = Date(timeIntervalSince1970: 1_786_000_000)
+    let summary = try cursorFixtureData("cursor-usage-summary.json")
+    let transport = FakeCursorTransport(
+        response: CursorUsageSummaryResponse(data: summary, receivedAt: receivedAt),
+        sandResponse: CursorSandUsageResponse(
+            data: Data("""
+            {"usagePercent": 12.34, "hasNonZeroIncludedLimit": false}
+            """.utf8),
+            receivedAt: receivedAt
+        )
+    )
+    let provider = CursorUsageProvider(
+        credentialReader: FakeCursorCredentialReader(result: .fresh(sampleCursorCredential())),
+        transport: transport
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .background)
+    let expected = try CursorUsageSummaryParser().parse(summary)
+
+    #expect(report.state == .fresh(expected, asOf: receivedAt))
+    if case let .fresh(usage, asOf: _) = report.state {
+        #expect(usage.grokBot == nil)
+    }
+}
+
+@Test
+func cursorProviderKeepsCursorPoolsWhenSandBodyIsMalformed() async throws {
+    let receivedAt = Date(timeIntervalSince1970: 1_786_000_000)
+    let summary = try cursorFixtureData("cursor-usage-summary.json")
+    let transport = FakeCursorTransport(
+        response: CursorUsageSummaryResponse(data: summary, receivedAt: receivedAt),
+        sandResponse: CursorSandUsageResponse(data: Data("not json".utf8), receivedAt: receivedAt)
+    )
+    let provider = CursorUsageProvider(
+        credentialReader: FakeCursorCredentialReader(result: .fresh(sampleCursorCredential())),
+        transport: transport
+    )
+
+    let report = await provider.fetchReport(previous: nil, mode: .background)
+    let expected = try CursorUsageSummaryParser().parse(summary)
+
+    #expect(report.state == .fresh(expected, asOf: receivedAt))
+}
+
+@Test
+func cursorProviderDoesNotFetchSandWhenUsageSummaryFails() async {
+    let previous = sampleCursorUsage()
+    let transport = FakeCursorTransport(error: TestCursorError.boom)
+    let provider = CursorUsageProvider(
+        credentialReader: FakeCursorCredentialReader(result: .fresh(sampleCursorCredential())),
+        transport: transport
+    )
+
+    let report = await provider.fetchReport(previous: previous, mode: .background)
+
+    #expect(report.state == .stale(last: previous, reason: .networkError))
+    #expect(await transport.sandCredentials.isEmpty)
 }
 
 @Test
@@ -176,6 +300,47 @@ func cursorHTTPTransportMaps401ToNotAuthenticated() async throws {
     }
 }
 
+@Test
+func cursorHTTPTransportPostsSandStatusToTheSameHostWithTheSameCookie() async throws {
+    let receivedAt = Date(timeIntervalSince1970: 1_786_000_000)
+    let fixture = try cursorFixtureData("cursor-sand-usage-status.json")
+    let url = try #require(URL(string: "https://cursor.com/api/dashboard/get-sand-usage-status"))
+    let response = try #require(
+        HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)
+    )
+    let sender = RecordingCursorHTTPTransport(response: (fixture, response))
+    let transport = CursorUsageHTTPTransport(sender: sender, now: { receivedAt })
+    let credential = sampleCursorCredential()
+
+    let sand = try await transport.fetchSandUsageStatus(credential: credential)
+
+    #expect(sand.data == fixture)
+    #expect(sand.receivedAt == receivedAt)
+    let request = try #require(sender.requests.first)
+    #expect(request.url == CursorUsageHTTPTransport.sandEndpoint)
+    #expect(request.httpMethod == "POST")
+    #expect(request.httpBody == Data("{}".utf8))
+    #expect(request.value(forHTTPHeaderField: "Cookie") == "WorkosCursorSessionToken=\(credential.cookieValue)")
+    #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+    #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+    #expect(request.value(forHTTPHeaderField: "Origin") == "https://cursor.com")
+    #expect(request.timeoutInterval == 5)
+}
+
+@Test
+func cursorHTTPTransportMapsSand401ToNotAuthenticated() async throws {
+    let url = try #require(URL(string: "https://cursor.com/api/dashboard/get-sand-usage-status"))
+    let response = try #require(
+        HTTPURLResponse(url: url, statusCode: 401, httpVersion: nil, headerFields: nil)
+    )
+    let sender = RecordingCursorHTTPTransport(response: (Data("{\"error\":\"not_authenticated\"}".utf8), response))
+    let transport = CursorUsageHTTPTransport(sender: sender)
+
+    await #expect(throws: CursorUsageTransportError.notAuthenticated) {
+        try await transport.fetchSandUsageStatus(credential: sampleCursorCredential())
+    }
+}
+
 private enum TestCursorError: Error {
     case boom
 }
@@ -223,16 +388,27 @@ private final class FakeCursorCredentialReader: CursorCredentialReading, @unchec
 private actor FakeCursorTransport: CursorUsageTransporting {
     private let response: CursorUsageSummaryResponse?
     private let error: (any Error)?
+    private let sandResponse: CursorSandUsageResponse?
+    private let sandError: (any Error)?
     private(set) var credentials: [CursorSessionCredential] = []
+    private(set) var sandCredentials: [CursorSessionCredential] = []
 
-    init(response: CursorUsageSummaryResponse) {
+    init(
+        response: CursorUsageSummaryResponse,
+        sandResponse: CursorSandUsageResponse? = nil,
+        sandError: (any Error)? = TestCursorError.boom
+    ) {
         self.response = response
         self.error = nil
+        self.sandResponse = sandResponse
+        self.sandError = sandResponse == nil ? sandError : nil
     }
 
     init(error: any Error) {
         self.response = nil
         self.error = error
+        self.sandResponse = nil
+        self.sandError = TestCursorError.boom
     }
 
     func fetchUsageSummary(credential: CursorSessionCredential) async throws -> CursorUsageSummaryResponse {
@@ -241,6 +417,14 @@ private actor FakeCursorTransport: CursorUsageTransporting {
             throw error
         }
         return response!
+    }
+
+    func fetchSandUsageStatus(credential: CursorSessionCredential) async throws -> CursorSandUsageResponse {
+        sandCredentials.append(credential)
+        if let sandError {
+            throw sandError
+        }
+        return sandResponse!
     }
 }
 

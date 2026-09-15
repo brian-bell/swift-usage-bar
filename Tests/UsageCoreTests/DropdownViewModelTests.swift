@@ -121,6 +121,39 @@ func dropdownRowsOmitCursorPoolWhenAutoPercentIsAbsent() throws {
     #expect(row.weekly == nil)
     #expect(row.monthly?.title == "Other")
     #expect(row.monthly?.percentLabel == "90% remaining")
+    #expect(row.grokBot == nil)
+}
+
+@Test
+func dropdownRowsExposeGrokBotWindowOnlyWhenPresent() throws {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 95, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 90, resetsAt: nil),
+        grokBot: UsageWindow(
+            percentRemaining: 88,
+            resetsAt: referenceNow.addingTimeInterval(90 * 60)
+        )
+    )
+
+    let model = DropdownViewModel(
+        states: [
+            .cursor: .fresh(usage, asOf: referenceNow),
+            .claude: .fresh(claudeUsage, asOf: referenceNow),
+        ],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let cursorRow = try #require(model.rows.first { $0.provider == .cursor })
+    let grokBot = try #require(cursorRow.grokBot)
+    #expect(grokBot.title == "Bot")
+    #expect(grokBot.percentLabel == "88% remaining")
+    #expect(grokBot.countdownLabel == "resets in 1h 30m")
+
+    let claudeRow = try #require(model.rows.first { $0.provider == .claude })
+    #expect(claudeRow.grokBot == nil)
 }
 
 @Test

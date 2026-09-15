@@ -1,0 +1,37 @@
+{
+  "currentPeriodStart": "2026-09-07T00:00:00.000Z",
+  "nextResetTimestampUtc": "2026-09-14T00:00:00.000Z",
+  "usagePercent": 12.34,
+  "hasAvailableUsage": true,
+  "hasNonZeroIncludedLimit": true,
+  "upgradeRecommendation": {
+    "cta": {
+      "label": "Upgrade example",
+      "url": {
+        "url": "https://cursor.com/dashboard?tier=example"
+      }
+    },
+    "supportingText": "Example upsell copy. Ignored by the parser.",
+    "kind": "example_upgrade_recommendation"
+  },
+  "upgradeRecommendations": [
+    {
+      "cta": {
+        "label": "Upgrade example",
+        "url": {
+          "url": "https://cursor.com/dashboard?tier=example"
+        }
+      },
+      "supportingText": "Example upsell copy. Ignored by the parser.",
+      "kind": "example_upgrade_recommendation"
+    }
+  ],
+  "onDemandSettings": {
+    "visible": true,
+    "eligible": true,
+    "enabled": true,
+    "dashboardUrl": "https://cursor.com/dashboard?for=example"
+  },
+  "grokPlanLabel": "ExampleLabel",
+  "cursorPlanName": "plan"
+}

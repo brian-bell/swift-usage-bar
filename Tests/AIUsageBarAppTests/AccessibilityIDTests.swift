@@ -47,6 +47,10 @@ func accessibilityIDCatalogUsesHierarchicalKebabCase() {
             == "menubar.content.provider.claude.window.fable"
     )
     #expect(
+        AccessibilityID.menuBarWindow(.cursor, .grokBot)
+            == "menubar.content.provider.cursor.window.grokBot"
+    )
+    #expect(
         AccessibilityID.menuBarProviderCredits(.openCodeCredits)
             == "menubar.content.provider.opencodeCredits.credits"
     )

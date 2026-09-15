@@ -72,6 +72,18 @@ func statusToneIncludesMonthlyButStillExcludesFable() {
 }
 
 @Test
+func statusToneExcludesGrokBot() {
+    let grokBotOnlyWarning = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 90, resetsAt: nil),
+        monthly: UsageWindow(percentRemaining: 80, resetsAt: nil),
+        grokBot: UsageWindow(percentRemaining: 1, resetsAt: nil)
+    )
+
+    #expect(tone(for: grokBotOnlyWarning, warningThreshold: 20) == .normal)
+}
+
+@Test
 func statusToneIsNormalForACreditsOnlyUsage() {
     // The credits provider's usage has no percent windows at all — a
     // near-zero dollar balance must not shift tone. Dollar thresholds are
