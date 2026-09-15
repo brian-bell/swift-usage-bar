@@ -284,7 +284,7 @@ func kimiProviderFreshPathThroughRealHTTPTransportAdapter() async throws {
     #expect(report.state == .fresh(expected, asOf: receivedAt))
     #expect(report.chain == [ProviderDataSourceStep(.kimiOpenPlatformBalance, .used)])
     #expect(report.source == .kimiOpenPlatformBalance)
-    #expect(await sender.requests.count == 1)
+    #expect(sender.requests.count == 1)
 }
 
 private enum TestError: Error {

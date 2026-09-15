@@ -463,12 +463,6 @@ func providerStatusClampsFutureRefreshTimestampsToJustNow() throws {
     (.cursor, .credentialUnavailable, "No Cursor sign-in found"),
     (.cursor, .sessionExpired, "Cursor session expired"),
     (.cursor, .workspaceSelectionRequired, "Workspace selection required"),
-    (.kimi, .parseFailure, "Unexpected response format"),
-    (.kimi, .networkError, "Network error"),
-    (.kimi, .tokenExpired, "Kimi key rejected"),
-    (.kimi, .credentialUnavailable, "No Kimi key found"),
-    (.kimi, .sessionExpired, "Kimi key rejected"),
-    (.kimi, .workspaceSelectionRequired, "Workspace selection required"),
 ])
 func providerStatusMapsEveryStaleReasonToProviderSpecificPhrasing(
     provider: ProviderID,
@@ -483,6 +477,29 @@ func providerStatusMapsEveryStaleReasonToProviderSpecificPhrasing(
     )
 
     let row = try #require(model.rows.first { $0.provider == provider })
+    #expect(row.methodLabel == expected)
+}
+
+@Test(arguments: [
+    (StaleReason.parseFailure, "Unexpected response format"),
+    (.networkError, "Network error"),
+    (.tokenExpired, "Kimi key rejected"),
+    (.credentialUnavailable, "No Kimi key found"),
+    (.sessionExpired, "Kimi key rejected"),
+    (.workspaceSelectionRequired, "Workspace selection required"),
+])
+func providerStatusMapsKimiStaleReasonsToProviderSpecificPhrasing(
+    reason: StaleReason,
+    expected: String
+) throws {
+    let model = ProviderStatusViewModel(
+        states: [.kimi: .stale(last: statusUsage, reason: reason)],
+        dataSources: [:],
+        lastUpdatedAt: [:],
+        now: statusNow
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .kimi })
     #expect(row.methodLabel == expected)
 }
 
