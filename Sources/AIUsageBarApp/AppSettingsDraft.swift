@@ -9,6 +9,8 @@ struct AppSettingsDraft: Equatable {
     var providerVisibility: [ProviderID: Bool]
     var warningThresholds: [Int]
     var openCodeGoWorkspace: String
+    var xaiTeamID: String
+    var xaiManagementKey: String
     var launchAtLoginEnabled: Bool
 
     /// Neutral defaults used only until the live values are captured in `onAppear`.
@@ -21,6 +23,8 @@ struct AppSettingsDraft: Equatable {
         ),
         warningThresholds: WarningThresholds.defaultValue,
         openCodeGoWorkspace: "",
+        xaiTeamID: "",
+        xaiManagementKey: "",
         launchAtLoginEnabled: false
     )
 
@@ -103,6 +107,8 @@ extension AppSettingsDraft {
             ),
             warningThresholds: model.warningThresholds,
             openCodeGoWorkspace: model.openCodeGoWorkspaceID ?? "",
+            xaiTeamID: model.xaiTeamID ?? "",
+            xaiManagementKey: "",
             launchAtLoginEnabled: model.launchAtLoginEnabled
         )
     }
@@ -135,6 +141,16 @@ extension AppSettingsDraft {
         let normalizedWorkspace = OpenCodeGoWorkspace.normalizedID(from: openCodeGoWorkspace)
         if model.openCodeGoWorkspaceID != normalizedWorkspace {
             model.setOpenCodeGoWorkspace(openCodeGoWorkspace)
+        }
+
+        let normalizedTeamID = XAITeamID.normalizedID(from: xaiTeamID)
+        if model.xaiTeamID != normalizedTeamID {
+            model.setXAITeamID(xaiTeamID)
+        }
+
+        let trimmedKey = xaiManagementKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedKey.isEmpty {
+            model.setXAIManagementKey(trimmedKey)
         }
 
         guard model.launchAtLoginEnabled != launchAtLoginEnabled else {

@@ -148,6 +148,8 @@ enum MenuBarLabelImage {
             return "Cu"
         case .kimi:
             return "Km"
+        case .xai:
+            return "Xa"
         }
     }
 }

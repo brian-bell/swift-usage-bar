@@ -144,3 +144,30 @@ Phase 0 source checks and live-call results for the read-only usage providers.
 - Reading `moonshotai-cn` or `kimi-for-coding` from `auth.json`.
 - Surfacing `voucher_balance` / `cash_balance` / deficit, or inventing a percent denominator.
 - One parser that accepts both Code `/usages` and Open Platform `/balance` bodies.
+
+## xAI (API prepaid credits)
+
+- Product: remaining **prepaid USD** on an xAI developer-platform team. **Not** SuperGrok weekly allowance and **not** Cursor Grok Bot. Official meter is a dollar ledger, not a percent window.
+- Auth source: a **management** key the user pastes in Settings (Console → Settings → Management Keys), stored in an AIUsageBar-owned Keychain item (`service: AIUsageBar xAI Management Key`, account `management`). Team ID is a Settings UUID (`settings.xai.teamID`), the same shape as the Console URL. Background Keychain reads suppress UI (`kSecUseAuthenticationUIFail` / `"fail"`). The app never writes CLI/browser credentials, never refreshes OAuth, and never reads OpenCode's `xai` inference key.
+- Endpoint: `GET https://management-api.x.ai/v1/billing/teams/{team_id}/prepaid/balance` with `Authorization: Bearer <management key>`, `Accept: application/json`, and `User-Agent: AIUsageBar/<version>`. Official docs: [Billing](https://docs.x.ai/developers/rest-api-reference/management/billing), [Using Management API](https://docs.x.ai/developers/management-api-guide).
+- Fixture: `Tests/Fixtures/xai-prepaid-balance.json`. Shape is the official Management API success example with synthetic team/invoice/Stripe ids and `total.val: "-1000"` ($10). No management key was present on the development machine for a live capture (2026-09-14); OpenCode `auth.json` has an `xai` **inference** key, which is the wrong credential type and was not sent to this host.
+- Response shape (fields the app uses): `total.val` is USD **cents as a string**. Sign convention from the docs: PURCHASE / REFUND / AUTO_PURCHASE amounts are negative; SPEND is positive. Remaining dollars are `-cents/100` (`"-1000"` → `$10`). A missing or non-integer `total.val` is `.parseFailure`, never `$0.00`. `changes[]` (invoice ids, invoice numbers, `paymentProcessor`) is ignored — `CreditBalance` is numeric-only.
+- Mapping: inverted `total.val` → `CreditBalance.balanceUSD`. Monthly used/limit stay `nil`. Percent windows stay `nil`, so xAI stays out of tone and threshold notifications. Menu bar `Xa $10` (whole dollars, rounded down); dropdown shows the wallet with cents and no monthly remaining/bar.
+- Failure mapping: missing management key or team ID → `.credentialUnavailable`; HTTP 401/403 → `.tokenExpired`; HTTP 404 (wrong team or postpaid-only / never topped up) → `.credentialUnavailable` (hide, don't show `$0`); malformed body / missing `total.val` → `.parseFailure`; other transport failures → `.networkError`.
+- Transport: shared `HTTPTransport` via `XAIPrepaidHTTPTransport`. Single GET. No cookie jar, no Origin/Referer, no second usage-analytics POST, no `/auth/management-keys/validation` team-id discovery, no org-id-as-team-id fallback.
+- Posted-ledger lag: spend may post at billing-cycle close, so `total` can be higher than Console "live remaining" mid-cycle. Displayed value is the posted ledger, not a second invented field.
+- Consumer: standalone **xAI** provider (`XAIPrepaidUsageProvider`, chain `[.xaiPrepaidBalance]`, menu bar `Xa`, hidden by default).
+
+### Rejected alternatives
+
+- `GET https://api.x.ai/v1/api-key` and OpenUsage `remaining_balance` / `spent_balance` / `total_granted` — those keys are absent from the official `/v1/api-key` schema. Not decoded.
+- `https://api.x.ai` as a silent fallback after Management API 401.
+- Chrome `console.x.ai` / `grok.com` cookies, `cli-chat-proxy.grok.com`, extra browsers.
+- OpenCode `auth.json` `xai` inference key or SuperGrok OAuth (`~/.grok/auth.json`). Management API rejects OAuth; inference keys are a different product.
+- Env vars (`XAI_API_KEY`, `XAI_MANAGEMENT_API_KEY`, `XAI_TEAM_ID`) as a product source (MiniMax already rejected env).
+- Invoice preview `prepaidCredits`, `POST …/usage` spend chart, `POST …/prepaid/top-up`, spending-limit writes.
+- Surfacing `changes[]`, invoices, card last4, billing address, `ownerUserId`.
+- One parser that accepts SuperGrok credits JSON **and** prepaid ledger JSON.
+- Merging this meter into Cursor Grok Bot (`Cu …/…/…`) or labeling it "Grok".
+- Storing the management key in UserDefaults in the clear.
+- Inventing a percent from last top-up, `used`/`limit`, or cumulative tier spend.

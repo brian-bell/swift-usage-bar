@@ -21,6 +21,7 @@ func providerDataSourceChainListsEachProvidersSourcesInFallbackOrder() {
     #expect(ProviderID.miniMax.dataSourceChain == [.minimaxTokenPlanAPI])
     #expect(ProviderID.cursor.dataSourceChain == [.cursorUsageSummary])
     #expect(ProviderID.kimi.dataSourceChain == [.kimiOpenPlatformBalance])
+    #expect(ProviderID.xai.dataSourceChain == [.xaiPrepaidBalance])
 }
 
 @Test
@@ -47,6 +48,16 @@ func kimiOpenPlatformBalanceDataSourceNamesMatchTheProviderStatusConvention() {
     #expect(
         ProviderDataSource.kimiOpenPlatformBalance.chainStepName
             == "Kimi Open Platform \u{00B7} OpenCode key"
+    )
+}
+
+@Test
+func xaiPrepaidBalanceDataSourceNamesMatchTheProviderStatusConvention() {
+    #expect(ProviderDataSource.xaiPrepaidBalance.provider == .xai)
+    #expect(ProviderDataSource.xaiPrepaidBalance.displayName == "xAI prepaid balance API")
+    #expect(
+        ProviderDataSource.xaiPrepaidBalance.chainStepName
+            == "xAI prepaid \u{00B7} Management key"
     )
 }
 
@@ -338,6 +349,10 @@ func minimaxTokenPlanAPIChainStepPhraseRoutesPerSource() {
     )
     #expect(
         ProviderDataSource.kimiOpenPlatformBalance.chainFailureSummary(for: .tokenExpired)
+            == "Key rejected"
+    )
+    #expect(
+        ProviderDataSource.xaiPrepaidBalance.chainFailureSummary(for: .tokenExpired)
             == "Key rejected"
     )
     // The other HTTPS API sources keep their generic wording.

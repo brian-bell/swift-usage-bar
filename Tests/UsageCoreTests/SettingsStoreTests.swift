@@ -15,6 +15,7 @@ func settingsStoreReturnsDefaultsWhenNothingHasBeenSaved() {
         #expect(!store.isProviderVisible(.miniMax))
         #expect(!store.isProviderVisible(.cursor))
         #expect(!store.isProviderVisible(.kimi))
+        #expect(!store.isProviderVisible(.xai))
         #expect(store.warningThresholds == [15])
         #expect(!store.launchAtLoginEnabled)
     }
@@ -27,7 +28,7 @@ func providerIDIsHiddenByDefaultReportsMembershipInTheSingleSourceOfTruth() {
     // AppSettingsDraft) all read from this membership. Pin it directly so
     // adding a fifth default-hidden provider — or un-hiding one — can't
     // drift between sites silently.
-    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .openCodeCredits, .miniMax, .cursor, .kimi])
+    #expect(ProviderID.defaultHiddenProviders == [.openCodeGo, .openCodeCredits, .miniMax, .cursor, .kimi, .xai])
     #expect(!ProviderID.claude.isHiddenByDefault)
     #expect(!ProviderID.codex.isHiddenByDefault)
     #expect(ProviderID.openCodeGo.isHiddenByDefault)
@@ -35,8 +36,10 @@ func providerIDIsHiddenByDefaultReportsMembershipInTheSingleSourceOfTruth() {
     #expect(ProviderID.miniMax.isHiddenByDefault)
     #expect(ProviderID.cursor.isHiddenByDefault)
     #expect(ProviderID.kimi.isHiddenByDefault)
+    #expect(ProviderID.xai.isHiddenByDefault)
     #expect(ProviderID.kimi.reportsCreditsBalance)
     #expect(ProviderID.openCodeCredits.reportsCreditsBalance)
+    #expect(ProviderID.xai.reportsCreditsBalance)
     #expect(!ProviderID.miniMax.reportsCreditsBalance)
 }
 
@@ -113,6 +116,19 @@ func openCodeGoWorkspaceNormalizerAcceptsIDsAndWorkspaceURLs() {
     ) == id)
     #expect(OpenCodeGoWorkspace.normalizedID(from: "not a workspace") == nil)
     #expect(OpenCodeGoWorkspace.normalizedID(from: "   ") == nil)
+}
+
+@Test
+func settingsStoreRoundTripsXAITeamID() {
+    withIsolatedDefaults { defaults in
+        let store = SettingsStore(defaults: defaults)
+        store.xaiTeamID = "  65C1E471-205F-4566-9C5A-07198BCDF4CE  "
+
+        #expect(SettingsStore(defaults: defaults).xaiTeamID == "65c1e471-205f-4566-9c5a-07198bcdf4ce")
+
+        store.xaiTeamID = "not-a-uuid"
+        #expect(SettingsStore(defaults: defaults).xaiTeamID == nil)
+    }
 }
 
 @Test

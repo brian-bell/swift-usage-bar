@@ -97,6 +97,7 @@ func liveProvidersState(
             .miniMax: .hidden,
             .cursor: .hidden,
             .kimi: .hidden,
+            .xai: .hidden,
         ],
         lastSuccessfulRefreshes: [
             .claude: lastSuccess,
@@ -130,6 +131,30 @@ func kimiFreshState(
         ],
         lastDataSources: [
             .kimi: .kimiOpenPlatformBalance,
+        ]
+    )
+}
+
+let uiTestXAIUsage = ProviderUsage(
+    fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    weekly: UsageWindow(percentRemaining: nil, resetsAt: nil),
+    credits: CreditBalance(balanceUSD: 10)
+)
+
+@MainActor
+func xaiFreshState(
+    asOf: Date = uiTestNow,
+    lastSuccess: Date = uiTestNow.addingTimeInterval(-120)
+) -> AppState {
+    AppState(
+        providerStates: [
+            .xai: .fresh(uiTestXAIUsage, asOf: asOf),
+        ],
+        lastSuccessfulRefreshes: [
+            .xai: lastSuccess,
+        ],
+        lastDataSources: [
+            .xai: .xaiPrepaidBalance,
         ]
     )
 }
@@ -213,6 +238,7 @@ func shellModel(
     settingsStore: SettingsStore = SettingsStore(defaults: isolatedDefaults()),
     usageController: any UsageControlling = RecordingUsageController(),
     launchAtLoginManager: any LaunchAtLoginManaging = RecordingLaunchAtLoginManager(),
+    xaiManagementKeyStore: any XAIManagementKeyStoring = InMemoryXAIManagementKeyStore(),
     now: @MainActor @escaping () -> Date = { uiTestNow }
 ) -> UsageBarShellModel {
     UsageBarShellModel(
@@ -220,6 +246,7 @@ func shellModel(
         settingsStore: settingsStore,
         usageController: usageController,
         launchAtLoginManager: launchAtLoginManager,
+        xaiManagementKeyStore: xaiManagementKeyStore,
         now: now
     )
 }

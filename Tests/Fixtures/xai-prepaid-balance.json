@@ -1,0 +1,21 @@
+{
+  "changes": [
+    {
+      "teamId": "00000000-0000-4000-8000-000000000001",
+      "changeOrigin": "PURCHASE",
+      "topupStatus": "SUCCEEDED",
+      "amount": {
+        "val": "-1000"
+      },
+      "invoiceId": "synthetic-invoice-id",
+      "invoiceNumber": "000-000-000-000",
+      "createTime": "2025-02-24T15:28:02.308840Z",
+      "paymentProcessor": {
+        "kind": "STRIPE"
+      }
+    }
+  ],
+  "total": {
+    "val": "-1000"
+  }
+}

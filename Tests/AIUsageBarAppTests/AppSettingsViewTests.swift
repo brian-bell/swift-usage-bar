@@ -73,6 +73,8 @@ extension HostedUITests {
                     providerVisibility: [:],
                     warningThresholds: [30, 15, 5],
                     openCodeGoWorkspace: "",
+                    xaiTeamID: "",
+                    xaiManagementKey: "",
                     launchAtLoginEnabled: false
                 ))
             )

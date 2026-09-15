@@ -203,6 +203,8 @@ struct AppSettingsDraftProvidersTabTests {
         #expect(!AppSettingsDraft.placeholder.visibility(for: .openCodeGo))
         #expect(!AppSettingsDraft.placeholder.visibility(for: .miniMax))
         #expect(!AppSettingsDraft.placeholder.visibility(for: .cursor))
+        #expect(!AppSettingsDraft.placeholder.visibility(for: .kimi))
+        #expect(!AppSettingsDraft.placeholder.visibility(for: .xai))
     }
 
     @Test
@@ -224,6 +226,66 @@ struct AppSettingsDraftProvidersTabTests {
             let model = shellModel(settingsStore: settingsStore)
 
             #expect(AppSettingsDraft.capture(from: model).openCodeGoWorkspace == "wrk_01KSTORED0001")
+        }
+    }
+
+    @Test
+    @MainActor
+    func captureRendersAStoredXAITeamIDAndLeavesTheKeyBlank() {
+        withIsolatedDefaults { defaults in
+            let settingsStore = SettingsStore(defaults: defaults)
+            settingsStore.xaiTeamID = "00000000-0000-4000-8000-000000000001"
+            let keyStore = InMemoryXAIManagementKeyStore(key: "xai-mgmt")
+            let model = shellModel(
+                settingsStore: settingsStore,
+                xaiManagementKeyStore: keyStore
+            )
+
+            let draft = AppSettingsDraft.capture(from: model)
+            #expect(draft.xaiTeamID == "00000000-0000-4000-8000-000000000001")
+            #expect(draft.xaiManagementKey.isEmpty)
+            #expect(model.hasStoredXAIManagementKey)
+        }
+    }
+
+    @Test
+    @MainActor
+    func applyNormalizesAnXAITeamIDAndWritesANonEmptyManagementKey() {
+        withIsolatedDefaults { defaults in
+            let settingsStore = SettingsStore(defaults: defaults)
+            let keyStore = InMemoryXAIManagementKeyStore()
+            let model = shellModel(
+                settingsStore: settingsStore,
+                xaiManagementKeyStore: keyStore
+            )
+
+            var draft = AppSettingsDraft.capture(from: model)
+            draft.xaiTeamID = "  00000000-0000-4000-8000-000000000001  "
+            draft.xaiManagementKey = " xai-mgmt "
+            draft.apply(to: model)
+
+            #expect(model.xaiTeamID == "00000000-0000-4000-8000-000000000001")
+            #expect(settingsStore.xaiTeamID == "00000000-0000-4000-8000-000000000001")
+            #expect(try keyStore.read(mode: .background) == "xai-mgmt")
+        }
+    }
+
+    @Test
+    @MainActor
+    func applyLeavesTheStoredManagementKeyWhenTheFieldIsEmpty() {
+        withIsolatedDefaults { defaults in
+            let settingsStore = SettingsStore(defaults: defaults)
+            let keyStore = InMemoryXAIManagementKeyStore(key: "keep-me")
+            let model = shellModel(
+                settingsStore: settingsStore,
+                xaiManagementKeyStore: keyStore
+            )
+
+            var draft = AppSettingsDraft.capture(from: model)
+            draft.xaiManagementKey = ""
+            draft.apply(to: model)
+
+            #expect(try keyStore.read(mode: .background) == "keep-me")
         }
     }
 

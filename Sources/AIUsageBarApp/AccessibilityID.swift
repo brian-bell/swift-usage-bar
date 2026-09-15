@@ -58,6 +58,8 @@ enum AccessibilityID {
             return "cursor"
         case .kimi:
             return "kimi"
+        case .xai:
+            return "xai"
         }
     }
 
@@ -127,6 +129,14 @@ enum AccessibilityID {
 
     static func settingsProviderWorkspace(_ provider: ProviderID) -> String {
         "settings.provider.\(providerToken(provider)).workspace"
+    }
+
+    static func settingsProviderTeamID(_ provider: ProviderID) -> String {
+        "settings.provider.\(providerToken(provider)).teamID"
+    }
+
+    static func settingsProviderManagementKey(_ provider: ProviderID) -> String {
+        "settings.provider.\(providerToken(provider)).managementKey"
     }
 
     /// 1-based step number matching the visible chain numbering.

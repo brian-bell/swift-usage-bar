@@ -181,6 +181,8 @@ private extension ProviderID {
             return "cursor"
         case .kimi:
             return "kimi"
+        case .xai:
+            return "xai"
         }
     }
 }

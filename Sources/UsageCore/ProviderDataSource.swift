@@ -28,6 +28,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
     case cursorUsageSummary
     /// Kimi Open Platform: remaining-balance API authenticated by an OpenCode auth.json key.
     case kimiOpenPlatformBalance
+    /// xAI developer API: prepaid ledger authenticated by a management key.
+    case xaiPrepaidBalance
 
     public var provider: ProviderID {
         switch self {
@@ -45,6 +47,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return .cursor
         case .kimiOpenPlatformBalance:
             return .kimi
+        case .xaiPrepaidBalance:
+            return .xai
         }
     }
 
@@ -69,6 +73,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "Cursor usage-summary API"
         case .kimiOpenPlatformBalance:
             return "Kimi Open Platform balance API"
+        case .xaiPrepaidBalance:
+            return "xAI prepaid balance API"
         }
     }
 
@@ -91,6 +97,8 @@ public enum ProviderDataSource: Hashable, Sendable, CaseIterable {
             return "Cursor usage-summary \u{00B7} Local IDE session"
         case .kimiOpenPlatformBalance:
             return "Kimi Open Platform \u{00B7} OpenCode key"
+        case .xaiPrepaidBalance:
+            return "xAI prepaid \u{00B7} Management key"
         }
     }
 }
@@ -115,6 +123,8 @@ public extension ProviderID {
             return [.cursorUsageSummary]
         case .kimi:
             return [.kimiOpenPlatformBalance]
+        case .xai:
+            return [.xaiPrepaidBalance]
         }
     }
 }

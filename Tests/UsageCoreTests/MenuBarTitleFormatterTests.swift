@@ -522,6 +522,25 @@ func menuBarTitleFormatterSkipsKimiUntilItHasReported() {
 }
 
 @Test
+func menuBarTitleFormatterRendersXAIAsWholeDollars() {
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .hidden,
+        .xai: creditsState(balanceUSD: 10.99),
+    ]) == [
+        MenuBarTitleSegment(provider: .xai, value: "$10", isStale: false),
+    ])
+}
+
+@Test
+func menuBarTitleFormatterSkipsXAIUntilItHasReported() {
+    #expect(MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .fresh(codexUsage, asOf: Date(timeIntervalSince1970: 20)),
+    ]).contains { $0.provider == .xai } == false)
+}
+
+@Test
 func menuBarTitleFormatterSkipsTheCreditsProviderUntilItHasReported() {
     // Default-hidden provider contract: no state → no segment, no
     // placeholder — identical to OpenCode Go and MiniMax.

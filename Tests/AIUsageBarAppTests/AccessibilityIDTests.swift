@@ -12,6 +12,7 @@ func accessibilityIDProviderTokensMatchCatalog() {
     #expect(AccessibilityID.providerToken(.miniMax) == "minimax")
     #expect(AccessibilityID.providerToken(.cursor) == "cursor")
     #expect(AccessibilityID.providerToken(.kimi) == "kimi")
+    #expect(AccessibilityID.providerToken(.xai) == "xai")
 }
 
 @Test
@@ -113,5 +114,13 @@ func accessibilityIDCatalogUsesHierarchicalKebabCase() {
     #expect(
         AccessibilityID.settingsProviderWorkspace(.openCodeGo)
             == "settings.provider.opencodeGo.workspace"
+    )
+    #expect(
+        AccessibilityID.settingsProviderTeamID(.xai)
+            == "settings.provider.xai.teamID"
+    )
+    #expect(
+        AccessibilityID.settingsProviderManagementKey(.xai)
+            == "settings.provider.xai.managementKey"
     )
 }

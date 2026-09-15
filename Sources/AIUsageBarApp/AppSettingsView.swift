@@ -160,7 +160,9 @@ private struct ProvidersSettingsPane: View {
                                 }
                             }
                         ),
-                        workspace: $draft.openCodeGoWorkspace
+                        workspace: $draft.openCodeGoWorkspace,
+                        xaiTeamID: $draft.xaiTeamID,
+                        xaiManagementKey: $draft.xaiManagementKey
                     )
                     .padding(.vertical, 6)
                 }
@@ -178,6 +180,8 @@ private struct ProviderSettingsRow: View {
     @Binding var isVisible: Bool
     @Binding var isExpanded: Bool
     @Binding var workspace: String
+    @Binding var xaiTeamID: String
+    @Binding var xaiManagementKey: String
 
     /// Width reserved for the chevron, so a provider with no disclosure (hidden)
     /// still lines its name up with the expandable cards above and below it.
@@ -215,7 +219,12 @@ private struct ProviderSettingsRow: View {
             }
 
             if isVisible, isExpanded {
-                ProviderChainView(chain: status.chain, workspace: $workspace)
+                ProviderChainView(
+                    chain: status.chain,
+                    workspace: $workspace,
+                    xaiTeamID: $xaiTeamID,
+                    xaiManagementKey: $xaiManagementKey
+                )
                     .padding(.leading, Self.chevronWidth + 22)
             }
         }
@@ -278,6 +287,8 @@ private struct ProviderStatusLineView: View {
 private struct ProviderChainView: View {
     let chain: ProviderChainSection
     @Binding var workspace: String
+    @Binding var xaiTeamID: String
+    @Binding var xaiManagementKey: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -321,6 +332,30 @@ private struct ProviderChainView: View {
 
                 if let workspaceCaption = chain.workspaceCaption {
                     SettingsCaption(workspaceCaption)
+                }
+            }
+
+            if chain.showsXAICredentialFields {
+                SettingsRow(chain.teamIDFieldLabel) {
+                    TextField(chain.teamIDFieldPlaceholder, text: $xaiTeamID)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .frame(width: 190)
+                        .accessibilityLabel(chain.teamIDFieldAccessibilityLabel)
+                        .accessibilityIdentifier(AccessibilityID.settingsProviderTeamID(chain.provider))
+                }
+
+                SettingsRow(chain.managementKeyFieldLabel) {
+                    SecureField(chain.managementKeyFieldPlaceholder, text: $xaiManagementKey)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .frame(width: 190)
+                        .accessibilityLabel(chain.managementKeyFieldAccessibilityLabel)
+                        .accessibilityIdentifier(AccessibilityID.settingsProviderManagementKey(chain.provider))
+                }
+
+                if let caption = chain.xaiCredentialCaption {
+                    SettingsCaption(caption)
                 }
             }
         }
