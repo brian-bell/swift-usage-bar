@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 import UsageCore
 
@@ -89,10 +90,10 @@ func inMemoryXAIManagementKeyStoreRoundTrips() throws {
 
 @Test
 func keychainXAIManagementKeyStoreReadsInjectedItem() throws {
-    let data = Data("xai-mgmt".utf8) as CFData
+    let payload = Data("xai-mgmt".utf8)
     let store = KeychainXAIManagementKeyStore(
         copyMatching: { _, result in
-            result?.pointee = data
+            result?.pointee = payload as CFData
             return errSecSuccess
         },
         addItem: { _, _ in errSecSuccess },
@@ -117,19 +118,18 @@ func keychainXAIManagementKeyStoreTreatsMissingItemAsNil() throws {
 
 @Test
 func keychainXAIManagementKeyStoreWritesThenUpdatesOnDuplicate() throws {
-    var added = false
-    var updated = false
+    let flags = KeychainWriteFlags()
     let store = KeychainXAIManagementKeyStore(
         copyMatching: { _, _ in errSecItemNotFound },
         addItem: { _, _ in
-            if added {
+            if flags.added {
                 return errSecDuplicateItem
             }
-            added = true
+            flags.added = true
             return errSecSuccess
         },
         updateItem: { _, _ in
-            updated = true
+            flags.updated = true
             return errSecSuccess
         },
         deleteItem: { _ in errSecSuccess }
@@ -137,6 +137,57 @@ func keychainXAIManagementKeyStoreWritesThenUpdatesOnDuplicate() throws {
 
     try store.write("first")
     try store.write("second")
-    #expect(added)
-    #expect(updated)
+    #expect(flags.added)
+    #expect(flags.updated)
+}
+
+@Test
+func keychainXAIManagementKeyStoreBackgroundReadForbidsInteractiveUI() throws {
+    let recorder = KeychainQueryRecorder()
+    let store = KeychainXAIManagementKeyStore(
+        copyMatching: { query, _ in
+            recorder.record(query)
+            return errSecItemNotFound
+        },
+        addItem: { _, _ in errSecSuccess },
+        updateItem: { _, _ in errSecSuccess },
+        deleteItem: { _ in errSecSuccess }
+    )
+
+    _ = try store.read(mode: .background)
+    let query = try #require(recorder.query)
+
+    #expect(query[kSecUseAuthenticationUI as String] as? String == "fail")
+}
+
+@Test
+func keychainXAIManagementKeyStoreInteractiveReadAllowsInteractiveUI() throws {
+    let recorder = KeychainQueryRecorder()
+    let store = KeychainXAIManagementKeyStore(
+        copyMatching: { query, _ in
+            recorder.record(query)
+            return errSecItemNotFound
+        },
+        addItem: { _, _ in errSecSuccess },
+        updateItem: { _, _ in errSecSuccess },
+        deleteItem: { _ in errSecSuccess }
+    )
+
+    _ = try store.read(mode: .interactive)
+    let query = try #require(recorder.query)
+
+    #expect(query[kSecUseAuthenticationUI as String] == nil)
+}
+
+private final class KeychainWriteFlags: @unchecked Sendable {
+    var added = false
+    var updated = false
+}
+
+private final class KeychainQueryRecorder: @unchecked Sendable {
+    private(set) var query: [String: Any]?
+
+    func record(_ query: CFDictionary) {
+        self.query = query as NSDictionary as? [String: Any]
+    }
 }
