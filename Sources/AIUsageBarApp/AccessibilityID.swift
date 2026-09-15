@@ -10,6 +10,7 @@ enum AccessibilityID {
         case weekly
         case monthly
         case fable
+        case grokBot
     }
 
     /// Always present on the combined menu-bar label element. Empty state is

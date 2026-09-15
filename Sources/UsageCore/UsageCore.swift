@@ -60,6 +60,11 @@ public struct ProviderUsage: Equatable, Sendable {
     public let monthly: UsageWindow?
     // Model-scoped weekly window (Claude's "Fable" limit), when the API reports one.
     public let fable: UsageWindow?
+    /// Cursor Grok Bot weekly allowance, from the same-host Sand status
+    /// request. `nil` when the account has no included limit or that extra
+    /// request fails. Display-only: stays out of tone and thresholds like
+    /// Fable, so a broken Bot meter cannot fail Cursor Models / Other.
+    public let grokBot: UsageWindow?
     /// Dollar remaining-balance, set only by credits-style providers
     /// (OpenCode Credits, Kimi Open Platform). It renders as that
     /// provider's menu-bar segment and dropdown row, and is excluded from
@@ -72,13 +77,26 @@ public struct ProviderUsage: Equatable, Sendable {
         weekly: UsageWindow,
         monthly: UsageWindow? = nil,
         fable: UsageWindow? = nil,
+        grokBot: UsageWindow? = nil,
         credits: CreditBalance? = nil
     ) {
         self.fiveHour = fiveHour
         self.weekly = weekly
         self.monthly = monthly
         self.fable = fable
+        self.grokBot = grokBot
         self.credits = credits
+    }
+
+    func attachingGrokBot(_ grokBot: UsageWindow?) -> ProviderUsage {
+        ProviderUsage(
+            fiveHour: fiveHour,
+            weekly: weekly,
+            monthly: monthly,
+            fable: fable,
+            grokBot: grokBot,
+            credits: credits
+        )
     }
 }
 
@@ -2787,10 +2805,18 @@ private extension ProviderUsage {
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")"
         case .cursor:
             let otherModels = monthly?.percentRemaining.map(String.init) ?? "--"
-            guard let cursorModels = weekly.percentRemaining else {
-                return otherModels
+            let pools: String
+            if let cursorModels = weekly.percentRemaining {
+                pools = "\(cursorModels)/\(otherModels)"
+            } else {
+                pools = otherModels
             }
-            return "\(cursorModels)/\(otherModels)"
+            // Grok Bot is a third slot only when Sand reported an included
+            // limit, matching Claude Fable: omit rather than dash.
+            guard let grokBot else {
+                return pools
+            }
+            return "\(pools)/\(grokBot.percentRemaining.map(String.init) ?? "--")"
         }
     }
 }

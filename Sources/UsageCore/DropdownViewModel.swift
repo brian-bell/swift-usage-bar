@@ -59,6 +59,9 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
     public let weekly: DropdownUsageWindowRow?
     public let monthly: DropdownUsageWindowRow?
     public let fable: DropdownUsageWindowRow?
+    /// Cursor Grok Bot weekly allowance. Omitted when Sand reports no
+    /// included limit or the extra request fails.
+    public let grokBot: DropdownUsageWindowRow?
     /// Workspace credit balance — the OpenCode Credits provider's one row.
     /// Never participates in tone, threshold, or the menu-bar percent scale.
     public let credits: DropdownCreditsRow?
@@ -110,6 +113,15 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                     locale: locale
                 )
             }
+            self.grokBot = usage.grokBot.map { grokBot in
+                DropdownUsageWindowRow(
+                    title: "Bot",
+                    usageWindow: grokBot,
+                    now: now,
+                    calendar: calendar,
+                    locale: locale
+                )
+            }
             self.credits = usage.credits.map { DropdownCreditsRow(credits: $0, locale: locale) }
             self.statusTone = tone(for: usage)
         case let .stale(last: usage?, reason: reason):
@@ -145,6 +157,15 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                     locale: locale
                 )
             }
+            self.grokBot = usage.grokBot.map { grokBot in
+                DropdownUsageWindowRow(
+                    title: "Bot",
+                    usageWindow: grokBot,
+                    now: now,
+                    calendar: calendar,
+                    locale: locale
+                )
+            }
             self.credits = usage.credits.map { DropdownCreditsRow(credits: $0, locale: locale) }
             self.statusTone = tone(for: usage)
         case let .stale(last: nil, reason: reason):
@@ -160,6 +181,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: provider.monthlyDropdownTitle)
                 : nil
             self.fable = nil
+            self.grokBot = nil
             self.credits = provider.reportsCreditsBalance ? .placeholder : nil
             self.statusTone = nil
         case .hidden:
@@ -175,6 +197,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
                 ? DropdownUsageWindowRow.placeholder(title: provider.monthlyDropdownTitle)
                 : nil
             self.fable = nil
+            self.grokBot = nil
             self.credits = provider.reportsCreditsBalance ? .placeholder : nil
             self.statusTone = nil
         }

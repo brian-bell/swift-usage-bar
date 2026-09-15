@@ -400,7 +400,9 @@ private extension ProviderID {
         case .cursor:
             return """
                 Reads the Cursor IDE session token from state.vscdb and the dashboard \
-                usage-summary. All access is read-only.
+                usage-summary. Grok Bot is a best-effort same-host request on that \
+                cookie; a Sand failure leaves Cursor Models and Other intact. All \
+                access is read-only.
                 """
         case .kimi:
             return """
