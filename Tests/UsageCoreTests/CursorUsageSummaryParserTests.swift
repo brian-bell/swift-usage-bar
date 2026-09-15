@@ -13,6 +13,7 @@ func cursorParserMapsSanitizedUltraFixtureToBothPools() throws {
     #expect(epochSeconds(usage.monthly?.resetsAt) == 1_789_424_885)
     #expect(usage.credits == nil)
     #expect(usage.fable == nil)
+    #expect(usage.grokBot == nil)
 }
 
 @Test
