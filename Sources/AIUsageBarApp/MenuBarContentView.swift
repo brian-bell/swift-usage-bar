@@ -55,6 +55,7 @@ struct MenuBarContentView: View {
         }
         .padding(14)
         .frame(width: 320)
+        .modifier(MenuBarWindowFit())
         .onAppear {
             model.setSettingsOpener {
                 NSApplication.shared.activate(ignoringOtherApps: true)
