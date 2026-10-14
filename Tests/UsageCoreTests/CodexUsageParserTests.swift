@@ -3,17 +3,19 @@ import Testing
 import UsageCore
 
 @Test
-func codexParserMapsFixtureToWeeklyOnly() throws {
+func codexParserMapsFixtureToFiveHourAndWeekly() throws {
     let usage = try CodexUsageParser().parse(fixtureData("codex-usage.json"))
 
-    #expect(usage.fiveHour.percentRemaining == nil)
-    #expect(usage.fiveHour.resetsAt == nil)
+    #expect(usage.fiveHour.percentRemaining == 88)
+    #expect(usage.fiveHour.resetsAt == Date(timeIntervalSince1970: 1_783_006_145))
     #expect(usage.weekly.percentRemaining == 56)
     #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))
 }
 
 @Test
-func codexParserIgnoresDeprecatedPrimaryWindow() throws {
+func codexParserLeavesFiveHourUnsetWhenPrimaryDurationIsMissing() throws {
+    // A duration-less primary is not the restored 5-hour window. Secondary
+    // stays weekly, matching the legacy shape.
     let data = Data("""
     {
       "rate_limit": {
@@ -33,6 +35,32 @@ func codexParserIgnoresDeprecatedPrimaryWindow() throws {
 
     #expect(usage.fiveHour.percentRemaining == nil)
     #expect(usage.fiveHour.resetsAt == nil)
+    #expect(usage.weekly.percentRemaining == 56)
+    #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))
+}
+
+@Test
+func codexParserMapsFiveHourPrimaryBesideDurationlessSecondaryWeekly() throws {
+    let data = Data("""
+    {
+      "rate_limit": {
+        "primary_window": {
+          "limit_window_seconds": 18000,
+          "reset_at": 1783006145,
+          "used_percent": 12
+        },
+        "secondary_window": {
+          "reset_at": 1783388608,
+          "used_percent": 44
+        }
+      }
+    }
+    """.utf8)
+
+    let usage = try CodexUsageParser().parse(data)
+
+    #expect(usage.fiveHour.percentRemaining == 88)
+    #expect(usage.fiveHour.resetsAt == Date(timeIntervalSince1970: 1_783_006_145))
     #expect(usage.weekly.percentRemaining == 56)
     #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))
 }

@@ -2317,17 +2317,20 @@ public struct CodexUsageParser: Sendable {
     public func parse(_ data: Data) throws -> ProviderUsage {
         do {
             let response = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
-            // Codex is weekly-only in the UI (the former 5-hour limit is gone).
-            // Prefer secondary when present (legacy: primary=5h, secondary=weekly).
-            // Else use primary only when it is weekly-shaped (live as of Jul 2026:
-            // primary has limit_window_seconds 604800 and secondary is null). A
-            // 5h-only primary must not be misreported as weekly.
+            // Weekly stays required. Prefer secondary when it is not itself the
+            // 5-hour window (legacy: primary=5h, secondary=weekly). Else use
+            // primary only when it is weekly-shaped (Jul 2026: primary has
+            // limit_window_seconds 604800 and secondary is null). A 5-hour
+            // window (18000s) is optional: show it beside weekly, and omit the
+            // slot when the payload has none. A 5h-only primary is still a
+            // parse failure so it cannot be misreported as weekly.
             guard let weeklyWindow = response.rateLimit.weeklyWindow else {
                 throw UsageParsingError.parseFailure
             }
 
             return ProviderUsage(
-                fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+                fiveHour: response.rateLimit.fiveHourWindow.map(usageWindow(codexWindow:))
+                    ?? UsageWindow(percentRemaining: nil, resetsAt: nil),
                 weekly: usageWindow(codexWindow: weeklyWindow)
             )
         } catch {
@@ -2684,17 +2687,29 @@ private struct CodexRateLimit: Decodable {
         case secondaryWindow = "secondary_window"
     }
 
-    /// Weekly quota for the menu bar / dropdown. Secondary is always treated as
-    /// weekly when present (legacy shape). Primary is only accepted as weekly
-    /// when `limit_window_seconds` is 7 days — a bare 5h primary must fail.
+    /// Weekly quota. Secondary is weekly when present, unless it is explicitly
+    /// the 5-hour window. Primary is weekly only when `limit_window_seconds`
+    /// is 7 days — a bare 5h primary must fail the weekly read.
     var weeklyWindow: CodexRateLimitWindow? {
-        if let secondaryWindow {
+        if let secondaryWindow, !secondaryWindow.isFiveHourWindow {
             return secondaryWindow
         }
         guard let primaryWindow, primaryWindow.isWeeklyWindow else {
             return nil
         }
         return primaryWindow
+    }
+
+    /// Restored 5-hour quota. Only an explicit 18_000-second window counts.
+    /// A missing duration is not treated as 5 hours.
+    var fiveHourWindow: CodexRateLimitWindow? {
+        if let primaryWindow, primaryWindow.isFiveHourWindow {
+            return primaryWindow
+        }
+        if let secondaryWindow, secondaryWindow.isFiveHourWindow {
+            return secondaryWindow
+        }
+        return nil
     }
 }
 
@@ -2735,6 +2750,11 @@ private struct CodexRateLimitWindow: Decodable {
     /// Live primary-as-weekly responses report a 7-day window (604800 s).
     var isWeeklyWindow: Bool {
         limitWindowSeconds == 604_800
+    }
+
+    /// Five-hour quota. 18000 s is 5 hours; nothing else is.
+    var isFiveHourWindow: Bool {
+        limitWindowSeconds == 18_000
     }
 }
 
@@ -2793,7 +2813,13 @@ private extension ProviderUsage {
 
             return "\(leadingSlots)/\(fable.percentRemaining.map(String.init) ?? "--")"
         case .codex:
-            return weekly.percentRemaining.map(String.init) ?? "--"
+            // Claude-style 5h/weekly when the payload carries a five-hour
+            // window. Omit that slot when it does not, rather than dashing it.
+            guard let fiveHourRemaining = fiveHour.percentRemaining else {
+                return weekly.percentRemaining.map(String.init) ?? "--"
+            }
+            let weeklyRemaining = weekly.percentRemaining.map(String.init) ?? "--"
+            return "\(fiveHourRemaining)/\(weeklyRemaining)"
         case .openCodeGo:
             return "\(fiveHour.percentRemaining.map(String.init) ?? "--")/\(weekly.percentRemaining.map(String.init) ?? "--")/\(monthly?.percentRemaining.map(String.init) ?? "--")"
         case .openCodeCredits, .kimi, .xai:

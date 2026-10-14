@@ -592,12 +592,18 @@ public struct CodexAppServerRateLimitParser: Sendable {
     public func parse(_ data: Data) throws -> ProviderUsage {
         do {
             let response = try JSONDecoder().decode(CodexAppServerRateLimitsResponse.self, from: data)
-            guard let weekly = response.selectedSnapshot?.weeklyWindow else {
+            guard let snapshot = response.selectedSnapshot,
+                  let weekly = snapshot.weeklyWindow else {
                 throw UsageParsingError.parseFailure
             }
 
             return ProviderUsage(
-                fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+                fiveHour: snapshot.fiveHourWindow.map { window in
+                    UsageWindow(
+                        percentRemaining: remainingPercent(fromUsed: window.usedPercent),
+                        resetsAt: window.resetsAt.map(Date.init(timeIntervalSince1970:))
+                    )
+                } ?? UsageWindow(percentRemaining: nil, resetsAt: nil),
                 weekly: UsageWindow(
                     percentRemaining: remainingPercent(fromUsed: weekly.usedPercent),
                     resetsAt: weekly.resetsAt.map(Date.init(timeIntervalSince1970:))
@@ -660,6 +666,18 @@ private struct RateLimitSnapshot: Decodable {
         // secondary weekly window. Never extend this compatibility to primary:
         // a duration-less primary may be the old 5-hour window.
         if let secondary, secondary.windowDurationMinutes == nil {
+            return secondary
+        }
+        return nil
+    }
+
+    /// Five hours is exactly 300 minutes. A missing duration is not 5 hours,
+    /// and 300 is never treated as weekly.
+    var fiveHourWindow: RateLimitWindow? {
+        if primary?.windowDurationMinutes == 300 {
+            return primary
+        }
+        if secondary?.windowDurationMinutes == 300 {
             return secondary
         }
         return nil

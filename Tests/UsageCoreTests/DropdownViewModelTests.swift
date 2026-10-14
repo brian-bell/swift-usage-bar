@@ -22,7 +22,7 @@ func dropdownRowsUseStableProviderOrderAndOmitHiddenProviders() throws {
 @Test
 func dropdownRowsShowTwoWindowsForFreshMiniMax() throws {
     // Pin MiniMax's dropdown rendering shape: it identifies as "MiniMax",
-    // exposes a 5h row (like Claude, unlike Codex's weekly-only), and does
+    // exposes a 5h row (like Claude), and does
     // not show a Monthly row (the row init special-cases `provider ==
     // .openCodeGo` for that). A regression in any of these branches would
     // silently drop or duplicate content.
@@ -204,6 +204,30 @@ func dropdownRowsOmitUnavailableFiveHourWindow() throws {
     #expect(!row.isStale)
     #expect(row.fiveHour == nil)
     #expect(row.weekly?.percentLabel == "90% remaining")
+    // referenceNow (2026-01-01 12:00 UTC) is a Thursday; +6 days is Wednesday.
+    #expect(row.weekly?.countdownLabel == "resets Wed 12:00 PM")
+}
+
+@Test
+func dropdownRowsShowCodexFiveHourBesideWeekly() throws {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: referenceNow.addingTimeInterval(90 * 60)),
+        weekly: UsageWindow(percentRemaining: 56, resetsAt: referenceNow.addingTimeInterval(6 * 24 * 60 * 60))
+    )
+    let model = DropdownViewModel(
+        states: [.codex: .fresh(usage, asOf: referenceNow)],
+        now: referenceNow,
+        calendar: deterministicCalendar(),
+        locale: Locale(identifier: "en_US_POSIX")
+    )
+
+    let row = try #require(model.rows.first { $0.provider == .codex })
+    let fiveHour = try #require(row.fiveHour)
+    #expect(fiveHour.title == "5h")
+    #expect(fiveHour.percentLabel == "88% remaining")
+    #expect(fiveHour.countdownLabel == "resets in 1h 30m")
+    #expect(row.weekly?.title == "Weekly")
+    #expect(row.weekly?.percentLabel == "56% remaining")
     // referenceNow (2026-01-01 12:00 UTC) is a Thursday; +6 days is Wednesday.
     #expect(row.weekly?.countdownLabel == "resets Wed 12:00 PM")
 }

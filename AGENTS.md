@@ -33,7 +33,9 @@ no percent window); both OpenCode providers share the one workspace-ID
 setting. Claude's menu-bar value is `5h/weekly` plus a third slot for the
 model-scoped weekly window (`Cl 62/81/56`) whenever the payload carries
 one — omitted rather than dashed when it doesn't, matching the dropdown,
-which maps its Fable row from the same optional. Fable and Grok Bot are
+which maps its Fable row from the same optional. Codex uses the same
+`5h/weekly` pair when the payload carries a five-hour window, and weekly
+alone when it does not. Fable and Grok Bot are
 display-only windows: like credits, they stay out of tone and threshold
 notifications. A Sand failure must not fail Cursor Models / Other.
 
