@@ -24,7 +24,10 @@ func codexUsageProviderBuildsUsageRequestAndReturnsFreshUsage() async throws {
     let request = try #require(transport.requests.first)
 
     #expect(state == .fresh(ProviderUsage(
-        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        fiveHour: UsageWindow(
+            percentRemaining: 88,
+            resetsAt: Date(timeIntervalSince1970: 1_783_006_145)
+        ),
         weekly: UsageWindow(
             percentRemaining: 56,
             resetsAt: Date(timeIntervalSince1970: 1_783_388_608)
@@ -617,7 +620,10 @@ func codexUsageProviderReportsTheChatGPTAPIAsItsSource() async throws {
 
     #expect(report.source == .codexAPI)
     #expect(report.state == .fresh(ProviderUsage(
-        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        fiveHour: UsageWindow(
+            percentRemaining: 88,
+            resetsAt: Date(timeIntervalSince1970: 1_783_006_145)
+        ),
         weekly: UsageWindow(
             percentRemaining: 56,
             resetsAt: Date(timeIntervalSince1970: 1_783_388_608)

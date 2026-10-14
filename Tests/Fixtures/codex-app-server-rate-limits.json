@@ -1,33 +1,87 @@
 {
+  "ordinaryUsageAllowed": true,
   "rateLimits": {
+    "limitId": "codex",
+    "limitName": null,
+    "normalModelSlug": null,
     "primary": {
-      "usedPercent": 9,
-      "windowDurationMins": 10080,
-      "resetsAt": 1783390000
+      "usedPercent": 4,
+      "windowDurationMins": 300,
+      "resetsAt": 1792024319
     },
-    "secondary": null
+    "secondary": {
+      "usedPercent": 17,
+      "windowDurationMins": 10080,
+      "resetsAt": 1792539918
+    },
+    "credits": {
+      "hasCredits": false,
+      "unlimited": false,
+      "balance": "0"
+    },
+    "individualLimit": null,
+    "spendControlReached": false,
+    "planType": "plus",
+    "rateLimitReachedType": null
   },
   "rateLimitsByLimitId": {
     "codex": {
       "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
       "primary": {
-        "usedPercent": 12,
+        "usedPercent": 4,
         "windowDurationMins": 300,
-        "resetsAt": 1783006145
+        "resetsAt": 1792024319
       },
       "secondary": {
-        "usedPercent": 32,
+        "usedPercent": 17,
         "windowDurationMins": 10080,
-        "resetsAt": 1783388608
-      }
-    },
-    "other": {
-      "limitId": "other",
-      "primary": {
-        "usedPercent": 99,
-        "windowDurationMins": 10080,
-        "resetsAt": 1783999999
-      }
+        "resetsAt": 1792539918
+      },
+      "credits": {
+        "hasCredits": false,
+        "unlimited": false,
+        "balance": "0"
+      },
+      "individualLimit": null,
+      "spendControlReached": false,
+      "planType": "plus",
+      "rateLimitReachedType": null
     }
-  }
+  },
+  "rateLimitResetCredits": {
+    "availableCount": 3,
+    "credits": [
+      {
+        "id": "<redacted credit_id>",
+        "resetType": "codexRateLimits",
+        "status": "available",
+        "grantedAt": 1790108680,
+        "expiresAt": 1792700680,
+        "title": "<redacted>",
+        "description": "<redacted>"
+      },
+      {
+        "id": "<redacted credit_id>",
+        "resetType": "codexRateLimits",
+        "status": "available",
+        "grantedAt": 1790707842,
+        "expiresAt": 1793299842,
+        "title": "<redacted>",
+        "description": "<redacted>"
+      },
+      {
+        "id": "<redacted credit_id>",
+        "resetType": "codexRateLimits",
+        "status": "available",
+        "grantedAt": 1791415269,
+        "expiresAt": 1794007269,
+        "title": "<redacted>",
+        "description": "<redacted>"
+      }
+    ]
+  },
+  "accountId": "<redacted account_id>",
+  "rateLimitUpsell": null
 }

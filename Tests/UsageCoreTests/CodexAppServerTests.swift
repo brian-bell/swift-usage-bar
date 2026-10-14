@@ -4,13 +4,66 @@ import Testing
 import UsageCore
 
 @Test
-func codexAppServerParserPrefersCodexLimitAndFindsWeeklyWindowByDuration() throws {
+func codexAppServerParserMapsLiveFixtureToFiveHourAndWeekly() throws {
     let usage = try CodexAppServerRateLimitParser().parse(
         fixtureData("codex-app-server-rate-limits.json")
     )
 
     #expect(usage == ProviderUsage(
-        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        fiveHour: UsageWindow(
+            percentRemaining: 96,
+            resetsAt: Date(timeIntervalSince1970: 1_792_024_319)
+        ),
+        weekly: UsageWindow(
+            percentRemaining: 83,
+            resetsAt: Date(timeIntervalSince1970: 1_792_539_918)
+        )
+    ))
+}
+
+@Test
+func codexAppServerParserPrefersCodexLimitWhenLegacyBucketDisagrees() throws {
+    let data = Data("""
+    {
+      "rateLimits": {
+        "primary": {
+          "usedPercent": 9,
+          "windowDurationMins": 10080,
+          "resetsAt": 1783390000
+        },
+        "secondary": null
+      },
+      "rateLimitsByLimitId": {
+        "codex": {
+          "primary": {
+            "usedPercent": 12,
+            "windowDurationMins": 300,
+            "resetsAt": 1783006145
+          },
+          "secondary": {
+            "usedPercent": 32,
+            "windowDurationMins": 10080,
+            "resetsAt": 1783388608
+          }
+        },
+        "other": {
+          "primary": {
+            "usedPercent": 99,
+            "windowDurationMins": 10080,
+            "resetsAt": 1783999999
+          }
+        }
+      }
+    }
+    """.utf8)
+
+    let usage = try CodexAppServerRateLimitParser().parse(data)
+
+    #expect(usage == ProviderUsage(
+        fiveHour: UsageWindow(
+            percentRemaining: 88,
+            resetsAt: Date(timeIntervalSince1970: 1_783_006_145)
+        ),
         weekly: UsageWindow(
             percentRemaining: 68,
             resetsAt: Date(timeIntervalSince1970: 1_783_388_608)
@@ -34,6 +87,8 @@ func codexAppServerParserFallsBackToLegacySingleBucket() throws {
 
     let usage = try CodexAppServerRateLimitParser().parse(data)
 
+    #expect(usage.fiveHour.percentRemaining == nil)
+    #expect(usage.fiveHour.resetsAt == nil)
     #expect(usage.weekly.percentRemaining == 59)
     #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))
 }
@@ -68,6 +123,7 @@ func codexAppServerParserIgnoresMalformedUnselectedBuckets() throws {
 
     let usage = try CodexAppServerRateLimitParser().parse(data)
 
+    #expect(usage.fiveHour.percentRemaining == nil)
     #expect(usage.weekly.percentRemaining == 68)
     #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))
 }
@@ -91,6 +147,8 @@ func codexAppServerParserAcceptsOnlyLegacySecondaryWhenDurationIsMissing() throw
 
     let usage = try CodexAppServerRateLimitParser().parse(data)
 
+    #expect(usage.fiveHour.percentRemaining == nil)
+    #expect(usage.fiveHour.resetsAt == nil)
     #expect(usage.weekly.percentRemaining == 66)
     #expect(usage.weekly.resetsAt == Date(timeIntervalSince1970: 1_783_388_608))
 }
@@ -153,10 +211,13 @@ func codexAppServerReaderHandshakesIgnoresNotificationsAndReadsRateLimits() asyn
     let result = await reader.readUsage()
 
     #expect(result == .fresh(ProviderUsage(
-        fiveHour: UsageWindow(percentRemaining: nil, resetsAt: nil),
+        fiveHour: UsageWindow(
+            percentRemaining: 96,
+            resetsAt: Date(timeIntervalSince1970: 1_792_024_319)
+        ),
         weekly: UsageWindow(
-            percentRemaining: 68,
-            resetsAt: Date(timeIntervalSince1970: 1_783_388_608)
+            percentRemaining: 83,
+            resetsAt: Date(timeIntervalSince1970: 1_792_539_918)
         )
     )))
     #expect(launcher.launches.count == 1)

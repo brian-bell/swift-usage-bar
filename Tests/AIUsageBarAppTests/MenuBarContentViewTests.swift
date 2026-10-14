@@ -38,7 +38,7 @@ struct HostedUITests {
         #expect(ax.exists(AccessibilityID.menuBarWindow(.claude, .fiveHour)))
         #expect(ax.exists(AccessibilityID.menuBarWindow(.claude, .weekly)))
         #expect(ax.exists(AccessibilityID.menuBarWindow(.codex, .weekly)))
-        // Codex is weekly-only: no 5-hour row.
+        // This fixture is weekly-only, so the 5-hour row is omitted.
         #expect(!ax.exists(AccessibilityID.menuBarWindow(.codex, .fiveHour)))
         #expect(ax.exists(AccessibilityID.menuBarRefresh))
         #expect(ax.exists(AccessibilityID.menuBarSettings))

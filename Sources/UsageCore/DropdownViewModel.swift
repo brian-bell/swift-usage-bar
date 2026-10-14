@@ -52,7 +52,7 @@ public struct DropdownProviderRow: Equatable, Identifiable, Sendable {
     public let isStale: Bool
     public let staleMessage: String?
     public let updatedLabel: String?
-    /// `nil` when the provider does not expose a 5-hour window (Codex is weekly-only).
+    /// `nil` when this payload has no 5-hour window (Codex omits the slot).
     public let fiveHour: DropdownUsageWindowRow?
     /// `nil` when the provider has no weekly window (OpenCode Credits is a
     /// balance, not a set of percent windows).
@@ -327,7 +327,7 @@ public struct DropdownUsageWindowRow: Equatable, Sendable {
         )
     }
 
-    /// Omit the 5h row when the window is unavailable (Codex weekly-only).
+    /// Omit the 5h row when this payload has no five-hour window.
     fileprivate static func fiveHour(
         for usageWindow: UsageWindow,
         now: Date,

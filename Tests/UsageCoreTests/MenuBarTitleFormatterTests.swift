@@ -13,6 +13,23 @@ func menuBarTitleFormatterUsesStableProviderOrderForFreshUsage() {
 }
 
 @Test
+func menuBarTitleFormatterShowsCodexFiveHourBesideWeekly() {
+    let usage = ProviderUsage(
+        fiveHour: UsageWindow(percentRemaining: 88, resetsAt: nil),
+        weekly: UsageWindow(percentRemaining: 56, resetsAt: nil)
+    )
+
+    let segments = MenuBarTitleFormatter.segments([
+        .claude: .hidden,
+        .codex: .fresh(usage, asOf: Date(timeIntervalSince1970: 20)),
+    ])
+
+    #expect(segments == [
+        MenuBarTitleSegment(provider: .codex, value: "88/56", isStale: false),
+    ])
+}
+
+@Test
 func menuBarTitleFormatterShowsCodexWeeklyOnly() {
     let segments = MenuBarTitleFormatter.segments([
         .claude: .hidden,
@@ -332,7 +349,7 @@ func menuBarTitleFormatterEmitsFourSegmentsInProviderOrderWhenAllVisible() {
     // The first time all four providers can be visible simultaneously the
     // formatter must produce four segments in `ProviderID.allCases` order
     // (Claude, Codex, OpenCode Go, MiniMax) with each provider's own
-    // display shape (two-window / weekly-only / three-window / two-window).
+    // display shape (two-window / optional 5h / three-window / two-window).
     // The image-partition algorithm is tested separately in
     // `MenuBarLabelImageTests`; this pins the formatter that feeds it.
     let openCodeGoUsage = ProviderUsage(
