@@ -139,8 +139,8 @@ extension HostedUITests {
 /// Hosts the Providers pane standalone with a staged draft — the hosted
 /// window can't switch `TabView` tabs, so the pane renders on its own.
 private struct ProvidersPaneHost: View {
-    @State var draft: AppSettingsDraft
-    @State var expandedProviders: Set<ProviderID>
+    @ViewState var draft: AppSettingsDraft
+    @ViewState var expandedProviders: Set<ProviderID>
     let statusRows: [ProviderStatusRow]
 
     var body: some View {
@@ -155,7 +155,7 @@ private struct ProvidersPaneHost: View {
 /// Hosts the Notifications pane standalone with a staged draft — the hosted
 /// window can't switch `TabView` tabs, so the pane renders on its own.
 private struct NotificationsPaneHost: View {
-    @State var draft: AppSettingsDraft
+    @ViewState var draft: AppSettingsDraft
 
     var body: some View {
         NotificationsSettingsPane(draft: $draft)

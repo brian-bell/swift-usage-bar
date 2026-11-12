@@ -7,12 +7,12 @@ import UsageCore
 struct AppSettingsView: View {
     @Bindable var model: UsageBarShellModel
     @Environment(\.dismiss) private var dismiss
-    @State private var draft = AppSettingsDraft.placeholder
-    @State private var selectedTab = SettingsTab.initial
+    @ViewState private var draft = AppSettingsDraft.placeholder
+    @ViewState private var selectedTab = SettingsTab.initial
     // Which provider disclosures are open. Held here so it survives closing and
     // reopening the Settings window; stale providers are folded in on open by
     // `expandedProviders(remembering:)`, which is where that decision is tested.
-    @State private var expandedProviders: Set<ProviderID> = []
+    @ViewState private var expandedProviders: Set<ProviderID> = []
 
     // Tab panes use plain stacks rather than a grouped Form (Form would scroll every
     // tab). The window hugs content up to maxHeight; Providers is its own ScrollView
