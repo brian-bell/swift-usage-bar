@@ -10,8 +10,8 @@ import SwiftUI
 /// content and resizes the hosting window to match, keeping its top edge
 /// pinned under the status item.
 struct MenuBarWindowFit: ViewModifier {
-    @State private var window: NSWindow?
-    @State private var contentHeight: CGFloat?
+    @ViewState private var window: NSWindow?
+    @ViewState private var contentHeight: CGFloat?
 
     func body(content: Content) -> some View {
         content

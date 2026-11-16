@@ -4,11 +4,11 @@ import SwiftUI
 @main
 struct AIUsageBarApp: App {
     @NSApplicationDelegateAdaptor(AIUsageBarAppDelegate.self) private var appDelegate
-    @State private var model: UsageBarShellModel
+    @ViewState private var model: UsageBarShellModel
 
     init() {
         let model = UsageBarShellModel.live()
-        _model = State(initialValue: model)
+        _model = ViewState(initialValue: model)
         appDelegate.beforeTermination = {
             await model.stop()
         }
